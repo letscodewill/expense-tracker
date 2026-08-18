@@ -78,12 +78,15 @@ type AddExpenseDialogProps = {
   onAdded: () => void
   expenseToEdit?: Expense | null
   onOpenChange?: (open: boolean) => void
+  /** null/undefined = main panel. A board's uuid to attach it to that board. */
+  boardId?: string | null
 } & React.ComponentProps<typeof Dialog>
 
 export function AddExpenseDialog({
   onAdded,
   expenseToEdit,
   onOpenChange,
+  boardId = null,
   ...props
 }: AddExpenseDialogProps) {
   const [formState, dispatch] = useReducer(formReducer, initialState)
@@ -106,76 +109,76 @@ export function AddExpenseDialog({
     }
   }, [expenseToEdit])
 
- async function handleSubmit() {
-  const result = expenseSchema.safeParse(formState)
+  async function handleSubmit() {
+    const result = expenseSchema.safeParse(formState)
 
-  if (!result.success) {
-    const errors: Record<string, string> = {}
-    result.error.issues.forEach((issue) => {
-      errors[issue.path[0] as string] = issue.message
-    })
-    dispatch({ type: 'SET_FIELD_ERRORS', errors })
-    return
-  }
+    if (!result.success) {
+      const errors: Record<string, string> = {}
+      result.error.issues.forEach((issue) => {
+        errors[issue.path[0] as string] = issue.message
+      })
+      dispatch({ type: 'SET_FIELD_ERRORS', errors })
+      return
+    }
 
-  setLoading(true)
-  dispatch({ type: 'SET_ERROR', error: '' })
+    setLoading(true)
+    dispatch({ type: 'SET_ERROR', error: '' })
 
-  const { data: { user } } = await supabase.auth.getUser()
+    const { data: { user } } = await supabase.auth.getUser()
 
-  if (expenseToEdit) {
-    const { error: updateError } = await supabase
-      .from('expenses')
-      .update({
+    if (expenseToEdit) {
+      const { error: updateError } = await supabase
+        .from('expenses')
+        .update({
+          nome: nome.trim(),
+          data_pagamento: dataPagamento,
+          valor: parseFloat(valor.replace(',', '.')) || 0,
+          status,
+          comentario: comentario.trim() || null,
+        })
+        .eq('id', expenseToEdit.id)
+
+      setLoading(false)
+
+      if (updateError) {
+        dispatch({ type: 'SET_ERROR', error: 'Não foi possível atualizar. Tente novamente.' })
+        return
+      }
+    } else {
+      const { error: insertError } = await supabase.from('expenses').insert({
         nome: nome.trim(),
         data_pagamento: dataPagamento,
         valor: parseFloat(valor.replace(',', '.')) || 0,
         status,
         comentario: comentario.trim() || null,
+        user_id: user?.id,
+        board_id: boardId,
       })
-      .eq('id', expenseToEdit.id)
 
-    setLoading(false)
+      setLoading(false)
 
-    if (updateError) {
-      dispatch({ type: 'SET_ERROR', error: 'Não foi possível atualizar. Tente novamente.' })
-      return
+      if (insertError) {
+        dispatch({ type: 'SET_ERROR', error: 'Não foi possível salvar. Tente novamente.' })
+        return
+      }
     }
-  } else {
-    const { error: insertError } = await supabase.from('expenses').insert({
-      nome: nome.trim(),
-      data_pagamento: dataPagamento,
-      // allow users to type decimals with comma or dot
-      valor: parseFloat(valor.replace(',', '.')) || 0,
-      status,
-      comentario: comentario.trim() || null,
-      user_id: user?.id,
-    })
 
-    setLoading(false)
-
-    if (insertError) {
-      dispatch({ type: 'SET_ERROR', error: 'Não foi possível salvar. Tente novamente.' })
-      return
-    }
+    dispatch({ type: 'RESET' })
+    setOpen(false)
+    onOpenChange?.(false)
+    onAdded()
   }
-
-  dispatch({ type: 'RESET' })
-  setOpen(false)
-  onOpenChange?.(false)
-  onAdded()
-}
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => { setOpen(isOpen); onOpenChange?.(isOpen); if (!isOpen) dispatch({ type: 'RESET' })}} {...props}>
-<DialogTrigger
-  render={
-    <Button variant="outline" size="sm">
-      <Plus className="h-4 w-4 mr-1" />
-      Novo lançamento
-    </Button>
-  }
-/>
+      <DialogTrigger
+        render={
+          <Button variant="outline" size="sm">
+            <Plus className="h-4 w-4 mr-1" />
+            Novo lançamento
+          </Button>
+        }
+      />
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{expenseToEdit ? 'Editar despesa' : 'Nova despesa'}</DialogTitle>
@@ -278,6 +281,5 @@ export function AddExpenseDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-    
   )
 }

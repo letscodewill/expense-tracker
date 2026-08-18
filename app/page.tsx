@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { ExpenseTable } from '@/components/expense-table'
+import { ExpensesDashboard } from '@/components/expenses-dashboard'
 import { signOut } from '@/app/actions'
 import { Button } from '@/components/ui/button'
 
@@ -15,8 +15,6 @@ export default async function HomePage() {
     redirect('/login')
   }
 
-  const { data: despesas } = await supabase.from('expenses').select('*')
-
   return (
     <div className="container mx-auto p-4 md:p-8">
       <header className="flex justify-between items-center mb-8">
@@ -25,12 +23,14 @@ export default async function HomePage() {
           <p className="text-muted-foreground">Bem-vindo, {user.email}</p>
           <form>
             <Button formAction={signOut} type="submit" variant="outline" size="sm">
-    Sair
-  </Button>
+              Sair
+            </Button>
           </form>
         </div>
       </header>
-      <main>{<ExpenseTable />}</main>
+      <main>
+        <ExpensesDashboard />
+      </main>
     </div>
   )
 }

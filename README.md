@@ -4,14 +4,14 @@ Personal expense-tracking web app built with Next.js 16, Supabase and Tailwind C
 
 ![Next.js](https://img.shields.io/badge/Next.js-16-black) ![React](https://img.shields.io/badge/React-19-blue) ![Supabase](https://img.shields.io/badge/Supabase-Auth%20%26%20DB-3FCF8E) ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6)
 
-## � Features
+## Features
 
 - 🔐 **Email/password authentication** (sign-up, sign-in, password reset) via Supabase Auth
 - 🧾 **CRUD for expenses** — create, list, edit
 - 🏷️ **Status tracking**: `Pendente` · `Pago` · `VR/VA`
 - 💵 **Totals** — sum of all expenses shown in the table footer
 - 📅 **Date sorting** — expenses ordered by payment date
-- � **Dark mode ready** — design tokens in `app/globals.css`
+-  **Dark mode ready** — design tokens in `app/globals.css`
 
 ## 🧱 Tech stack
 
