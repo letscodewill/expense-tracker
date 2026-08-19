@@ -36,6 +36,10 @@ yarn-error.log*
 # vercel
 .vercel
 
+# local deployment helpers (NOT secrets — public/anonymous keys only, but kept
+# out of git so the file can be regenerated per-deployment without churn)
+VERCEL_ENV.txt
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
