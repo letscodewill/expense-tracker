@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { getBaseUrl } from '@/lib/env/base-url'
 
 export async function login(formData: FormData) {
   const supabase = await createClient()
@@ -34,7 +35,7 @@ export async function signup(formData: FormData) {
     email,
     password,
     options: {
-      emailRedirectTo: `${process.env.NEXT_PUBLIC_BASE_URL}/auth/callback`,
+      emailRedirectTo: `${getBaseUrl()}/auth/callback`,
     },
   })
 
@@ -44,6 +45,27 @@ export async function signup(formData: FormData) {
 
   revalidatePath('/', 'layout')
   return redirect('/login?message=Verifique seu email para continuar o processo de cadastro.')
+}
+
+export async function recoverPassword(formData: FormData) {
+  const supabase = await createClient()
+
+  const email = formData.get('email') as string
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${getBaseUrl()}/auth/callback`,
+  })
+
+  if (error) {
+    console.error(error)
+    return redirect(
+      '/login?mode=recover&message=Não foi possível enviar o email de recuperação.'
+    )
+  }
+
+  return redirect(
+    '/login?mode=recover&message=Se o e-mail estiver cadastrado, um link de recuperação foi enviado.'
+  )
 }
 
 export async function signOut() {
