@@ -15,6 +15,10 @@ type Expense = {
   valor: number
   status: 'Pendente' | 'Pago' | 'VR/VA'
   comentario: string | null
+  installment_group_id: string | null
+  installment_number: number | null
+  installment_total: number | null
+  valor_total: number | null
 }
 
 const statusColor: Record<Expense['status'], string> = {
@@ -33,6 +37,15 @@ function monthRangeISO(month: number, year: number): { from: string; to: string 
   const to = new Date(Date.UTC(year, month + 1, 1))
   const fmt = (d: Date) => d.toISOString().slice(0, 10)
   return { from: fmt(from), to: fmt(to) }
+}
+
+function isInstallmentRow(e: Expense): boolean {
+  return e.installment_group_id != null && e.installment_number != null && e.installment_total != null
+}
+
+function installmentLabel(e: Expense): string | null {
+  if (!isInstallmentRow(e)) return null
+  return '(' + e.installment_number + '/' + e.installment_total + ')'
 }
 
 export type ExpenseTableProps = {
@@ -92,11 +105,32 @@ export function ExpenseTable({
   }, [fetchExpenses, selected.month, selected.year, onChanged])
 
   const handleDeleteExpense = useCallback(
-    async (expenseId: number) => {
+    async (expense: Expense) => {
       const confirmed = window.confirm('Excluir esta despesa? Essa ação não pode ser desfeita.')
       if (!confirmed) return
 
-      const { error } = await supabase.from('expenses').delete().eq('id', expenseId)
+      const { error } = await supabase.from('expenses').delete().eq('id', expense.id)
+      if (!error) {
+        handleChanged()
+      }
+    },
+    [supabase, handleChanged]
+  )
+
+  const handleDeleteEntireSeries = useCallback(
+    async (expense: Expense) => {
+      if (!expense.installment_group_id) return
+      const confirmed = window.confirm(
+        'Excluir TODAS as ' +
+          expense.installment_total +
+          ' parcelas desta compra? Essa ação não pode ser desfeita.'
+      )
+      if (!confirmed) return
+
+      const { error } = await supabase
+        .from('expenses')
+        .delete()
+        .eq('installment_group_id', expense.installment_group_id)
       if (!error) {
         handleChanged()
       }
@@ -109,7 +143,7 @@ export function ExpenseTable({
     (sum, e) => sum + (e.status !== 'Pago' ? e.valor : 0),
     0
   )
-  const selectedLabel = `${MONTH_NAMES_PT[selected.month]} de ${selected.year}`
+  const selectedLabel = MONTH_NAMES_PT[selected.month] + ' de ' + selected.year
 
   return (
     <div className="space-y-4">
@@ -141,45 +175,69 @@ export function ExpenseTable({
                 <TableHead>Valor</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Comentário</TableHead>
-                <TableHead className="w-[140px]">Ações</TableHead>
+                <TableHead className="w-[180px]">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {expenses.map((expense) => (
-                <TableRow key={expense.id}>
-                  <TableCell>{expense.nome}</TableCell>
-                  <TableCell>
-                    {parseISODate(expense.data_pagamento).toLocaleDateString('pt-BR', {
-                      timeZone: 'UTC',
-                    })}
-                  </TableCell>
-                  <TableCell>
-                    {expense.valor.toLocaleString('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL',
-                    })}
-                  </TableCell>
-                  <TableCell>
-                    <Badge className={statusColor[expense.status]}>{expense.status}</Badge>
-                  </TableCell>
-                  <TableCell>{expense.comentario}</TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => setEditingExpense(expense)}>
-                        Editar
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-red-600 hover:text-red-700"
-                        onClick={() => handleDeleteExpense(expense.id)}
-                      >
-                        Excluir
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {expenses.map((expense) => {
+                const instLabel = installmentLabel(expense)
+                return (
+                  <TableRow key={expense.id}>
+                    <TableCell>
+                      <span className="flex items-center gap-2">
+                        <span>{expense.nome}</span>
+                        {instLabel && (
+                          <Badge variant="secondary" className="font-normal">
+                            {instLabel}
+                          </Badge>
+                        )}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      {parseISODate(expense.data_pagamento).toLocaleDateString('pt-BR', {
+                        timeZone: 'UTC',
+                      })}
+                    </TableCell>
+                    <TableCell>
+                      {expense.valor.toLocaleString('pt-BR', {
+                        style: 'currency',
+                        currency: 'BRL',
+                      })}
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={statusColor[expense.status]}>{expense.status}</Badge>
+                    </TableCell>
+                    <TableCell>{expense.comentario}</TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-1">
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="sm" onClick={() => setEditingExpense(expense)}>
+                            Editar
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-600 hover:text-red-700"
+                            onClick={() => handleDeleteExpense(expense)}
+                          >
+                            Excluir
+                          </Button>
+                        </div>
+                        {isInstallmentRow(expense) && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-600 hover:text-red-700 justify-start px-2"
+                            onClick={() => handleDeleteEntireSeries(expense)}
+                          >
+                            Excluir série completa
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
             </TableBody>
             <TableFooter>
               <TableRow>
