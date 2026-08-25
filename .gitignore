@@ -43,3 +43,9 @@ VERCEL_ENV.txt
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+dados.md
+
+# local dev server logs
+.dev-out.log
+.dev-err.log
