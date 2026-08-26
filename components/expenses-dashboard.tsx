@@ -18,6 +18,11 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function isCurrentMonth(selected: MonthYear): boolean {
+  const now = new Date()
+  return selected.month === now.getMonth() && selected.year === now.getFullYear()
+}
+
 export function ExpensesDashboard() {
   const supabase = createClient()
   const [boards, setBoards] = useState<Board[]>([])
@@ -88,6 +93,11 @@ export function ExpensesDashboard() {
     fetchBoards()
   }, [fetchBoards])
 
+  function handleGoToCurrentMonth() {
+    const now = new Date()
+    setSelected({ month: now.getMonth(), year: now.getFullYear() })
+  }
+
   const boardsForMonth = boards.filter(
     (b) => b.month === selected.month && b.year === selected.year
   )
@@ -96,6 +106,11 @@ export function ExpensesDashboard() {
     <div className="space-y-10">
       <div className="flex justify-end items-center gap-2">
         <MonthYearPicker value={selected} onChange={setSelected} />
+        {!isCurrentMonth(selected) && (
+          <Button variant="outline" size="sm" onClick={handleGoToCurrentMonth}>
+            Mês atual
+          </Button>
+        )}
         <BoardDialog
           selected={selected}
           onCreated={() => {

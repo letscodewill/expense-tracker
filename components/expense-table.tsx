@@ -322,7 +322,7 @@ export function ExpenseTable({
               {expenses.map((expense) => {
                 const instLabel = installmentLabel(expense)
                 return (
-                  <TableRow key={expense.id}>
+                  <TableRow key={expense.id} className="group">
                     <TableCell>
                       <span className="flex items-center gap-2">
                         <span>{expense.nome}</span>
@@ -348,33 +348,33 @@ export function ExpenseTable({
                       <Badge className={statusColor[expense.status]}>{expense.status}</Badge>
                     </TableCell>
                     <TableCell>{expense.comentario}</TableCell>
-                    <TableCell>
-                      <div className="flex flex-col gap-1">
-                        <div className="flex gap-1">
-                          <Button variant="ghost" size="sm" onClick={() => setEditingExpense(expense)}>
-                            Editar
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-red-600 hover:text-red-700"
-                            onClick={() => handleDeleteExpense(expense)}
-                          >
-                            Excluir
-                          </Button>
-                        </div>
-                        {isInstallmentRow(expense) && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-red-600 hover:text-red-700 justify-start px-2"
-                            onClick={() => handleDeleteEntireSeries(expense)}
-                          >
-                            Excluir série completa
-                          </Button>
-                        )}
-                      </div>
-                    </TableCell>
+                  <TableCell>
+  <div className="flex flex-col gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+    <div className="flex gap-1">
+      <Button variant="ghost" size="sm" onClick={() => setEditingExpense(expense)}>
+        Editar
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="text-red-600 hover:text-red-700"
+        onClick={() => handleDeleteExpense(expense)}
+      >
+        Excluir
+      </Button>
+    </div>
+    {isInstallmentRow(expense) && (
+      <Button
+        variant="ghost"
+        size="sm"
+        className="text-red-600 hover:text-red-700 justify-start px-2"
+        onClick={() => handleDeleteEntireSeries(expense)}
+      >
+        Excluir série completa
+      </Button>
+    )}
+  </div>
+</TableCell>
                   </TableRow>
                 )
               })}
