@@ -5,8 +5,10 @@ import { createClient } from '@/lib/supabase/client'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { AddExpenseDialog } from '@/components/add-expense-dialog'
 import { MONTH_NAMES_PT, type MonthYear } from '@/components/month-year-picker'
+import { Pencil, Check, X } from 'lucide-react'
 
 type Expense = {
   id: number
@@ -75,6 +77,9 @@ export function ExpenseTable({
   const [fetchError, setFetchError] = useState(false)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
   const [isPending, startTransition] = useTransition()
+  const [renamingBoard, setRenamingBoard] = useState(false)
+  const [boardNameDraft, setBoardNameDraft] = useState(title)
+  const [renamingBoardError, setRenamingBoardError] = useState('')
 
   const fetchExpenses = useCallback(
     async (month: number, year: number, attempt = 0) => {
@@ -162,6 +167,42 @@ export function ExpenseTable({
     [supabase, handleChanged]
   )
 
+  // Sincroniza o rascunho quando o título muda (ex: refreshKey do dashboard).
+  useEffect(() => {
+    if (!renamingBoard) setBoardNameDraft(title)
+  }, [title, renamingBoard])
+
+  const handleRenameBoard = useCallback(async () => {
+    if (!boardId) return
+    const trimmed = boardNameDraft.trim()
+    if (!trimmed) {
+      setRenamingBoardError('Informe um nome para o quadro.')
+      return
+    }
+    if (trimmed === title) {
+      setRenamingBoard(false)
+      setRenamingBoardError('')
+      return
+    }
+
+    const { error } = await supabase
+      .from('boards')
+      .update({ name: trimmed })
+      .eq('id', boardId)
+
+    if (error) {
+      console.error('Erro ao renomear quadro:', error)
+      setRenamingBoardError('Não foi possível renomear. Tente novamente.')
+      return
+    }
+
+    setRenamingBoard(false)
+    setRenamingBoardError('')
+    // A trigger sync_board_name_to_mirror atualiza o nome do espelho.
+    // bumpMainPanel força o painel principal a refetchar.
+    onChanged?.()
+  }, [boardId, boardNameDraft, title, supabase, onChanged])
+
   const total = expenses.reduce((sum, e) => sum + e.valor, 0)
   const pendente = expenses.reduce(
     (sum, e) => sum + (e.status !== 'Pago' ? e.valor : 0),
@@ -172,8 +213,72 @@ export function ExpenseTable({
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center gap-2">
-        <h2 className="text-xl font-semibold">{title}</h2>
+        <div className="flex items-center gap-2 min-w-0">
+          {boardId && renamingBoard ? (
+            <div className="flex items-center gap-2 min-w-0">
+              <Input
+                value={boardNameDraft}
+                onChange={(e) => {
+                  setBoardNameDraft(e.target.value)
+                  setRenamingBoardError('')
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void handleRenameBoard()
+                  if (e.key === 'Escape') {
+                    setRenamingBoard(false)
+                    setBoardNameDraft(title)
+                    setRenamingBoardError('')
+                  }
+                }}
+                autoFocus
+                className="h-9 max-w-xs text-lg font-semibold"
+                placeholder="Nome do quadro"
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void handleRenameBoard()}
+                aria-label="Salvar nome"
+              >
+                <Check className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setRenamingBoard(false)
+                  setBoardNameDraft(title)
+                  setRenamingBoardError('')
+                }}
+                aria-label="Cancelar"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : (
+            <>
+              <h2 className="text-xl font-semibold truncate">{title}</h2>
+              {boardId && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setBoardNameDraft(title)
+                    setRenamingBoardError('')
+                    setRenamingBoard(true)
+                  }}
+                  aria-label="Renomear quadro"
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+              )}
+            </>
+          )}
+        </div>
         <div className="flex items-center gap-2">
+          {renamingBoardError && (
+            <p className="text-sm text-red-600">{renamingBoardError}</p>
+          )}
           <AddExpenseDialog boardId={boardId} onAdded={handleChanged} />
           {onDeleteBoard && (
             <Button variant="destructive" size="sm" onClick={onDeleteBoard}>

@@ -80,11 +80,13 @@ export function ExpensesDashboard() {
     }
   }
 
-  // Called whenever any board's expenses change. Forces the main panel
-  // to refetch so the mirror expense's updated value shows up immediately.
+  // Called whenever any board's expenses change OR the board itself is renamed.
+  // Forces the main panel to refetch (mirror expense updates) AND the boards
+  // list to refetch (board.name prop flows into the table's <h2>).
   const bumpMainPanel = useCallback(() => {
     setMainPanelRefreshKey((k) => k + 1)
-  }, [])
+    fetchBoards()
+  }, [fetchBoards])
 
   const boardsForMonth = boards.filter(
     (b) => b.month === selected.month && b.year === selected.year
