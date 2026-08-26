@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { MonthYearPicker, type MonthYear } from '@/components/month-year-picker'
 import { ExpenseTable } from '@/components/expense-table'
 import { BoardDialog } from '@/components/board-dialog'
+import { Button } from '@/components/ui/button'
 
 type Board = {
   id: string
@@ -13,10 +14,15 @@ type Board = {
   year: number
 }
 
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 export function ExpensesDashboard() {
   const supabase = createClient()
   const [boards, setBoards] = useState<Board[]>([])
   const [loadingBoards, setLoadingBoards] = useState(true)
+  const [boardsError, setBoardsError] = useState(false)
   const [mainPanelRefreshKey, setMainPanelRefreshKey] = useState(0)
 
   const [selected, setSelected] = useState<MonthYear>(() => {
@@ -24,16 +30,38 @@ export function ExpensesDashboard() {
     return { month: now.getMonth(), year: now.getFullYear() }
   })
 
-  const fetchBoards = useCallback(async () => {
-    setLoadingBoards(true)
-    const { data, error } = await supabase
-      .from('boards')
-      .select('id, name, month, year')
-      .order('created_at', { ascending: true })
+  const fetchBoards = useCallback(
+    async (attempt = 0) => {
+      if (attempt === 0) {
+        setLoadingBoards(true)
+        setBoardsError(false)
+      }
 
-    if (!error && data) setBoards(data)
-    setLoadingBoards(false)
-  }, [supabase])
+      const { data, error } = await supabase
+        .from('boards')
+        .select('id, name, month, year')
+        .order('created_at', { ascending: true })
+
+      if (error) {
+        console.error(`Erro ao buscar quadros (tentativa ${attempt + 1}):`, error)
+
+        const MAX_ATTEMPTS = 3
+        if (attempt + 1 < MAX_ATTEMPTS) {
+          await delay(1000 * (attempt + 1))
+          return fetchBoards(attempt + 1)
+        }
+
+        setBoardsError(true)
+        setLoadingBoards(false)
+        return
+      }
+
+      if (data) setBoards(data)
+      setBoardsError(false)
+      setLoadingBoards(false)
+    },
+    [supabase]
+  )
 
   useEffect(() => {
     fetchBoards()
@@ -81,6 +109,15 @@ export function ExpensesDashboard() {
         selected={selected}
         refreshKey={mainPanelRefreshKey}
       />
+
+      {boardsError && (
+        <div className="text-center space-y-2">
+          <p className="text-sm text-red-600">Não foi possível carregar os quadros.</p>
+          <Button variant="outline" size="sm" onClick={() => fetchBoards()}>
+            Tentar novamente
+          </Button>
+        </div>
+      )}
 
       {!loadingBoards &&
         boardsForMonth.map((board) => (

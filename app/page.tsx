@@ -4,6 +4,7 @@ import { ExpensesDashboard } from '@/components/expenses-dashboard'
 import { signOut } from '@/app/actions'
 import { Button } from '@/components/ui/button'
 
+
 export default async function HomePage() {
   const supabase = await createClient()
 

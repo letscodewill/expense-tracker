@@ -27,6 +27,10 @@ const statusColor: Record<Expense['status'], string> = {
   'VR/VA': 'bg-blue-500',
 }
 
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 function parseISODate(iso: string): Date {
   const [y, m, d] = iso.split('-').map(Number)
   return new Date(y, m - 1, d)
@@ -68,12 +72,17 @@ export function ExpenseTable({
   const supabase = createClient()
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [loading, setLoading] = useState(true)
+  const [fetchError, setFetchError] = useState(false)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
   const [isPending, startTransition] = useTransition()
 
   const fetchExpenses = useCallback(
-    async (month: number, year: number) => {
-      setLoading(true)
+    async (month: number, year: number, attempt = 0) => {
+      if (attempt === 0) {
+        setLoading(true)
+        setFetchError(false)
+      }
+
       const { from, to } = monthRangeISO(month, year)
 
       let query = supabase
@@ -87,7 +96,22 @@ export function ExpenseTable({
 
       const { data, error } = await query
 
-      if (!error && data) setExpenses(data)
+      if (error) {
+        console.error(`Erro ao buscar despesas (tentativa ${attempt + 1}):`, error)
+
+        const MAX_ATTEMPTS = 3 // 1 tentativa inicial + 2 retries automáticos
+        if (attempt + 1 < MAX_ATTEMPTS) {
+          await delay(1000 * (attempt + 1)) // 1s, depois 2s
+          return fetchExpenses(month, year, attempt + 1)
+        }
+
+        setFetchError(true)
+        setLoading(false)
+        return
+      }
+
+      if (data) setExpenses(data)
+      setFetchError(false)
       setLoading(false)
     },
     [supabase, boardId]
@@ -162,6 +186,17 @@ export function ExpenseTable({
       <div className="rounded-xl border">
         {loading || isPending ? (
           <p className="text-sm text-muted-foreground p-4">Carregando...</p>
+        ) : fetchError ? (
+          <div className="p-4 text-center space-y-2">
+            <p className="text-sm text-red-600">Não foi possível carregar as despesas.</p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fetchExpenses(selected.month, selected.year)}
+            >
+              Tentar novamente
+            </Button>
+          </div>
         ) : expenses.length === 0 ? (
           <p className="text-sm text-muted-foreground p-4">
             Nenhuma despesa em {selectedLabel}.
