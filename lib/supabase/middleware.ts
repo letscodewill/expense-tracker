@@ -45,24 +45,30 @@ export async function updateSession(request: NextRequest) {
   // IMPORTANT: do not run any other code between createServerClient and
   // getUser(). A simple mistake here can make it very hard to debug
   // issues with users being randomly logged out.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  // Redirect unauthenticated users away from protected routes.
-  // Adjust the protected-pattern list to match your app's routes.
-  const protectedPaths = ['/', '/dashboard', '/expenses', '/boards']
-  const pathname = request.nextUrl.pathname
-  const isProtected = protectedPaths.some(
-    (p) => pathname === p || pathname.startsWith(`${p}/`)
-  )
-
-  if (!user && isProtected) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/login'
-    url.searchParams.set('redirectTo', pathname)
-    return NextResponse.redirect(url)
+  // getUser() can throw on an invalid/expired refresh token (e.g. after a
+  // password change or sign-out on another tab). Treat that as "no user"
+  // and clear the stale cookies so the next request starts fresh.
+  let user: Awaited<ReturnType<typeof supabase.auth.getUser>>['data']['user'] = null
+  try {
+    const result = await supabase.auth.getUser()
+    user = result.data.user
+  } catch (err) {
+    console.warn('[supabase] getUser failed in middleware, treating as signed out:', err)
+    // Clearing the cookies prevents the same error on every subsequent request.
+    for (const { name } of request.cookies.getAll()) {
+      if (name.startsWith('sb-') || name.includes('-auth-token')) {
+        supabaseResponse.cookies.delete(name)
+      }
+    }
   }
+
+  // Note: we intentionally do NOT redirect unauthenticated users here.
+  // Auth-guarding in middleware races with login / signup / password update:
+  // the session cookie is written on the next response and the client takes
+  // a request to refresh, so getUser() can return null transiently and the
+  // user gets bounced back to /login. Guard at the page (Server Component)
+  // or in the page's own data fetch instead.
+  void user
 
   return supabaseResponse
 }

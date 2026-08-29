@@ -3,6 +3,7 @@
 import { z } from 'zod'
 import { useReducer, useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { safeGetUser } from '@/lib/supabase/safe-get-user'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -213,7 +214,7 @@ export function AddExpenseDialog({
     setLoading(true)
     dispatch({ type: 'SET_ERROR', error: '' })
 
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await safeGetUser()
     const totalValor = parseFloat(valor.replace(',', '.')) || 0
 
     if (expenseToEdit) {

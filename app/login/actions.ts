@@ -52,6 +52,8 @@ export async function recoverPassword(formData: FormData) {
 
   const email = formData.get('email') as string
 
+  console.log('DEBUG redirectTo:', `${getBaseUrl()}/auth/callback`)
+
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
     redirectTo: `${getBaseUrl()}/auth/callback`,
   })

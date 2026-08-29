@@ -8,9 +8,15 @@ import { Button } from '@/components/ui/button'
 export default async function HomePage() {
   const supabase = await createClient()
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  let user = null
+  try {
+    const result = await supabase.auth.getUser()
+    user = result.data.user
+  } catch (err) {
+    // Invalid/expired refresh token — clear cookies and force re-login.
+    console.warn('[home] getUser failed, redirecting to /login:', err)
+    redirect('/login')
+  }
 
   if (!user) {
     redirect('/login')

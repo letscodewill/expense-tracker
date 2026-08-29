@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { safeGetUser } from '@/lib/supabase/safe-get-user'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -39,7 +40,7 @@ export function BoardDialog({ selected, onCreated }: BoardDialogProps) {
     setLoading(true)
     setError('')
 
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await safeGetUser()
 
     const { error: insertError } = await supabase.from('boards').insert({
       name: trimmed,
