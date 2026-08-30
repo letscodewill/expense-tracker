@@ -1,5 +1,6 @@
 import { login, signup, recoverPassword } from './actions'
 import { SignupDialog } from '@/components/signup-dialog'
+import { GoogleSignInButton } from '@/components/google-signin-button'
 
 export default async function LoginPage({
   searchParams,
@@ -95,6 +96,7 @@ export default async function LoginPage({
               Entrar
             </button>
            <SignupDialog />
+           <GoogleSignInButton />
             {params?.message && (
               <p className="text-center text-sm mt-4 text-red-500">
                 {params.message}
