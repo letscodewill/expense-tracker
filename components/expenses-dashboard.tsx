@@ -6,6 +6,7 @@ import { MonthYearPicker, type MonthYear } from '@/components/month-year-picker'
 import { ExpenseTable } from '@/components/expense-table'
 import { BoardDialog } from '@/components/board-dialog'
 import { Button } from '@/components/ui/button'
+import { ImportInvoiceDialog } from '@/components/import-invoice-dialog'
 
 type Board = {
   id: string
@@ -118,6 +119,29 @@ export function ExpensesDashboard() {
             setMainPanelRefreshKey((k) => k + 1)
           }}
         />
+        <div className="flex justify-end items-center gap-2">
+  <MonthYearPicker value={selected} onChange={setSelected} />
+  {!isCurrentMonth(selected) && (
+    <Button variant="outline" size="sm" onClick={handleGoToCurrentMonth}>
+      Mês atual
+    </Button>
+  )}
+  <ImportInvoiceDialog
+    selected={selected}
+    boards={boardsForMonth}
+    onImported={() => {
+      fetchBoards()
+      setMainPanelRefreshKey((k) => k + 1)
+    }}
+  />
+  <BoardDialog
+    selected={selected}
+    onCreated={() => {
+      fetchBoards()
+      setMainPanelRefreshKey((k) => k + 1)
+    }}
+  />
+</div>
       </div>
 
       <ExpenseTable
