@@ -120,12 +120,12 @@ export function ExpensesDashboard() {
           }}
         />
         <div className="flex justify-end items-center gap-2">
-  <MonthYearPicker value={selected} onChange={setSelected} />
+  {/* <MonthYearPicker value={selected} onChange={setSelected} /> 
   {!isCurrentMonth(selected) && (
     <Button variant="outline" size="sm" onClick={handleGoToCurrentMonth}>
       Mês atual
     </Button>
-  )}
+  )} */}
   <ImportInvoiceDialog
     selected={selected}
     boards={boardsForMonth}
