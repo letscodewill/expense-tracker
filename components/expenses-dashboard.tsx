@@ -7,6 +7,8 @@ import { ExpenseTable } from '@/components/expense-table'
 import { BoardDialog } from '@/components/board-dialog'
 import { Button } from '@/components/ui/button'
 import { ImportInvoiceDialog } from '@/components/import-invoice-dialog'
+import { FloatingActionMenu } from '@/components/floating-action-menu'
+import { AddExpenseDialog } from '@/components/add-expense-dialog'
 
 type Board = {
   id: string
@@ -30,6 +32,9 @@ export function ExpensesDashboard() {
   const [loadingBoards, setLoadingBoards] = useState(true)
   const [boardsError, setBoardsError] = useState(false)
   const [mainPanelRefreshKey, setMainPanelRefreshKey] = useState(0)
+  const [fabNewExpenseOpen, setFabNewExpenseOpen] = useState(false)
+const [fabNewBoardOpen, setFabNewBoardOpen] = useState(false)
+const [fabImportOpen, setFabImportOpen] = useState(false)
 
   const [selected, setSelected] = useState<MonthYear>(() => {
     const now = new Date()
@@ -112,36 +117,25 @@ export function ExpensesDashboard() {
             Mês atual
           </Button>
         )}
-        <BoardDialog
-          selected={selected}
-          onCreated={() => {
-            fetchBoards()
-            setMainPanelRefreshKey((k) => k + 1)
-          }}
-        />
+
         <div className="flex justify-end items-center gap-2">
-  <MonthYearPicker value={selected} onChange={setSelected} />
-  {!isCurrentMonth(selected) && (
-    <Button variant="outline" size="sm" onClick={handleGoToCurrentMonth}>
-      Mês atual
-    </Button>
-  )}
-  <ImportInvoiceDialog
-    selected={selected}
-    boards={boardsForMonth}
-    onImported={() => {
-      fetchBoards()
-      setMainPanelRefreshKey((k) => k + 1)
-    }}
-  />
-  <BoardDialog
-    selected={selected}
-    onCreated={() => {
-      fetchBoards()
-      setMainPanelRefreshKey((k) => k + 1)
-    }}
-  />
-</div>
+
+          <ImportInvoiceDialog
+            selected={selected}
+            boards={boardsForMonth}
+            onImported={() => {
+              fetchBoards()
+              setMainPanelRefreshKey((k) => k + 1)
+            }}
+          />
+          <BoardDialog
+            selected={selected}
+            onCreated={() => {
+              fetchBoards()
+              setMainPanelRefreshKey((k) => k + 1)
+            }}
+          />
+        </div>
       </div>
 
       <ExpenseTable
@@ -171,6 +165,47 @@ export function ExpensesDashboard() {
             onChanged={bumpMainPanel}
           />
         ))}
-    </div>
+    <FloatingActionMenu
+  onNewExpense={() => setFabNewExpenseOpen(true)}
+  onNewBoard={() => setFabNewBoardOpen(true)}
+  onImportInvoice={() => setFabImportOpen(true)}
+/>
+
+{fabNewExpenseOpen && (
+  <AddExpenseDialog
+    boardId={null}
+    forceOpen
+    onAdded={() => {
+      setFabNewExpenseOpen(false)
+      setMainPanelRefreshKey((k) => k + 1)
+    }}
+    onOpenChange={(open) => !open && setFabNewExpenseOpen(false)}
+  />
+)}
+
+<BoardDialog
+  selected={selected}
+  open={fabNewBoardOpen}
+  onOpenChange={setFabNewBoardOpen}
+  hideTrigger
+  onCreated={() => {
+    fetchBoards()
+    setMainPanelRefreshKey((k) => k + 1)
+    setFabNewBoardOpen(false)
+  }}
+/>
+
+<ImportInvoiceDialog
+  selected={selected}
+  boards={boardsForMonth}
+  open={fabImportOpen}
+  onOpenChange={setFabImportOpen}
+  hideTrigger
+  onImported={() => {
+    fetchBoards()
+    setMainPanelRefreshKey((k) => k + 1)
+    setFabImportOpen(false)
+  }}
+/></div>
   )
 }

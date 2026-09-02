@@ -18,14 +18,27 @@ import { Plus } from 'lucide-react'
 import type { MonthYear } from '@/components/month-year-picker'
 
 export type BoardDialogProps = {
-  /** The board is created for this specific month/year. */
   selected: MonthYear
   onCreated: () => void
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  hideTrigger?: boolean
 }
 
-export function BoardDialog({ selected, onCreated }: BoardDialogProps) {
-  const supabase = createClient()
-  const [open, setOpen] = useState(false)
+export function BoardDialog({
+  selected,
+  onCreated,
+  open: openProp,
+  onOpenChange,
+  hideTrigger,
+}: BoardDialogProps) {  const supabase = createClient()
+  const [openState, setOpenState] = useState(false)
+  const open = openProp ?? openState
+  const setOpen = (value: boolean) => {
+    setOpenState(value)
+    onOpenChange?.(value)
+  }
+  
   const [name, setName] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -62,24 +75,26 @@ export function BoardDialog({ selected, onCreated }: BoardDialogProps) {
   }
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(isOpen) => {
-        setOpen(isOpen)
-        if (!isOpen) {
-          setName('')
-          setError('')
-        }
-      }}
-    >
-      <DialogTrigger
-        render={
-          <Button variant="outline" size="sm">
-            <Plus className="h-4 w-4 mr-1" />
-            Novo quadro
-          </Button>
-        }
-      />
+  <Dialog
+  open={open}
+  onOpenChange={(isOpen) => {
+    setOpen(isOpen)
+    if (!isOpen) {
+      setName('')
+      setError('')
+    }
+  }}
+>
+{!hideTrigger && (
+  <DialogTrigger
+    render={
+      <Button variant="outline" size="sm">
+        <Plus className="h-4 w-4 mr-1" />
+        Novo quadro
+      </Button>
+    }
+  />
+)}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Novo quadro</DialogTitle>

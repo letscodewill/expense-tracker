@@ -31,14 +31,29 @@ export type ImportInvoiceDialogProps = {
   selected: MonthYear
   boards: Board[]
   onImported: () => void
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  hideTrigger?: boolean
 }
 
 const NEW_BOARD_VALUE = '__new__'
 const MAIN_PANEL_VALUE = '__main__'
 
-export function ImportInvoiceDialog({ selected, boards, onImported }: ImportInvoiceDialogProps) {
+export function ImportInvoiceDialog({
+  selected,
+  boards,
+  onImported,
+  open: openProp,
+  onOpenChange,
+  hideTrigger,
+}: ImportInvoiceDialogProps) {
   const supabase = createClient()
-  const [open, setOpen] = useState(false)
+  const [openState, setOpenState] = useState(false)
+  const open = openProp ?? openState
+  const setOpen = (value: boolean) => {
+    setOpenState(value)
+    onOpenChange?.(value)
+  }
   const [step, setStep] = useState<'upload' | 'review'>('upload')
   const [parsing, setParsing] = useState(false)
   const [rows, setRows] = useState<ParsedExpense[]>([])
@@ -47,50 +62,50 @@ export function ImportInvoiceDialog({ selected, boards, onImported }: ImportInvo
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [pendingFile, setPendingFile] = useState<File | null>(null)
-const [needsPassword, setNeedsPassword] = useState(false)
-const [pdfPassword, setPdfPassword] = useState('')
+  const [needsPassword, setNeedsPassword] = useState(false)
+  const [pdfPassword, setPdfPassword] = useState('')
 
-async function processFile(file: File, password?: string) {
-  setParsing(true)
-  setError('')
+  async function processFile(file: File, password?: string) {
+    setParsing(true)
+    setError('')
 
-  try {
-    const text = await extractPdfText(file, password)
-    const parsed = parseInvoiceText(text, selected.year)
+    try {
+      const text = await extractPdfText(file, password)
+      const parsed = parseInvoiceText(text, selected.year)
 
-    if (parsed.length === 0) {
-      setError(
-        'Não conseguimos identificar despesas automaticamente neste PDF. ' +
+      if (parsed.length === 0) {
+        setError(
+          'Não conseguimos identificar despesas automaticamente neste PDF. ' +
           'Você pode adicionar linhas manualmente abaixo.'
-      )
-    }
+        )
+      }
 
-    setRows(parsed)
-    setStep('review')
-    setNeedsPassword(false)
-  } catch (err) {
-    if (err instanceof PdfPasswordRequiredError) {
-      setNeedsPassword(true)
-      setPendingFile(file)
-    } else {
-      console.error('Erro ao processar PDF:', err)
-      setError('Não foi possível ler este PDF. Verifique se o arquivo não está corrompido.')
+      setRows(parsed)
+      setStep('review')
+      setNeedsPassword(false)
+    } catch (err) {
+      if (err instanceof PdfPasswordRequiredError) {
+        setNeedsPassword(true)
+        setPendingFile(file)
+      } else {
+        console.error('Erro ao processar PDF:', err)
+        setError('Não foi possível ler este PDF. Verifique se o arquivo não está corrompido.')
+      }
+    } finally {
+      setParsing(false)
     }
-  } finally {
-    setParsing(false)
   }
-}
 
-async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-  const file = e.target.files?.[0]
-  if (!file) return
-  await processFile(file)
-}
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    await processFile(file)
+  }
 
-async function handleSubmitPassword() {
-  if (!pendingFile) return
-  await processFile(pendingFile, pdfPassword)
-}
+  async function handleSubmitPassword() {
+    if (!pendingFile) return
+    await processFile(pendingFile, pdfPassword)
+  }
 
   function reset() {
     setStep('upload')
@@ -195,51 +210,53 @@ async function handleSubmitPassword() {
         if (!isOpen) reset()
       }}
     >
-      <DialogTrigger
-        render={
-          <Button variant="outline" size="sm">
-            <Upload className="h-4 w-4 mr-1" />
-            Importar fatura
-          </Button>
-        }
-      />
+      {!hideTrigger && (
+  <DialogTrigger
+    render={
+      <Button variant="outline" size="sm">
+        <Upload className="h-4 w-4 mr-1" />
+        Importar fatura
+      </Button>
+    }
+  />
+)}
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Importar fatura (PDF)</DialogTitle>
         </DialogHeader>
 
-{step === 'upload' && (
-  <div className="space-y-4 py-4">
-    <Label htmlFor="invoice-pdf">Selecione o PDF da fatura</Label>
-    <Input
-      id="invoice-pdf"
-      type="file"
-      accept="application/pdf"
-      onChange={handleFileChange}
-      disabled={parsing}
-    />
-    {parsing && <p className="text-sm text-muted-foreground">Lendo o PDF...</p>}
+        {step === 'upload' && (
+          <div className="space-y-4 py-4">
+            <Label htmlFor="invoice-pdf">Selecione o PDF da fatura</Label>
+            <Input
+              id="invoice-pdf"
+              type="file"
+              accept="application/pdf"
+              onChange={handleFileChange}
+              disabled={parsing}
+            />
+            {parsing && <p className="text-sm text-muted-foreground">Lendo o PDF...</p>}
 
-    {needsPassword && (
-      <div className="space-y-2 pt-2 border-t">
-        <Label htmlFor="pdf-password">Este PDF está protegido. Digite a senha:</Label>
-        <div className="flex gap-2">
-          <Input
-            id="pdf-password"
-            type="password"
-            value={pdfPassword}
-            onChange={(e) => setPdfPassword(e.target.value)}
-          />
-          <Button onClick={handleSubmitPassword} disabled={parsing}>
-            Confirmar
-          </Button>
-        </div>
-      </div>
-    )}
+            {needsPassword && (
+              <div className="space-y-2 pt-2 border-t">
+                <Label htmlFor="pdf-password">Este PDF está protegido. Digite a senha:</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="pdf-password"
+                    type="password"
+                    value={pdfPassword}
+                    onChange={(e) => setPdfPassword(e.target.value)}
+                  />
+                  <Button onClick={handleSubmitPassword} disabled={parsing}>
+                    Confirmar
+                  </Button>
+                </div>
+              </div>
+            )}
 
-    {error && <p className="text-sm text-red-600">{error}</p>}
-  </div>
-)}
+            {error && <p className="text-sm text-red-600">{error}</p>}
+          </div>
+        )}
 
         {step === 'review' && (
           <div className="space-y-4">

@@ -151,8 +151,8 @@ export function ExpenseTable({
       if (!expense.installment_group_id) return
       const confirmed = window.confirm(
         'Excluir TODAS as ' +
-          expense.installment_total +
-          ' parcelas desta compra? Essa ação não pode ser desfeita.'
+        expense.installment_total +
+        ' parcelas desta compra? Essa ação não pode ser desfeita.'
       )
       if (!confirmed) return
 
@@ -160,6 +160,22 @@ export function ExpenseTable({
         .from('expenses')
         .delete()
         .eq('installment_group_id', expense.installment_group_id)
+      if (!error) {
+        handleChanged()
+      }
+    },
+    [supabase, handleChanged]
+  )
+
+  const handleTogglePaid = useCallback(
+    async (expense: Expense) => {
+      const newStatus = expense.status === 'Pago' ? 'Pendente' : 'Pago'
+
+      const { error } = await supabase
+        .from('expenses')
+        .update({ status: newStatus })
+        .eq('id', expense.id)
+
       if (!error) {
         handleChanged()
       }
@@ -348,33 +364,42 @@ export function ExpenseTable({
                       <Badge className={statusColor[expense.status]}>{expense.status}</Badge>
                     </TableCell>
                     <TableCell>{expense.comentario}</TableCell>
-                  <TableCell>
-  <div className="flex flex-col gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-    <div className="flex gap-1">
-      <Button variant="ghost" size="sm" onClick={() => setEditingExpense(expense)}>
-        Editar
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="text-red-600 hover:text-red-700"
-        onClick={() => handleDeleteExpense(expense)}
-      >
-        Excluir
-      </Button>
-    </div>
-    {isInstallmentRow(expense) && (
-      <Button
-        variant="ghost"
-        size="sm"
-        className="text-red-600 hover:text-red-700 justify-start px-2"
-        onClick={() => handleDeleteEntireSeries(expense)}
-      >
-        Excluir série completa
-      </Button>
-    )}
-  </div>
-</TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                        <div className="flex gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className={expense.status === 'Pago' ? 'text-yellow-600 hover:text-yellow-700' : 'text-green-600 hover:text-green-700'}
+                            onClick={() => handleTogglePaid(expense)}
+                            title={expense.status === 'Pago' ? 'Marcar como pendente' : 'Marcar como pago'}
+                          >
+                            {expense.status === 'Pago' ? 'Desfazer' : 'Pagar'}
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => setEditingExpense(expense)}>
+                            Editar
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-600 hover:text-red-700"
+                            onClick={() => handleDeleteExpense(expense)}
+                          >
+                            Excluir
+                          </Button>
+                        </div>
+                        {isInstallmentRow(expense) && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-600 hover:text-red-700 justify-start px-2"
+                            onClick={() => handleDeleteEntireSeries(expense)}
+                          >
+                            Excluir série completa
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
                   </TableRow>
                 )
               })}

@@ -37,6 +37,8 @@ type Expense = {
   valor_total: number | null
 }
 
+
+
 const MIN_INSTALLMENTS = 2
 const MAX_INSTALLMENTS = 48
 
@@ -113,8 +115,8 @@ type AddExpenseDialogProps = {
   onAdded: () => void
   expenseToEdit?: Expense | null
   onOpenChange?: (open: boolean) => void
-  /** null/undefined = main panel. A board's uuid to attach it to that board. */
   boardId?: string | null
+  forceOpen?: boolean
 } & React.ComponentProps<typeof Dialog>
 
 /**
@@ -139,6 +141,7 @@ export function AddExpenseDialog({
   expenseToEdit,
   onOpenChange,
   boardId = null,
+  forceOpen,
   ...props
 }: AddExpenseDialogProps) {
   const [formState, dispatch] = useReducer(formReducer, initialState)
@@ -150,21 +153,16 @@ export function AddExpenseDialog({
   const [open, setOpen] = useState(!!expenseToEdit)
   const [loading, setLoading] = useState(false)
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setOpen(!!expenseToEdit)
-    if (expenseToEdit) {
-      dispatch({ type: 'SET_FIELD', field: 'nome', value: expenseToEdit.nome })
-      dispatch({ type: 'SET_FIELD', field: 'dataPagamento', value: expenseToEdit.data_pagamento })
-      dispatch({ type: 'SET_FIELD', field: 'valor', value: String(expenseToEdit.valor) })
-      dispatch({ type: 'SET_FIELD', field: 'status', value: expenseToEdit.status })
-      dispatch({ type: 'SET_FIELD', field: 'comentario', value: expenseToEdit.comentario ?? '' })
-      // Always load the installment field for editing too. A single-parcel
-      // expense is just a non-installment record — checkbox stays off.
-      dispatch({ type: 'SET_FIELD', field: 'isInstallment', value: false })
-      dispatch({ type: 'SET_FIELD', field: 'installments', value: '2' })
-    }
-  }, [expenseToEdit])
+useEffect(() => {
+  setOpen(!!expenseToEdit || !!forceOpen)
+  if (expenseToEdit) {
+    dispatch({ type: 'SET_FIELD', field: 'nome', value: expenseToEdit.nome })
+    dispatch({ type: 'SET_FIELD', field: 'dataPagamento', value: expenseToEdit.data_pagamento })
+    dispatch({ type: 'SET_FIELD', field: 'valor', value: String(expenseToEdit.valor) })
+    dispatch({ type: 'SET_FIELD', field: 'status', value: expenseToEdit.status })
+    dispatch({ type: 'SET_FIELD', field: 'comentario', value: expenseToEdit.comentario ?? '' })
+  }
+}, [expenseToEdit, forceOpen])
 
   // Live preview for the installment block.
   const preview = useMemo(() => {
