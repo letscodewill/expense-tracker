@@ -3,7 +3,8 @@ import { redirect } from 'next/navigation'
 import { ExpensesDashboard } from '@/components/expenses-dashboard'
 import { signOut } from '@/app/actions'
 import { Button } from '@/components/ui/button'
-
+import { ReportDialog } from '@/components/report-dialog'
+import { ChangePasswordButton } from '@/components/change-password-button'
 
 export default async function HomePage() {
   const supabase = await createClient()
@@ -27,7 +28,9 @@ export default async function HomePage() {
       <header className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold">Painel de Despesas</h1>
         <div className="flex items-center gap-4">
-          <p className="text-muted-foreground">Bem-vindo, {user.email}</p>
+          <p className="text-muted-foreground">Bem-vindo, {user.user_metadata?.full_name || user.email}</p>
+          <ReportDialog />
+          <ChangePasswordButton />
           <form>
             <Button formAction={signOut} type="submit" variant="outline" size="sm">
               Sair

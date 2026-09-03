@@ -20,10 +20,16 @@ export function SignupDialog() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
   const [isPending, startTransition] = useTransition()
+  const [name, setName] = useState('')
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError('')
+
+    if (!name.trim()) {
+      setError('Informe seu nome.')
+      return
+    }
 
     if (password !== confirmPassword) {
       setError('As senhas não coincidem.')
@@ -36,6 +42,7 @@ export function SignupDialog() {
     }
 
     const formData = new FormData()
+    formData.set('name', name)
     formData.set('email', email)
     formData.set('password', password)
 
@@ -48,6 +55,7 @@ export function SignupDialog() {
     <Dialog
       onOpenChange={(isOpen) => {
         if (!isOpen) {
+          setName('')
           setEmail('')
           setPassword('')
           setConfirmPassword('')
@@ -68,6 +76,16 @@ export function SignupDialog() {
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col space-y-4">
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="signup-name">Nome:</Label>
+            <Input
+              id="signup-name"
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+            />
+          </div>
           <div className="flex flex-col gap-1">
             <Label htmlFor="signup-email">E-mail:</Label>
             <Input
