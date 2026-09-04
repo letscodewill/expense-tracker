@@ -27,11 +27,15 @@ function getSupabaseEnv() {
 export async function createClient() {
   const { url, anonKey } = getSupabaseEnv()
   const cookieStore = await cookies()
+  const THIRTY_DAYS = 60 * 60 * 24 * 30
 
   return createServerClient(
     url,
     anonKey,
     {
+      cookieOptions: {
+        maxAge: THIRTY_DAYS,
+      },
       cookies: {
         getAll() {
           return cookieStore.getAll()
