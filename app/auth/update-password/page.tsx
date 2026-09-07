@@ -71,9 +71,8 @@ export default function UpdatePasswordPage() {
 
   if (!hasSession) {
     return (
-      <div className="flex justify-center items-center h-screen">
-        <div className="p-8 border rounded-lg shadow-md w-96 space-y-4">
-          <h2 className="text-2xl font-bold text-center">Link inválido</h2>
+<div className="flex justify-center items-center min-h-screen px-4">
+  <div className="relative p-8 border rounded-lg shadow-md w-full max-w-sm space-y-4 overflow-hidden">          <h2 className="text-2xl font-bold text-center">Link inválido</h2>
           <p className="text-center text-sm text-muted-foreground">
             Este link de recuperação é inválido ou expirou. Solicite um novo.
           </p>
@@ -89,9 +88,8 @@ export default function UpdatePasswordPage() {
   }
 
   return (
-    <div className="flex justify-center items-center h-screen">
-      <div className="p-8 border rounded-lg shadow-md w-96 space-y-4">
-        <h2 className="text-2xl font-bold text-center">Redefinir sua senha</h2>
+<div className="flex justify-center items-center min-h-screen px-4">
+  <div className="relative p-8 border rounded-lg shadow-md w-full max-w-sm space-y-4 overflow-hidden">        <h2 className="text-2xl font-bold text-center">Redefinir sua senha</h2>
         <div className="flex flex-col">
           <label htmlFor="password">Nova senha:</label>
           <input

@@ -228,9 +228,8 @@ export function ExpenseTable({
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          {boardId && renamingBoard ? (
+<div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+  <div className="flex items-center gap-2 min-w-0">          {boardId && renamingBoard ? (
             <div className="flex items-center gap-2 min-w-0">
               <Input
                 value={boardNameDraft}
@@ -291,8 +290,7 @@ export function ExpenseTable({
             </>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          {renamingBoardError && (
+  <div className="flex flex-wrap items-center gap-2">          {renamingBoardError && (
             <p className="text-sm text-red-600">{renamingBoardError}</p>
           )}
           <AddExpenseDialog boardId={boardId} onAdded={handleChanged} />
@@ -322,7 +320,7 @@ export function ExpenseTable({
           <p className="text-sm text-muted-foreground p-4">
             Nenhuma despesa em {selectedLabel}.
           </p>
-        ) : (
+        ) : (<div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -426,7 +424,7 @@ export function ExpenseTable({
                 <TableCell colSpan={3}></TableCell>
               </TableRow>
             </TableFooter>
-          </Table>
+          </Table> </div>
         )}
       </div>
 

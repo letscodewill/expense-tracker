@@ -25,19 +25,21 @@ export default async function HomePage() {
 
   return (
     <div className="container mx-auto p-4 md:p-8">
-      <header className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold">Painel de Despesas</h1>
-        <div className="flex items-center gap-4">
-          <p className="text-muted-foreground">Bem-vindo, {user.user_metadata?.full_name || user.email}</p>
-          <ReportDialog />
-          <ChangePasswordButton />
-          <form>
-            <Button formAction={signOut} type="submit" variant="outline" size="sm">
-              Sair
-            </Button>
-          </form>
-        </div>
-      </header>
+<header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+  <h1 className="text-2xl sm:text-3xl font-bold">Painel de Despesas</h1>
+  <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+    <p className="text-sm text-muted-foreground truncate max-w-[160px] sm:max-w-none">
+      Bem-vindo, {user.user_metadata?.full_name || user.email}
+    </p>
+    <ReportDialog />
+    <ChangePasswordButton />
+    <form>
+      <Button formAction={signOut} type="submit" variant="outline" size="sm">
+        Sair
+      </Button>
+    </form>
+  </div>
+</header>
       <main>
         <ExpensesDashboard />
       </main>

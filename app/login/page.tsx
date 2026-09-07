@@ -11,9 +11,8 @@ export default async function LoginPage({
   const isRecoverMode = params?.mode === 'recover'
 
   return (
-    <div className="flex justify-center items-center h-screen">
-      <div className="relative p-8 border rounded-lg shadow-md w-96 space-y-4 overflow-hidden">
-        {/* Imagem de fundo, atrás de tudo */}
+<div className="flex justify-center items-center min-h-screen px-4">
+  <div className="relative p-8 border rounded-lg shadow-md w-full max-w-sm space-y-4 overflow-hidden">        {/* Imagem de fundo, atrás de tudo */}
         <img
           src="/bg-canto.png"
           alt=""

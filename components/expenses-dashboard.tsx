@@ -110,33 +110,29 @@ const [fabImportOpen, setFabImportOpen] = useState(false)
 
   return (
     <div className="space-y-10">
-      <div className="flex justify-end items-center gap-2">
-        <MonthYearPicker value={selected} onChange={setSelected} />
-        {!isCurrentMonth(selected) && (
-          <Button variant="outline" size="sm" onClick={handleGoToCurrentMonth}>
-            Mês atual
-          </Button>
-        )}
-
-        <div className="flex justify-end items-center gap-2">
-
-          <ImportInvoiceDialog
-            selected={selected}
-            boards={boardsForMonth}
-            onImported={() => {
-              fetchBoards()
-              setMainPanelRefreshKey((k) => k + 1)
-            }}
-          />
-          <BoardDialog
-            selected={selected}
-            onCreated={() => {
-              fetchBoards()
-              setMainPanelRefreshKey((k) => k + 1)
-            }}
-          />
-        </div>
-      </div>
+<div className="flex flex-wrap justify-end items-center gap-2">
+  <MonthYearPicker value={selected} onChange={setSelected} />
+  {!isCurrentMonth(selected) && (
+    <Button variant="outline" size="sm" onClick={handleGoToCurrentMonth}>
+      Mês atual
+    </Button>
+  )}
+  <ImportInvoiceDialog
+    selected={selected}
+    boards={boardsForMonth}
+    onImported={() => {
+      fetchBoards()
+      setMainPanelRefreshKey((k) => k + 1)
+    }}
+  />
+  <BoardDialog
+    selected={selected}
+    onCreated={() => {
+      fetchBoards()
+      setMainPanelRefreshKey((k) => k + 1)
+    }}
+  />
+</div>
 
       <ExpenseTable
         boardId={null}
