@@ -6,7 +6,7 @@ export async function GET(request: Request) {
   const code = searchParams.get('code')
   
   // Pegue o parâmetro "next", se não existir, mande para a sua rota correta: /auth/update-password
-  const next = searchParams.get('next') ?? '/auth/update-password'
+  const next = searchParams.get('next') ?? '/'
 
   if (code) {
     const supabase = await createClient()
