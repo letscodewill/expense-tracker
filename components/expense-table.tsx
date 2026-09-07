@@ -339,7 +339,7 @@ export function ExpenseTable({
           ) : (
             <div className="overflow-x-auto">
               <Table>
-                <TableHeader>
+                <TableHeader className="hidden sm:table-header-group">
                   <TableRow>
                     <TableHead>Nome</TableHead>
                     <TableHead>Data</TableHead>
@@ -353,8 +353,8 @@ export function ExpenseTable({
                   {expenses.map((expense) => {
                     const instLabel = installmentLabel(expense)
                     return (
-                      <TableRow key={expense.id} className="group">
-                        <TableCell>
+                      <TableRow key={expense.id} className="group flex flex-wrap sm:table-row items-center py-2 sm:py-0">
+                        <TableCell className="sm:table-cell">
                           <span className="flex items-center gap-2">
                             <span>{expense.nome}</span>
                             {instLabel && (
@@ -364,22 +364,23 @@ export function ExpenseTable({
                             )}
                           </span>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="sm:table-cell">
                           {parseISODate(expense.data_pagamento).toLocaleDateString('pt-BR', {
                             timeZone: 'UTC',
                           })}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="sm:table-cell">
                           {expense.valor.toLocaleString('pt-BR', {
                             style: 'currency',
                             currency: 'BRL',
                           })}
                         </TableCell>
-                        <TableCell>
+                        <div className="basis-full h-0 sm:hidden" />
+                        <TableCell className="sm:table-cell">
                           <Badge className={statusColor[expense.status]}>{expense.status}</Badge>
                         </TableCell>
-                        <TableCell>{expense.comentario}</TableCell>
-                        <TableCell>
+                        <TableCell  className="sm:table-cell">{expense.comentario}</TableCell>
+                        <TableCell  className="sm:table-cell">
                           <div className="flex flex-col gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                             <div className="flex gap-1">
                               <Button

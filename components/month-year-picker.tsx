@@ -1,6 +1,5 @@
 'use client'
 
-import { useMemo } from 'react'
 import {
   Select,
   SelectContent,
@@ -32,90 +31,64 @@ export type MonthYear = {
   year: number
 }
 
-type MonthYearItem = {
-  /** Stable id used as the Select value. */
-  value: string
-  /** Human-readable label, e.g. "Janeiro 2026". */
-  label: string
-  /** 0-based month index (0 = January, 11 = December). */
-  month: number
-  /** 4-digit year. */
-  year: number
-}
-
-function makeId(month: number, year: number): string {
-  return `${year}-${String(month + 1).padStart(2, '0')}`
-}
-
-/**
- * Builds items from January of the current year up to (and including)
- * the current month. As months pass, the list grows automatically since
- * it's always derived from `now` at render time.
- */
-function buildItems(now: Date): MonthYearItem[] {
-  const items: MonthYearItem[] = []
-  const startYear = now.getFullYear()
-  const currentMonth = now.getMonth()
-  const monthsAhead = 6
-
-  // Total months from January of startYear up to `monthsAhead` months
-  // past the current month.
-  const totalMonths = currentMonth + monthsAhead + 1
-
-  for (let i = 0; i < totalMonths; i++) {
-    const year = startYear + Math.floor(i / 12)
-    const month = i % 12
-    items.push({
-      month,
-      year,
-      value: makeId(month, year),
-      label: `${MONTH_NAMES_PT[month]} ${year}`,
-    })
-  }
-  return items
-}
-
 export type MonthYearPickerProps = {
   value: MonthYear
   onChange: (next: MonthYear) => void
+  /** Year range shown in the year selector. Defaults to now-2 .. now+5. */
+  yearRange?: { from: number; to: number }
 }
 
-export function MonthYearPicker({ value, onChange }: MonthYearPickerProps) {
-  const items = useMemo(() => buildItems(new Date()), [])
+export function MonthYearPicker({ value, onChange, yearRange }: MonthYearPickerProps) {
+  const now = new Date()
+  const fromYear = yearRange?.from ?? now.getFullYear() - 2
+  const toYear = yearRange?.to ?? now.getFullYear() + 5
 
-  const currentValue = makeId(value.month, value.year)
-  const currentLabel =
-    items.find((i) => i.value === currentValue)?.label ??
-    `${MONTH_NAMES_PT[value.month]} ${value.year}`
+  const years: number[] = []
+  for (let y = fromYear; y <= toYear; y++) years.push(y)
 
   return (
+  <div className="flex flex-wrap items-center gap-2">
+    <Calendar className="size-4 text-muted-foreground shrink-0" />
+
     <Select
-      items={items}
-      value={currentValue}
-      onValueChange={(next: string | null) => {
+      value={String(value.month)}
+      onValueChange={(next) => {
         if (next == null) return
-        const picked = items.find((i) => i.value === next)
-        if (!picked) return
-        onChange({ month: picked.month, year: picked.year })
+        onChange({ month: parseInt(next), year: value.year })
       }}
     >
-      <SelectTrigger className="min-w-[12rem]">
-        <SelectValue placeholder={currentLabel}>
-          <span className="flex items-center gap-2">
-            <Calendar className="size-4 text-muted-foreground" />
-            {currentLabel}
-          </span>
-        </SelectValue>
+      <SelectTrigger className="w-[7.5rem] sm:w-[9rem]">
+        <SelectValue>{MONTH_NAMES_PT[value.month]}</SelectValue>
       </SelectTrigger>
       <SelectContent>
-        {items.map((item) => (
-          <SelectItem key={item.value} value={item.value}>
-            {item.label}
+        {MONTH_NAMES_PT.map((name, index) => (
+          <SelectItem key={index} value={String(index)}>
+            {name}
           </SelectItem>
         ))}
       </SelectContent>
     </Select>
-  )
+
+    <Select
+      value={String(value.year)}
+      onValueChange={(next) => {
+        if (next == null) return
+        onChange({ month: value.month, year: parseInt(next) })
+      }}
+    >
+      <SelectTrigger className="w-[5.5rem] sm:w-[6rem]">
+        <SelectValue>{value.year}</SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        {years.map((year) => (
+          <SelectItem key={year} value={String(year)}>
+            {year}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  </div>
+)
 }
 
 export { MONTH_NAMES_PT }
