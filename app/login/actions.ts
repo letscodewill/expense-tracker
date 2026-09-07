@@ -1,6 +1,6 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
+// import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getBaseUrl } from '@/lib/env/base-url'
@@ -21,7 +21,7 @@ export async function login(formData: FormData) {
     return redirect('/login?message=Não foi possível autenticar o usuário.')
   }
 
-  revalidatePath('/', 'layout')
+  // revalidatePath('/', 'layout')
   redirect('/')
 }
 
@@ -47,7 +47,7 @@ export async function signup(formData: FormData) {
     return redirect('/login?message=Não foi possível cadastrar o usuário.')
   }
 
-  revalidatePath('/', 'layout')
+  // revalidatePath('/', 'layout')
   return redirect('/login?message=Verifique seu email para continuar o processo de cadastro.')
 }
 
@@ -58,9 +58,9 @@ export async function recoverPassword(formData: FormData) {
 
   console.log('DEBUG redirectTo (recover):', `${getBaseUrl()}/auth/callback`)
 
-  const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${getBaseUrl()}/auth/callback`,
-  })
+const { error } = await supabase.auth.resetPasswordForEmail(email, {
+  redirectTo: `${getBaseUrl()}/auth/callback?next=/auth/update-password`,
+})
 
 
   if (error) {
