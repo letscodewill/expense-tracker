@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { AddExpenseDialog } from '@/components/add-expense-dialog'
 import { MONTH_NAMES_PT, type MonthYear } from '@/components/month-year-picker'
-import { Pencil, Check, X } from 'lucide-react'
+import { Pencil, Check, X, ChevronsUpDown } from 'lucide-react'
 
 type Expense = {
   id: number
@@ -61,6 +61,7 @@ export type ExpenseTableProps = {
   onDeleteBoard?: () => void
   onChanged?: () => void
   refreshKey?: number
+  defaultOpen?: boolean
 }
 
 export function ExpenseTable({
@@ -70,8 +71,10 @@ export function ExpenseTable({
   onDeleteBoard,
   onChanged,
   refreshKey,
+  defaultOpen = true,
 }: ExpenseTableProps) {
   const supabase = createClient()
+  const [isOpen, setIsOpen] = useState(defaultOpen)
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState(false)
@@ -104,9 +107,9 @@ export function ExpenseTable({
       if (error) {
         console.error(`Erro ao buscar despesas (tentativa ${attempt + 1}):`, error)
 
-        const MAX_ATTEMPTS = 3 // 1 tentativa inicial + 2 retries automáticos
+        const MAX_ATTEMPTS = 3
         if (attempt + 1 < MAX_ATTEMPTS) {
-          await delay(1000 * (attempt + 1)) // 1s, depois 2s
+          await delay(1000 * (attempt + 1))
           return fetchExpenses(month, year, attempt + 1)
         }
 
@@ -183,7 +186,6 @@ export function ExpenseTable({
     [supabase, handleChanged]
   )
 
-  // Sincroniza o rascunho quando o título muda (ex: refreshKey do dashboard).
   useEffect(() => {
     if (!renamingBoard) setBoardNameDraft(title)
   }, [title, renamingBoard])
@@ -214,8 +216,6 @@ export function ExpenseTable({
 
     setRenamingBoard(false)
     setRenamingBoardError('')
-    // A trigger sync_board_name_to_mirror atualiza o nome do espelho.
-    // bumpMainPanel força o painel principal a refetchar.
     onChanged?.()
   }, [boardId, boardNameDraft, title, supabase, onChanged])
 
@@ -227,9 +227,22 @@ export function ExpenseTable({
   const selectedLabel = MONTH_NAMES_PT[selected.month] + ' de ' + selected.year
 
   return (
-    <div className="space-y-4">
-<div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
-  <div className="flex items-center gap-2 min-w-0">          {boardId && renamingBoard ? (
+    <div className="space-y-4 rounded-xl border p-4 shadow-sm">
+      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8 shrink-0"
+            onClick={() => setIsOpen((open) => !open)}
+            aria-expanded={isOpen}
+            aria-label="Alternar exibição do quadro"
+          >
+            <ChevronsUpDown className="h-4 w-4" />
+            <span className="sr-only">Alternar exibição do quadro</span>
+          </Button>
+
+          {boardId && renamingBoard ? (
             <div className="flex items-center gap-2 min-w-0">
               <Input
                 value={boardNameDraft}
@@ -290,7 +303,9 @@ export function ExpenseTable({
             </>
           )}
         </div>
-  <div className="flex flex-wrap items-center gap-2">          {renamingBoardError && (
+
+        <div className="flex flex-wrap items-center gap-2">
+          {renamingBoardError && (
             <p className="text-sm text-red-600">{renamingBoardError}</p>
           )}
           <AddExpenseDialog boardId={boardId} onAdded={handleChanged} />
@@ -302,131 +317,135 @@ export function ExpenseTable({
         </div>
       </div>
 
-      <div className="rounded-xl border">
-        {loading || isPending ? (
-          <p className="text-sm text-muted-foreground p-4">Carregando...</p>
-        ) : fetchError ? (
-          <div className="p-4 text-center space-y-2">
-            <p className="text-sm text-red-600">Não foi possível carregar as despesas.</p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => fetchExpenses(selected.month, selected.year)}
-            >
-              Tentar novamente
-            </Button>
-          </div>
-        ) : expenses.length === 0 ? (
-          <p className="text-sm text-muted-foreground p-4">
-            Nenhuma despesa em {selectedLabel}.
-          </p>
-        ) : (<div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nome</TableHead>
-                <TableHead>Data</TableHead>
-                <TableHead>Valor</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Comentário</TableHead>
-                <TableHead className="w-[180px]">Ações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {expenses.map((expense) => {
-                const instLabel = installmentLabel(expense)
-                return (
-                  <TableRow key={expense.id} className="group">
+      {isOpen && <div className="space-y-4">
+        <div className="rounded-xl border">
+          {loading || isPending ? (
+            <p className="text-sm text-muted-foreground p-4">Carregando...</p>
+          ) : fetchError ? (
+            <div className="p-4 text-center space-y-2">
+              <p className="text-sm text-red-600">Não foi possível carregar as despesas.</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fetchExpenses(selected.month, selected.year)}
+              >
+                Tentar novamente
+              </Button>
+            </div>
+          ) : expenses.length === 0 ? (
+            <p className="text-sm text-muted-foreground p-4">
+              Nenhuma despesa em {selectedLabel}.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nome</TableHead>
+                    <TableHead>Data</TableHead>
+                    <TableHead>Valor</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Comentário</TableHead>
+                    <TableHead className="w-[180px]">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {expenses.map((expense) => {
+                    const instLabel = installmentLabel(expense)
+                    return (
+                      <TableRow key={expense.id} className="group">
+                        <TableCell>
+                          <span className="flex items-center gap-2">
+                            <span>{expense.nome}</span>
+                            {instLabel && (
+                              <Badge variant="secondary" className="font-normal">
+                                {instLabel}
+                              </Badge>
+                            )}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          {parseISODate(expense.data_pagamento).toLocaleDateString('pt-BR', {
+                            timeZone: 'UTC',
+                          })}
+                        </TableCell>
+                        <TableCell>
+                          {expense.valor.toLocaleString('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL',
+                          })}
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={statusColor[expense.status]}>{expense.status}</Badge>
+                        </TableCell>
+                        <TableCell>{expense.comentario}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                            <div className="flex gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className={expense.status === 'Pago' ? 'text-yellow-600 hover:text-yellow-700' : 'text-green-600 hover:text-green-700'}
+                                onClick={() => handleTogglePaid(expense)}
+                                title={expense.status === 'Pago' ? 'Marcar como pendente' : 'Marcar como pago'}
+                              >
+                                {expense.status === 'Pago' ? 'Desfazer' : 'Pagar'}
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => setEditingExpense(expense)}>
+                                Editar
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-red-600 hover:text-red-700"
+                                onClick={() => handleDeleteExpense(expense)}
+                              >
+                                Excluir
+                              </Button>
+                            </div>
+                            {isInstallmentRow(expense) && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-red-600 hover:text-red-700 justify-start px-2"
+                                onClick={() => handleDeleteEntireSeries(expense)}
+                              >
+                                Excluir série completa
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+                <TableFooter>
+                  <TableRow>
+                    <TableCell colSpan={2}>Total</TableCell>
                     <TableCell>
-                      <span className="flex items-center gap-2">
-                        <span>{expense.nome}</span>
-                        {instLabel && (
-                          <Badge variant="secondary" className="font-normal">
-                            {instLabel}
-                          </Badge>
-                        )}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      {parseISODate(expense.data_pagamento).toLocaleDateString('pt-BR', {
-                        timeZone: 'UTC',
-                      })}
-                    </TableCell>
-                    <TableCell>
-                      {expense.valor.toLocaleString('pt-BR', {
+                      {total.toLocaleString('pt-BR', {
                         style: 'currency',
                         currency: 'BRL',
                       })}
                     </TableCell>
-                    <TableCell>
-                      <Badge className={statusColor[expense.status]}>{expense.status}</Badge>
-                    </TableCell>
-                    <TableCell>{expense.comentario}</TableCell>
-                    <TableCell>
-                      <div className="flex flex-col gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                        <div className="flex gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className={expense.status === 'Pago' ? 'text-yellow-600 hover:text-yellow-700' : 'text-green-600 hover:text-green-700'}
-                            onClick={() => handleTogglePaid(expense)}
-                            title={expense.status === 'Pago' ? 'Marcar como pendente' : 'Marcar como pago'}
-                          >
-                            {expense.status === 'Pago' ? 'Desfazer' : 'Pagar'}
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => setEditingExpense(expense)}>
-                            Editar
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-red-600 hover:text-red-700"
-                            onClick={() => handleDeleteExpense(expense)}
-                          >
-                            Excluir
-                          </Button>
-                        </div>
-                        {isInstallmentRow(expense) && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-red-600 hover:text-red-700 justify-start px-2"
-                            onClick={() => handleDeleteEntireSeries(expense)}
-                          >
-                            Excluir série completa
-                          </Button>
-                        )}
-                      </div>
-                    </TableCell>
+                    <TableCell colSpan={3}></TableCell>
                   </TableRow>
-                )
-              })}
-            </TableBody>
-            <TableFooter>
-              <TableRow>
-                <TableCell colSpan={2}>Total</TableCell>
-                <TableCell>
-                  {total.toLocaleString('pt-BR', {
-                    style: 'currency',
-                    currency: 'BRL',
-                  })}
-                </TableCell>
-                <TableCell colSpan={3}></TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell colSpan={2}>Pendente de pagamento</TableCell>
-                <TableCell>
-                  {pendente.toLocaleString('pt-BR', {
-                    style: 'currency',
-                    currency: 'BRL',
-                  })}
-                </TableCell>
-                <TableCell colSpan={3}></TableCell>
-              </TableRow>
-            </TableFooter>
-          </Table> </div>
-        )}
-      </div>
+                  <TableRow>
+                    <TableCell colSpan={2}>Pendente de pagamento</TableCell>
+                    <TableCell>
+                      {pendente.toLocaleString('pt-BR', {
+                        style: 'currency',
+                        currency: 'BRL',
+                      })}
+                    </TableCell>
+                    <TableCell colSpan={3}></TableCell>
+                  </TableRow>
+                </TableFooter>
+              </Table>
+            </div>
+          )}
+        </div>
+      </div>}
 
       {editingExpense && (
         <AddExpenseDialog
