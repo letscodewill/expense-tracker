@@ -375,7 +375,7 @@ export function ExpenseTable({
                             currency: 'BRL',
                           })}
                         </TableCell>
-                        <div className="basis-full h-0 sm:hidden" />
+                        {/* <div className="basis-full h-0 sm:hidden" /> */}
                         <TableCell className="sm:table-cell">
                           <Badge className={statusColor[expense.status]}>{expense.status}</Badge>
                         </TableCell>

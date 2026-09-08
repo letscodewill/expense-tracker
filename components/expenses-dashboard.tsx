@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { ImportInvoiceDialog } from '@/components/import-invoice-dialog'
 import { FloatingActionMenu } from '@/components/floating-action-menu'
 import { AddExpenseDialog } from '@/components/add-expense-dialog'
+import { SalaryCard } from '@/components/salary-card'
 
 type Board = {
   id: string
@@ -26,6 +27,8 @@ function isCurrentMonth(selected: MonthYear): boolean {
   return selected.month === now.getMonth() && selected.year === now.getFullYear()
 }
 
+
+
 export function ExpensesDashboard() {
   const supabase = createClient()
   const [boards, setBoards] = useState<Board[]>([])
@@ -33,13 +36,36 @@ export function ExpensesDashboard() {
   const [boardsError, setBoardsError] = useState(false)
   const [mainPanelRefreshKey, setMainPanelRefreshKey] = useState(0)
   const [fabNewExpenseOpen, setFabNewExpenseOpen] = useState(false)
-const [fabNewBoardOpen, setFabNewBoardOpen] = useState(false)
-const [fabImportOpen, setFabImportOpen] = useState(false)
+  const [fabNewBoardOpen, setFabNewBoardOpen] = useState(false)
+  const [fabImportOpen, setFabImportOpen] = useState(false)
+
 
   const [selected, setSelected] = useState<MonthYear>(() => {
     const now = new Date()
     return { month: now.getMonth(), year: now.getFullYear() }
   })
+
+  const [mainPanelTotal, setMainPanelTotal] = useState(0)
+
+  const fetchMainPanelTotal = useCallback(async () => {
+    const from = new Date(Date.UTC(selected.year, selected.month, 1)).toISOString().slice(0, 10)
+    const to = new Date(Date.UTC(selected.year, selected.month + 1, 1)).toISOString().slice(0, 10)
+
+    const { data, error } = await supabase
+      .from('expenses')
+      .select('valor')
+      .is('board_id', null)
+      .gte('data_pagamento', from)
+      .lt('data_pagamento', to)
+
+    if (!error && data) {
+      setMainPanelTotal(data.reduce((sum, e) => sum + e.valor, 0))
+    }
+  }, [supabase, selected.month, selected.year])
+
+  useEffect(() => {
+    fetchMainPanelTotal()
+  }, [fetchMainPanelTotal, mainPanelRefreshKey])
 
   const fetchBoards = useCallback(
     async (attempt = 0) => {
@@ -110,35 +136,38 @@ const [fabImportOpen, setFabImportOpen] = useState(false)
 
   return (
     <div className="space-y-10">
-<div className="flex flex-wrap justify-end items-center gap-2">
-  <MonthYearPicker value={selected} onChange={setSelected} />
-  {!isCurrentMonth(selected) && (
-    <Button variant="outline" size="sm" onClick={handleGoToCurrentMonth}>
-      Mês atual
-    </Button>
-  )}
-  <ImportInvoiceDialog
-    selected={selected}
-    boards={boardsForMonth}
-    onImported={() => {
-      fetchBoards()
-      setMainPanelRefreshKey((k) => k + 1)
-    }}
-  />
-  <BoardDialog
-    selected={selected}
-    onCreated={() => {
-      fetchBoards()
-      setMainPanelRefreshKey((k) => k + 1)
-    }}
-  />
-</div>
+      <div className="flex flex-wrap justify-end items-center gap-2">
+        <MonthYearPicker value={selected} onChange={setSelected} />
+        {!isCurrentMonth(selected) && (
+          <Button variant="outline" size="sm" onClick={handleGoToCurrentMonth}>
+            Mês atual
+          </Button>
+        )}
+        <ImportInvoiceDialog
+          selected={selected}
+          boards={boardsForMonth}
+          onImported={() => {
+            fetchBoards()
+            setMainPanelRefreshKey((k) => k + 1)
+          }}
+        />
+        <BoardDialog
+          selected={selected}
+          onCreated={() => {
+            fetchBoards()
+            setMainPanelRefreshKey((k) => k + 1)
+          }}
+        />
+      </div>
+
+      <SalaryCard selected={selected} totalExpenses={mainPanelTotal} />
 
       <ExpenseTable
         boardId={null}
         title="Painel principal"
         selected={selected}
         refreshKey={mainPanelRefreshKey}
+        onChanged={bumpMainPanel}
       />
 
       {boardsError && (
@@ -161,47 +190,47 @@ const [fabImportOpen, setFabImportOpen] = useState(false)
             onChanged={bumpMainPanel}
           />
         ))}
-    <FloatingActionMenu
-  onNewExpense={() => setFabNewExpenseOpen(true)}
-  onNewBoard={() => setFabNewBoardOpen(true)}
-  onImportInvoice={() => setFabImportOpen(true)}
-/>
+      <FloatingActionMenu
+        onNewExpense={() => setFabNewExpenseOpen(true)}
+        onNewBoard={() => setFabNewBoardOpen(true)}
+        onImportInvoice={() => setFabImportOpen(true)}
+      />
 
-{fabNewExpenseOpen && (
-  <AddExpenseDialog
-    boardId={null}
-    forceOpen
-    onAdded={() => {
-      setFabNewExpenseOpen(false)
-      setMainPanelRefreshKey((k) => k + 1)
-    }}
-    onOpenChange={(open) => !open && setFabNewExpenseOpen(false)}
-  />
-)}
+      {fabNewExpenseOpen && (
+        <AddExpenseDialog
+          boardId={null}
+          forceOpen
+          onAdded={() => {
+            setFabNewExpenseOpen(false)
+            setMainPanelRefreshKey((k) => k + 1)
+          }}
+          onOpenChange={(open) => !open && setFabNewExpenseOpen(false)}
+        />
+      )}
 
-<BoardDialog
-  selected={selected}
-  open={fabNewBoardOpen}
-  onOpenChange={setFabNewBoardOpen}
-  hideTrigger
-  onCreated={() => {
-    fetchBoards()
-    setMainPanelRefreshKey((k) => k + 1)
-    setFabNewBoardOpen(false)
-  }}
-/>
+      <BoardDialog
+        selected={selected}
+        open={fabNewBoardOpen}
+        onOpenChange={setFabNewBoardOpen}
+        hideTrigger
+        onCreated={() => {
+          fetchBoards()
+          setMainPanelRefreshKey((k) => k + 1)
+          setFabNewBoardOpen(false)
+        }}
+      />
 
-<ImportInvoiceDialog
-  selected={selected}
-  boards={boardsForMonth}
-  open={fabImportOpen}
-  onOpenChange={setFabImportOpen}
-  hideTrigger
-  onImported={() => {
-    fetchBoards()
-    setMainPanelRefreshKey((k) => k + 1)
-    setFabImportOpen(false)
-  }}
-/></div>
+      <ImportInvoiceDialog
+        selected={selected}
+        boards={boardsForMonth}
+        open={fabImportOpen}
+        onOpenChange={setFabImportOpen}
+        hideTrigger
+        onImported={() => {
+          fetchBoards()
+          setMainPanelRefreshKey((k) => k + 1)
+          setFabImportOpen(false)
+        }}
+      /></div>
   )
 }
