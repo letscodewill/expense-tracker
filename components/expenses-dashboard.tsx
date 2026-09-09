@@ -10,6 +10,9 @@ import { ImportInvoiceDialog } from '@/components/import-invoice-dialog'
 import { FloatingActionMenu } from '@/components/floating-action-menu'
 import { AddExpenseDialog } from '@/components/add-expense-dialog'
 import { SalaryCard } from '@/components/salary-card'
+import Footer from './Footer'
+import { BarChart3 } from 'lucide-react'
+import Link from 'next/link'
 
 type Board = {
   id: string
@@ -143,6 +146,12 @@ export function ExpensesDashboard() {
             Mês atual
           </Button>
         )}
+                  <Link href="/reports">
+                    <Button variant="outline" size="sm">
+                      <BarChart3 className="h-4 w-4 mr-1" />
+                      Relatórios
+                    </Button>
+                  </Link>
         <ImportInvoiceDialog
           selected={selected}
           boards={boardsForMonth}
@@ -231,6 +240,7 @@ export function ExpensesDashboard() {
           setMainPanelRefreshKey((k) => k + 1)
           setFabImportOpen(false)
         }}
-      /></div>
+      />
+      <Footer /></div>
   )
 }

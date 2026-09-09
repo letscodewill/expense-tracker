@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Pencil, Check, X } from 'lucide-react'
 import type { MonthYear } from '@/components/month-year-picker'
+import { VisibilityToggleButton } from './visibility-toggle-button'
+import { MaskedValue } from './masked-value'
 
 export type SalaryCardProps = {
   selected: MonthYear
@@ -118,7 +120,7 @@ export function SalaryCard({ selected, totalExpenses }: SalaryCardProps) {
       ) : (
         <>
           <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">Salário do mês</span>
+            <span className="text-sm text-muted-foreground">Salário do mês <VisibilityToggleButton /></span>
             <Button variant="ghost" size="sm" onClick={startEditing} aria-label="Editar salário">
               <Pencil className="h-4 w-4" />
             </Button>
@@ -131,17 +133,15 @@ export function SalaryCard({ selected, totalExpenses }: SalaryCardProps) {
           ) : (
             <div className="space-y-1">
               <p className="text-lg font-semibold">
-                {salary.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                <MaskedValue value={salary} />
               </p>
               <div className="flex items-center justify-between pt-2 border-t">
                 <span className="text-sm text-muted-foreground">Vai sobrar</span>
                 <span
-                  className={`font-semibold ${
-                    (remaining ?? 0) < 0 ? 'text-red-600' : 'text-green-600'
-                  }`}
+                  className={`font-semibold ${(remaining ?? 0) < 0 ? 'text-red-600' : 'text-green-600'
+                    }`}
                 >
-                  {(remaining ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                </span>
+                  <MaskedValue value={remaining ?? 0} />                </span>
               </div>
             </div>
           )}

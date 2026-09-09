@@ -11,12 +11,12 @@ export default async function LoginPage({
   const isRecoverMode = params?.mode === 'recover'
 
   return (
-<div className="flex justify-center items-center min-h-screen px-4">
-  <div className="relative p-8 border rounded-lg shadow-md w-full max-w-sm space-y-4 overflow-hidden">        {/* Imagem de fundo, atrás de tudo */}
+     <div className="flex justify-center items-center min-h-screen sm:px-4">
+      <div className="relative p-6 sm:p-8 sm:border sm:rounded-lg sm:shadow-md w-full h-screen sm:h-auto sm:max-w-sm sm:space-y-4 overflow-hidden flex flex-col justify-center">
         <img
           src="/bg-canto.png"
           alt=""
-          className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none z-0 opacity-40"
+        className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none z-0 opacity-40"
         />
         <div className="absolute inset-0 bg-white/80 z-0" />
 

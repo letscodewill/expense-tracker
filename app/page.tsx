@@ -7,6 +7,7 @@ import { ReportDialog } from '@/components/report-dialog'
 import { ChangePasswordButton } from '@/components/change-password-button'
 import Link from 'next/link'
 import { BarChart3 } from 'lucide-react'
+import { VisibilityToggleButton } from '@/components/visibility-toggle-button'
 
 export default async function HomePage() {
   const supabase = await createClient()
@@ -33,14 +34,9 @@ export default async function HomePage() {
           <p className="text-sm text-muted-foreground truncate max-w-[160px] sm:max-w-none">
             Bem-vindo, {user.user_metadata?.full_name || user.email}
           </p>
-          <ReportDialog />
-          <Link href="/reports">
-            <Button variant="outline" size="sm">
-              <BarChart3 className="h-4 w-4 mr-1" />
-              Relatórios
-            </Button>
-          </Link>
+
           <ChangePasswordButton />
+          <ReportDialog />
           <form>
             <Button formAction={signOut} type="submit" variant="outline" size="sm">
               Sair

@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { AddExpenseDialog } from '@/components/add-expense-dialog'
 import { MONTH_NAMES_PT, type MonthYear } from '@/components/month-year-picker'
 import { Pencil, Check, X, ChevronsUpDown } from 'lucide-react'
+import { MaskedValue } from '@/components/masked-value'
 
 type Expense = {
   id: number
@@ -370,10 +371,7 @@ export function ExpenseTable({
                           })}
                         </TableCell>
                         <TableCell className="sm:table-cell">
-                          {expense.valor.toLocaleString('pt-BR', {
-                            style: 'currency',
-                            currency: 'BRL',
-                          })}
+                          <MaskedValue value={expense.valor} />
                         </TableCell>
                         {/* <div className="basis-full h-0 sm:hidden" /> */}
                         <TableCell className="sm:table-cell">
@@ -424,20 +422,14 @@ export function ExpenseTable({
                   <TableRow>
                     <TableCell colSpan={2}>Total</TableCell>
                     <TableCell>
-                      {total.toLocaleString('pt-BR', {
-                        style: 'currency',
-                        currency: 'BRL',
-                      })}
+                      <MaskedValue value={total} />
                     </TableCell>
                     <TableCell colSpan={3}></TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell colSpan={2}>Pendente de pagamento</TableCell>
                     <TableCell>
-                      {pendente.toLocaleString('pt-BR', {
-                        style: 'currency',
-                        currency: 'BRL',
-                      })}
+                      <MaskedValue value={pendente} />
                     </TableCell>
                     <TableCell colSpan={3}></TableCell>
                   </TableRow>
