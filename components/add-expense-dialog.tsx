@@ -116,6 +116,7 @@ type AddExpenseDialogProps = {
   expenseToEdit?: Expense | null
   onOpenChange?: (open: boolean) => void
   boardId?: string | null
+  boardName?: string | null
   forceOpen?: boolean
 } & React.ComponentProps<typeof Dialog>
 
@@ -141,6 +142,7 @@ export function AddExpenseDialog({
   expenseToEdit,
   onOpenChange,
   boardId = null,
+  boardName = null,
   forceOpen,
   ...props
 }: AddExpenseDialogProps) {
@@ -197,6 +199,40 @@ useEffect(() => {
     }
   }, [isInstallment, dataPagamento, installments, valor])
 
+  async function getOrCreateBoardForMonth(
+  supabase: ReturnType<typeof createClient>,
+  userId: string | undefined,
+  name: string,
+  month: number,
+  year: number
+): Promise<string> {
+  const { data: existing, error: findError } = await supabase
+    .from('boards')
+    .select('id')
+    .eq('name', name)
+    .eq('month', month)
+    .eq('year', year)
+    .maybeSingle()
+
+  if (findError) {
+    console.error('Erro ao buscar quadro existente:', findError)
+  }
+
+  if (existing) return existing.id
+
+  const { data: created, error: createError } = await supabase
+    .from('boards')
+    .insert({ name, user_id: userId, month, year })
+    .select('id')
+    .single()
+
+  if (createError || !created) {
+    throw createError ?? new Error('Falha ao criar quadro para o mês da parcela.')
+  }
+
+  return created.id
+}
+
   async function handleSubmit() {
     const result = expenseSchema.safeParse(formState)
 
@@ -234,43 +270,71 @@ useEffect(() => {
         return
       }
     } else if (isInstallment) {
-      const n = parseInt(installments, 10)
-      const groupId = crypto.randomUUID()
-      // Convert to integer cents to avoid floating-point drift (e.g. 0.1 + 0.2).
-      const totalCents = Math.round(totalValor * 100)
-      const baseCents = Math.floor(totalCents / n)
-      const remainder = totalCents - baseCents * n
+  const n = parseInt(installments, 10)
+  const groupId = crypto.randomUUID()
+  const totalCents = Math.round(totalValor * 100)
+  const baseCents = Math.floor(totalCents / n)
+  const remainder = totalCents - baseCents * n
 
-      const rows = Array.from({ length: n }, (_, i) => {
-        const cents = baseCents + (i < remainder ? 1 : 0)
-        return {
-          nome: nome.trim(),
-          data_pagamento: addMonthsISO(dataPagamento, i),
-          valor: cents / 100,
-          status,
-          comentario: comentario.trim() || null,
-          user_id: user?.id,
-          board_id: boardId,
-          installment_group_id: groupId,
-          installment_number: i + 1,
-          installment_total: n,
-          valor_total: totalValor,
-        }
-      })
+  try {
+    const rows = []
+    for (let i = 0; i < n; i++) {
+      const cents = baseCents + (i < remainder ? 1 : 0)
+      const dataParcela = addMonthsISO(dataPagamento, i)
 
-      const { error: insertError } = await supabase.from('expenses').insert(rows)
+      let targetBoardId = boardId
 
-      setLoading(false)
-
-      if (insertError) {
-        console.error('Supabase insert (installments) error:', insertError)
-        dispatch({
-          type: 'SET_ERROR',
-          error: 'Não foi possível salvar: ' + (insertError.message || 'erro desconhecido'),
-        })
-        return
+      // A partir da 2ª parcela em diante, se esta despesa pertence a um
+      // quadro (não ao painel principal), busca (ou cria) o quadro com o
+      // MESMO NOME no mês correspondente daquela parcela específica.
+      if (i > 0 && boardId && boardName) {
+        const [y, m] = dataParcela.split('-').map(Number)
+        targetBoardId = await getOrCreateBoardForMonth(
+          supabase,
+          user?.id,
+          boardName,
+          m - 1, // month é 0-based no schema (0 = Janeiro)
+          y
+        )
       }
-    } else {
+
+      rows.push({
+        nome: nome.trim(),
+        data_pagamento: dataParcela,
+        valor: cents / 100,
+        status,
+        comentario: comentario.trim() || null,
+        user_id: user?.id,
+        board_id: targetBoardId,
+        installment_group_id: groupId,
+        installment_number: i + 1,
+        installment_total: n,
+        valor_total: totalValor,
+      })
+    }
+
+    const { error: insertError } = await supabase.from('expenses').insert(rows)
+
+    setLoading(false)
+
+    if (insertError) {
+      console.error('Supabase insert (installments) error:', insertError)
+      dispatch({
+        type: 'SET_ERROR',
+        error: 'Não foi possível salvar: ' + (insertError.message || 'erro desconhecido'),
+      })
+      return
+    }
+  } catch (err) {
+    setLoading(false)
+    console.error('Erro ao processar parcelas:', err)
+    dispatch({
+      type: 'SET_ERROR',
+      error: 'Não foi possível criar os quadros para as parcelas futuras.',
+    })
+    return
+  }
+} else {
       const { error: insertError } = await supabase.from('expenses').insert({
         nome: nome.trim(),
         data_pagamento: dataPagamento,

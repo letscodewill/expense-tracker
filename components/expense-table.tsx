@@ -309,8 +309,13 @@ export function ExpenseTable({
           {renamingBoardError && (
             <p className="text-sm text-red-600">{renamingBoardError}</p>
           )}
-          <AddExpenseDialog boardId={boardId} onAdded={handleChanged} />
-          {onDeleteBoard && (
+<AddExpenseDialog
+  boardId={boardId}
+  boardName={boardId ? title : null}
+  expenseToEdit={editingExpense}
+  onAdded={handleChanged}
+  onOpenChange={(open) => !open && setEditingExpense(null)}
+/>          {onDeleteBoard && (
             <Button variant="destructive" size="sm" onClick={onDeleteBoard}>
               Excluir quadro
             </Button>
