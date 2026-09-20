@@ -22,6 +22,8 @@ type Expense = {
   installment_number: number | null
   installment_total: number | null
   valor_total: number | null
+  recurring_group_id: string | null
+  recurring_number: number | null
 }
 
 const statusColor: Record<Expense['status'], string> = {
@@ -53,6 +55,10 @@ function isInstallmentRow(e: Expense): boolean {
 function installmentLabel(e: Expense): string | null {
   if (!isInstallmentRow(e)) return null
   return '(' + e.installment_number + '/' + e.installment_total + ')'
+}
+
+function isRecurringRow(e: Expense): boolean {
+  return e.recurring_group_id != null && e.recurring_number != null
 }
 
 export type ExpenseTableProps = {
@@ -143,6 +149,27 @@ export function ExpenseTable({
       if (!confirmed) return
 
       const { error } = await supabase.from('expenses').delete().eq('id', expense.id)
+      if (!error) {
+        handleChanged()
+      }
+    },
+    [supabase, handleChanged]
+  )
+
+  const handleDeleteRecurringFromHere = useCallback(
+    async (expense: Expense) => {
+      if (!expense.recurring_group_id || expense.recurring_number == null) return
+      const confirmed = window.confirm(
+        'Excluir esta e as próximas ocorrências desta despesa recorrente? Essa ação não pode ser desfeita.'
+      )
+      if (!confirmed) return
+
+      const { error } = await supabase
+        .from('expenses')
+        .delete()
+        .eq('recurring_group_id', expense.recurring_group_id)
+        .gte('recurring_number', expense.recurring_number)
+
       if (!error) {
         handleChanged()
       }
@@ -309,13 +336,13 @@ export function ExpenseTable({
           {renamingBoardError && (
             <p className="text-sm text-red-600">{renamingBoardError}</p>
           )}
-<AddExpenseDialog
-  boardId={boardId}
-  boardName={boardId ? title : null}
-  expenseToEdit={editingExpense}
-  onAdded={handleChanged}
-  onOpenChange={(open) => !open && setEditingExpense(null)}
-/>          {onDeleteBoard && (
+          <AddExpenseDialog
+            boardId={boardId}
+            boardName={boardId ? title : null}
+            expenseToEdit={editingExpense}
+            onAdded={handleChanged}
+            onOpenChange={(open) => !open && setEditingExpense(null)}
+          />          {onDeleteBoard && (
             <Button variant="destructive" size="sm" onClick={onDeleteBoard}>
               Excluir quadro
             </Button>
@@ -368,6 +395,11 @@ export function ExpenseTable({
                                 {instLabel}
                               </Badge>
                             )}
+                            {isRecurringRow(expense) && (
+                              <Badge variant="secondary" className="font-normal">
+                                Recorrente
+                              </Badge>
+                            )}
                           </span>
                         </TableCell>
                         <TableCell className="sm:table-cell">
@@ -382,8 +414,8 @@ export function ExpenseTable({
                         <TableCell className="sm:table-cell">
                           <Badge className={statusColor[expense.status]}>{expense.status}</Badge>
                         </TableCell>
-                        <TableCell  className="sm:table-cell">{expense.comentario}</TableCell>
-                        <TableCell  className="sm:table-cell">
+                        <TableCell className="sm:table-cell">{expense.comentario}</TableCell>
+                        <TableCell className="sm:table-cell">
                           <div className="flex flex-col gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                             <div className="flex gap-1">
                               <Button
@@ -415,6 +447,16 @@ export function ExpenseTable({
                                 onClick={() => handleDeleteEntireSeries(expense)}
                               >
                                 Excluir série completa
+                              </Button>
+                            )}
+                            {isRecurringRow(expense) && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-red-600 hover:text-red-700 justify-start px-2"
+                                onClick={() => handleDeleteRecurringFromHere(expense)}
+                              >
+                                Excluir esta e as próximas
                               </Button>
                             )}
                           </div>

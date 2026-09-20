@@ -35,12 +35,13 @@ type Expense = {
   installment_number: number | null
   installment_total: number | null
   valor_total: number | null
+  recurring_group_id: string | null
+  recurring_number: number | null
 }
-
-
 
 const MIN_INSTALLMENTS = 2
 const MAX_INSTALLMENTS = 48
+const RECURRING_OPTIONS = ['3', '6', '9', '12']
 
 const MONTH_NAMES_PT = [
   'jan', 'fev', 'mar', 'abr', 'mai', 'jun',
@@ -62,15 +63,25 @@ const expenseSchema = z
       ),
     isInstallment: z.boolean(),
     installments: z.string(),
+    isRecurring: z.boolean(),
+    recurringMonths: z.string(),
   })
   .superRefine((data, ctx) => {
-    if (!data.isInstallment) return
-    const n = parseInt(data.installments, 10)
-    if (!Number.isInteger(n) || n < MIN_INSTALLMENTS || n > MAX_INSTALLMENTS) {
+    if (data.isInstallment) {
+      const n = parseInt(data.installments, 10)
+      if (!Number.isInteger(n) || n < MIN_INSTALLMENTS || n > MAX_INSTALLMENTS) {
+        ctx.addIssue({
+          path: ['installments'],
+          code: z.ZodIssueCode.custom,
+          message: 'Informe um número de parcelas entre ' + MIN_INSTALLMENTS + ' e ' + MAX_INSTALLMENTS + '.',
+        })
+      }
+    }
+    if (data.isRecurring && !RECURRING_OPTIONS.includes(data.recurringMonths)) {
       ctx.addIssue({
-        path: ['installments'],
+        path: ['recurringMonths'],
         code: z.ZodIssueCode.custom,
-        message: 'Informe um número de parcelas entre ' + MIN_INSTALLMENTS + ' e ' + MAX_INSTALLMENTS + '.',
+        message: 'Selecione por quantos meses a despesa deve se repetir.',
       })
     }
   })
@@ -83,6 +94,8 @@ const initialState = {
   comentario: '',
   isInstallment: false,
   installments: '2',
+  isRecurring: false,
+  recurringMonths: '3',
   error: '',
   fieldErrors: {} as Record<string, string>,
 }
@@ -99,9 +112,8 @@ function formReducer(state: State, action: Action): State {
   switch (action.type) {
     case 'SET_FIELD':
       return { ...state, [action.field]: action.value, error: '', fieldErrors: {} }
-    case 'SET_ERROR': {
+    case 'SET_ERROR':
       return { ...state, error: action.error, fieldErrors: {} }
-    }
     case 'RESET':
       return initialState
     case 'SET_FIELD_ERRORS':
@@ -120,10 +132,6 @@ type AddExpenseDialogProps = {
   forceOpen?: boolean
 } & React.ComponentProps<typeof Dialog>
 
-/**
- * Adds `months` calendar months to the given ISO date string, preserving the day
- * (clamped to the last day of the target month if the original day doesn't fit).
- */
 function addMonthsISO(iso: string, months: number): string {
   const [y, m, d] = iso.split('-').map(Number)
   const target = new Date(y, m - 1 + months, 1)
@@ -137,69 +145,7 @@ function formatBRL(n: number): string {
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
-export function AddExpenseDialog({
-  onAdded,
-  expenseToEdit,
-  onOpenChange,
-  boardId = null,
-  boardName = null,
-  forceOpen,
-  ...props
-}: AddExpenseDialogProps) {
-  const [formState, dispatch] = useReducer(formReducer, initialState)
-  const { nome, dataPagamento, valor, status, comentario, isInstallment, installments, error, fieldErrors } =
-    formState
-
-  const supabase = createClient()
-
-  const [open, setOpen] = useState(!!expenseToEdit)
-  const [loading, setLoading] = useState(false)
-
-useEffect(() => {
-  setOpen(!!expenseToEdit || !!forceOpen)
-  if (expenseToEdit) {
-    dispatch({ type: 'SET_FIELD', field: 'nome', value: expenseToEdit.nome })
-    dispatch({ type: 'SET_FIELD', field: 'dataPagamento', value: expenseToEdit.data_pagamento })
-    dispatch({ type: 'SET_FIELD', field: 'valor', value: String(expenseToEdit.valor) })
-    dispatch({ type: 'SET_FIELD', field: 'status', value: expenseToEdit.status })
-    dispatch({ type: 'SET_FIELD', field: 'comentario', value: expenseToEdit.comentario ?? '' })
-  }
-}, [expenseToEdit, forceOpen])
-
-  // Live preview for the installment block.
-  const preview = useMemo(() => {
-    if (!isInstallment || !dataPagamento) return null
-    const n = parseInt(installments, 10)
-    if (!Number.isInteger(n) || n < MIN_INSTALLMENTS || n > MAX_INSTALLMENTS) return null
-    const total = parseFloat(valor.replace(',', '.'))
-    if (isNaN(total) || total <= 0) return null
-
-    // Distribute cents so the sum of installments exactly equals the total.
-    const baseCents = Math.floor((total * 100) / n)
-    const remainder = Math.round(total * 100) - baseCents * n
-    const installmentValues = Array.from({ length: n }, (_, i) =>
-      (baseCents + (i < remainder ? 1 : 0)) / 100
-    )
-    const first = installmentValues[0]
-    const lastDate = addMonthsISO(dataPagamento, n - 1)
-    const lastDateLabel = (() => {
-      const [y, m, d] = lastDate.split('-').map(Number)
-      return d.toString().padStart(2, '0') + ' ' + MONTH_NAMES_PT[m - 1] + ' ' + y
-    })()
-    const firstDateLabel = (() => {
-      const [y, m, d] = dataPagamento.split('-').map(Number)
-      return d.toString().padStart(2, '0') + ' ' + MONTH_NAMES_PT[m - 1] + ' ' + y
-    })()
-    return {
-      perInstallment: first,
-      firstDateLabel,
-      lastDateLabel,
-      total,
-      n,
-    }
-  }, [isInstallment, dataPagamento, installments, valor])
-
-  async function getOrCreateBoardForMonth(
+async function getOrCreateBoardForMonth(
   supabase: ReturnType<typeof createClient>,
   userId: string | undefined,
   name: string,
@@ -227,11 +173,68 @@ useEffect(() => {
     .single()
 
   if (createError || !created) {
-    throw createError ?? new Error('Falha ao criar quadro para o mês da parcela.')
+    throw createError ?? new Error('Falha ao criar quadro para o mês.')
   }
 
   return created.id
 }
+
+export function AddExpenseDialog({
+  onAdded,
+  expenseToEdit,
+  onOpenChange,
+  boardId = null,
+  boardName = null,
+  forceOpen,
+  ...props
+}: AddExpenseDialogProps) {
+  const [formState, dispatch] = useReducer(formReducer, initialState)
+  const {
+    nome, dataPagamento, valor, status, comentario,
+    isInstallment, installments, isRecurring, recurringMonths,
+    error, fieldErrors,
+  } = formState
+
+  const supabase = createClient()
+
+  const [open, setOpen] = useState(!!expenseToEdit)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    setOpen(!!expenseToEdit || !!forceOpen)
+    if (expenseToEdit) {
+      dispatch({ type: 'SET_FIELD', field: 'nome', value: expenseToEdit.nome })
+      dispatch({ type: 'SET_FIELD', field: 'dataPagamento', value: expenseToEdit.data_pagamento })
+      dispatch({ type: 'SET_FIELD', field: 'valor', value: String(expenseToEdit.valor) })
+      dispatch({ type: 'SET_FIELD', field: 'status', value: expenseToEdit.status })
+      dispatch({ type: 'SET_FIELD', field: 'comentario', value: expenseToEdit.comentario ?? '' })
+    }
+  }, [expenseToEdit, forceOpen])
+
+  const preview = useMemo(() => {
+    if (!isInstallment || !dataPagamento) return null
+    const n = parseInt(installments, 10)
+    if (!Number.isInteger(n) || n < MIN_INSTALLMENTS || n > MAX_INSTALLMENTS) return null
+    const total = parseFloat(valor.replace(',', '.'))
+    if (isNaN(total) || total <= 0) return null
+
+    const baseCents = Math.floor((total * 100) / n)
+    const remainder = Math.round(total * 100) - baseCents * n
+    const installmentValues = Array.from({ length: n }, (_, i) =>
+      (baseCents + (i < remainder ? 1 : 0)) / 100
+    )
+    const first = installmentValues[0]
+    const lastDate = addMonthsISO(dataPagamento, n - 1)
+    const lastDateLabel = (() => {
+      const [y, m, d] = lastDate.split('-').map(Number)
+      return d.toString().padStart(2, '0') + ' ' + MONTH_NAMES_PT[m - 1] + ' ' + y
+    })()
+    const firstDateLabel = (() => {
+      const [y, m, d] = dataPagamento.split('-').map(Number)
+      return d.toString().padStart(2, '0') + ' ' + MONTH_NAMES_PT[m - 1] + ' ' + y
+    })()
+    return { perInstallment: first, firstDateLabel, lastDateLabel, total, n }
+  }, [isInstallment, dataPagamento, installments, valor])
 
   async function handleSubmit() {
     const result = expenseSchema.safeParse(formState)
@@ -270,71 +273,108 @@ useEffect(() => {
         return
       }
     } else if (isInstallment) {
-  const n = parseInt(installments, 10)
-  const groupId = crypto.randomUUID()
-  const totalCents = Math.round(totalValor * 100)
-  const baseCents = Math.floor(totalCents / n)
-  const remainder = totalCents - baseCents * n
+      const n = parseInt(installments, 10)
+      const groupId = crypto.randomUUID()
+      const totalCents = Math.round(totalValor * 100)
+      const baseCents = Math.floor(totalCents / n)
+      const remainder = totalCents - baseCents * n
 
-  try {
-    const rows = []
-    for (let i = 0; i < n; i++) {
-      const cents = baseCents + (i < remainder ? 1 : 0)
-      const dataParcela = addMonthsISO(dataPagamento, i)
+      try {
+        const rows = []
+        for (let i = 0; i < n; i++) {
+          const cents = baseCents + (i < remainder ? 1 : 0)
+          const dataParcela = addMonthsISO(dataPagamento, i)
 
-      let targetBoardId = boardId
+          let targetBoardId = boardId
+          if (i > 0 && boardId && boardName) {
+            const [y, m] = dataParcela.split('-').map(Number)
+            targetBoardId = await getOrCreateBoardForMonth(supabase, user?.id, boardName, m - 1, y)
+          }
 
-      // A partir da 2ª parcela em diante, se esta despesa pertence a um
-      // quadro (não ao painel principal), busca (ou cria) o quadro com o
-      // MESMO NOME no mês correspondente daquela parcela específica.
-      if (i > 0 && boardId && boardName) {
-        const [y, m] = dataParcela.split('-').map(Number)
-        targetBoardId = await getOrCreateBoardForMonth(
-          supabase,
-          user?.id,
-          boardName,
-          m - 1, // month é 0-based no schema (0 = Janeiro)
-          y
-        )
+          rows.push({
+            nome: nome.trim(),
+            data_pagamento: dataParcela,
+            valor: cents / 100,
+            status,
+            comentario: comentario.trim() || null,
+            user_id: user?.id,
+            board_id: targetBoardId,
+            installment_group_id: groupId,
+            installment_number: i + 1,
+            installment_total: n,
+            valor_total: totalValor,
+            recurring_group_id: null,
+            recurring_number: null,
+          })
+        }
+
+        const { error: insertError } = await supabase.from('expenses').insert(rows)
+        setLoading(false)
+
+        if (insertError) {
+          console.error('Supabase insert (installments) error:', insertError)
+          dispatch({
+            type: 'SET_ERROR',
+            error: 'Não foi possível salvar: ' + (insertError.message || 'erro desconhecido'),
+          })
+          return
+        }
+      } catch (err) {
+        setLoading(false)
+        console.error('Erro ao processar parcelas:', err)
+        dispatch({ type: 'SET_ERROR', error: 'Não foi possível criar os quadros para as parcelas futuras.' })
+        return
       }
+    } else if (isRecurring) {
+      const n = parseInt(recurringMonths, 10)
+      const groupId = crypto.randomUUID()
 
-      rows.push({
-        nome: nome.trim(),
-        data_pagamento: dataParcela,
-        valor: cents / 100,
-        status,
-        comentario: comentario.trim() || null,
-        user_id: user?.id,
-        board_id: targetBoardId,
-        installment_group_id: groupId,
-        installment_number: i + 1,
-        installment_total: n,
-        valor_total: totalValor,
-      })
-    }
+      try {
+        const rows = []
+        for (let i = 0; i < n; i++) {
+          const dataOcorrencia = addMonthsISO(dataPagamento, i)
 
-    const { error: insertError } = await supabase.from('expenses').insert(rows)
+          let targetBoardId = boardId
+          if (i > 0 && boardId && boardName) {
+            const [y, m] = dataOcorrencia.split('-').map(Number)
+            targetBoardId = await getOrCreateBoardForMonth(supabase, user?.id, boardName, m - 1, y)
+          }
 
-    setLoading(false)
+          rows.push({
+            nome: nome.trim(),
+            data_pagamento: dataOcorrencia,
+            valor: totalValor,
+            status,
+            comentario: comentario.trim() || null,
+            user_id: user?.id,
+            board_id: targetBoardId,
+            installment_group_id: null,
+            installment_number: null,
+            installment_total: null,
+            valor_total: null,
+            recurring_group_id: groupId,
+            recurring_number: i + 1,
+          })
+        }
 
-    if (insertError) {
-      console.error('Supabase insert (installments) error:', insertError)
-      dispatch({
-        type: 'SET_ERROR',
-        error: 'Não foi possível salvar: ' + (insertError.message || 'erro desconhecido'),
-      })
-      return
-    }
-  } catch (err) {
-    setLoading(false)
-    console.error('Erro ao processar parcelas:', err)
-    dispatch({
-      type: 'SET_ERROR',
-      error: 'Não foi possível criar os quadros para as parcelas futuras.',
-    })
-    return
-  }
-} else {
+        const { error: insertError } = await supabase.from('expenses').insert(rows)
+        setLoading(false)
+
+        if (insertError) {
+          console.error('Supabase insert (recurring) error:', insertError)
+          dispatch({
+            type: 'SET_ERROR',
+            error: 'Não foi possível salvar: ' + (insertError.message || 'erro desconhecido'),
+          })
+          return
+        }
+      } catch (err) {
+        setLoading(false)
+        console.error('Erro ao processar recorrência:', err)
+        dispatch({ type: 'SET_ERROR', error: 'Não foi possível criar os quadros para os meses seguintes.' })
+        return
+      }
+    } else {
       const { error: insertError } = await supabase.from('expenses').insert({
         nome: nome.trim(),
         data_pagamento: dataPagamento,
@@ -347,6 +387,8 @@ useEffect(() => {
         installment_number: null,
         installment_total: null,
         valor_total: null,
+        recurring_group_id: null,
+        recurring_number: null,
       })
 
       setLoading(false)
@@ -384,14 +426,10 @@ useEffect(() => {
             <Input
               id="nome"
               value={nome}
-              onChange={(e) =>
-                dispatch({ type: 'SET_FIELD', field: 'nome', value: e.target.value })
-              }
+              onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'nome', value: e.target.value })}
               placeholder="Ex: Cartão Itaú"
             />
-            {fieldErrors.nome && (
-              <p className="text-sm text-red-600">{fieldErrors.nome}</p>
-            )}
+            {fieldErrors.nome && <p className="text-sm text-red-600">{fieldErrors.nome}</p>}
           </div>
 
           <div className="space-y-2">
@@ -400,36 +438,22 @@ useEffect(() => {
               id="data"
               type="date"
               value={dataPagamento}
-              onChange={(e) =>
-                dispatch({
-                  type: 'SET_FIELD',
-                  field: 'dataPagamento',
-                  value: e.target.value,
-                })
-              }
+              onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'dataPagamento', value: e.target.value })}
             />
-            {fieldErrors.dataPagamento && (
-              <p className="text-sm text-red-600">{fieldErrors.dataPagamento}</p>
-            )}
+            {fieldErrors.dataPagamento && <p className="text-sm text-red-600">{fieldErrors.dataPagamento}</p>}
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="valor">
-              {isInstallment ? 'Valor total' : 'Valor'}
-            </Label>
+            <Label htmlFor="valor">{isInstallment ? 'Valor total' : 'Valor'}</Label>
             <Input
               id="valor"
               type="number"
               step="0.01"
               value={valor}
-              onChange={(e) =>
-                dispatch({ type: 'SET_FIELD', field: 'valor', value: e.target.value })
-              }
+              onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'valor', value: e.target.value })}
               placeholder="0,00"
             />
-            {fieldErrors.valor && (
-              <p className="text-sm text-red-600">{fieldErrors.valor}</p>
-            )}
+            {fieldErrors.valor && <p className="text-sm text-red-600">{fieldErrors.valor}</p>}
           </div>
 
           {!expenseToEdit && (
@@ -439,9 +463,10 @@ useEffect(() => {
                 type="checkbox"
                 className="h-4 w-4 rounded border-input"
                 checked={isInstallment}
-                onChange={(e) =>
+                onChange={(e) => {
                   dispatch({ type: 'SET_FIELD', field: 'isInstallment', value: e.target.checked })
-                }
+                  if (e.target.checked) dispatch({ type: 'SET_FIELD', field: 'isRecurring', value: false })
+                }}
               />
               <Label htmlFor="is-installment" className="cursor-pointer">
                 Esta dívida é parcelada
@@ -459,13 +484,9 @@ useEffect(() => {
                 max={MAX_INSTALLMENTS}
                 step="1"
                 value={installments}
-                onChange={(e) =>
-                  dispatch({ type: 'SET_FIELD', field: 'installments', value: e.target.value })
-                }
+                onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'installments', value: e.target.value })}
               />
-              {fieldErrors.installments && (
-                <p className="text-sm text-red-600">{fieldErrors.installments}</p>
-              )}
+              {fieldErrors.installments && <p className="text-sm text-red-600">{fieldErrors.installments}</p>}
               {preview && (
                 <div className="rounded-md border bg-muted/40 p-3 text-sm space-y-1">
                   <p>
@@ -480,13 +501,53 @@ useEffect(() => {
             </div>
           )}
 
+          {!expenseToEdit && (
+            <div className="flex items-center gap-2">
+              <input
+                id="is-recurring"
+                type="checkbox"
+                className="h-4 w-4 rounded border-input"
+                checked={isRecurring}
+                onChange={(e) => {
+                  dispatch({ type: 'SET_FIELD', field: 'isRecurring', value: e.target.checked })
+                  if (e.target.checked) dispatch({ type: 'SET_FIELD', field: 'isInstallment', value: false })
+                }}
+              />
+              <Label htmlFor="is-recurring" className="cursor-pointer">
+                Esta despesa é recorrente (mesmo valor todo mês)
+              </Label>
+            </div>
+          )}
+
+          {!expenseToEdit && isRecurring && (
+            <div className="space-y-2">
+              <Label>Repetir por quantos meses</Label>
+              <Select
+                value={recurringMonths}
+                onValueChange={(v) => dispatch({ type: 'SET_FIELD', field: 'recurringMonths', value: v ?? '3' })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {RECURRING_OPTIONS.map((opt) => (
+                    <SelectItem key={opt} value={opt}>
+                      {opt} meses
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {fieldErrors.recurringMonths && (
+                <p className="text-sm text-red-600">{fieldErrors.recurringMonths}</p>
+              )}
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label>Status</Label>
             <Select
               value={status}
-              onValueChange={(v) =>
-                dispatch({ type: 'SET_FIELD', field: 'status', value: v ?? 'Pendente' })
-              }
+              onValueChange={(v) => dispatch({ type: 'SET_FIELD', field: 'status', value: v ?? 'Pendente' })}
             >
               <SelectTrigger>
                 <SelectValue />
@@ -504,13 +565,7 @@ useEffect(() => {
             <Input
               id="comentario"
               value={comentario}
-              onChange={(e) =>
-                dispatch({
-                  type: 'SET_FIELD',
-                  field: 'comentario',
-                  value: e.target.value,
-                })
-              }
+              onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'comentario', value: e.target.value })}
               placeholder="Opcional"
             />
           </div>

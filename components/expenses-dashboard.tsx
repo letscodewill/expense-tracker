@@ -107,18 +107,22 @@ export function ExpensesDashboard() {
     fetchBoards()
   }, [fetchBoards])
 
-  async function handleDeleteBoard(boardId: string) {
-    const confirmed = window.confirm(
-      'Excluir este quadro? Todas as despesas dele e a despesa espelho no painel principal também serão apagadas.'
-    )
-    if (!confirmed) return
+ async function handleDeleteBoard(boardId: string) {
+  const confirmed = window.confirm(
+    'Excluir este quadro? Todas as despesas serão apagadas (parcelas futuras também), exceto despesas recorrentes, que serão movidas para o painel principal.'
+  )
+  if (!confirmed) return
 
-    const { error } = await supabase.from('boards').delete().eq('id', boardId)
-    if (!error) {
-      fetchBoards()
-      setMainPanelRefreshKey((k) => k + 1)
-    }
+  const { error } = await supabase.rpc('delete_board_cascade', { board_id_input: boardId })
+
+  if (error) {
+    console.error('Erro ao excluir quadro:', error)
+    return
   }
+
+  fetchBoards()
+  setMainPanelRefreshKey((k) => k + 1)
+}
 
   // Called whenever any board's expenses change OR the board itself is renamed.
   // Forces the main panel to refetch (mirror expense updates) AND the boards
