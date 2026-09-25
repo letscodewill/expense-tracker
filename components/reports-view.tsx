@@ -34,6 +34,7 @@ type Expense = {
     valor: number
     status: 'Pendente' | 'Pago' | 'VR/VA'
     comentario: string | null
+    represents_board_id: string | null
 }
 
 type ExpenseStatus = Expense['status']
@@ -98,7 +99,7 @@ export function ReportsView() {
         const { data, error: fetchError } = await supabase
             .from('expenses')
             .select('*')
-            .is('board_id', null)
+            .is('represents_board_id', null)
             .gte('data_pagamento', from)
             .lte('data_pagamento', to)
             .order('data_pagamento', { ascending: true })
