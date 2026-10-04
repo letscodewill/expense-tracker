@@ -1,6 +1,7 @@
 'use client'
 
 import { startTransition, useCallback, useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { MonthYearPicker, type MonthYear } from '@/components/month-year-picker'
 import { ExpenseTable } from '@/components/expense-table'
@@ -32,7 +33,7 @@ function isCurrentMonth(selected: MonthYear): boolean {
 
 
 
-export function ExpensesDashboard() {
+export function ExpensesDashboard({ navigationActions }: { navigationActions?: ReactNode } = {}) {
   const supabase = createClient()
   const [boards, setBoards] = useState<Board[]>([])
   const [loadingBoards, setLoadingBoards] = useState(true)
@@ -143,19 +144,24 @@ export function ExpensesDashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="material-toolbar flex flex-wrap items-center gap-3">
-        <MonthYearPicker value={selected} onChange={setSelected} />
-        {!isCurrentMonth(selected) && (
-          <Button variant="outline" size="sm" onClick={handleGoToCurrentMonth}>
-            Mês atual
-          </Button>
-        )}
-                  <Link href="/reports">
-                    <Button variant="outline" size="sm">
-                      <BarChart3 className="h-4 w-4 mr-1" />
-                      Relatórios
-                    </Button>
-                  </Link>
+      <nav aria-label="Navegação do Dashboard" className="material-toolbar flex flex-wrap items-center gap-2 sm:gap-3">
+        {navigationActions}
+      </nav>
+
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          <MonthYearPicker value={selected} onChange={setSelected} />
+          {!isCurrentMonth(selected) && (
+            <Button variant="outline" size="sm" onClick={handleGoToCurrentMonth}>
+              Mês atual
+            </Button>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 lg:justify-end">
+          <Link href="/reports" className="inline-flex items-center rounded-full border border-border px-4 py-2 text-sm font-medium hover:bg-accent">
+            <BarChart3 className="mr-1 h-4 w-4" />
+            Relatórios
+          </Link>
         <ImportInvoiceDialog
           selected={selected}
           boards={boardsForMonth}
@@ -172,6 +178,7 @@ export function ExpensesDashboard() {
             setMainPanelRefreshKey((k) => k + 1)
           }}
         />
+        </div>
       </div>
 
       <SalaryCard selected={selected} totalExpenses={mainPanelTotal} />

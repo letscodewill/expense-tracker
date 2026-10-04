@@ -30,6 +30,7 @@ function load(file, mocks = {}, globals = {}) {
   }
   vm.runInNewContext(output, {
     module: loadedModule, exports: loadedModule.exports, require: localRequire,
+    URL,
     console: { ...console, error() {}, warn() {} },
     setTimeout: (callback) => { callback(); return 0 },
     ...globals,
@@ -91,7 +92,7 @@ function hooks() {
 function elements(node, predicate) {
   if (Array.isArray(node)) return node.flatMap((child) => elements(child, predicate))
   if (!node || typeof node !== 'object' || !node.props) return []
-  return [...(predicate(node) ? [node] : []), ...elements(node.props.children, predicate)]
+  return [...(predicate(node) ? [node] : []), ...elements(node.props.children, predicate), ...elements(node.props.navigationActions, predicate)]
 }
 function find(tree, predicate) {
   const found = elements(tree, predicate)[0]
@@ -120,6 +121,157 @@ const selected = { month: 9, year: 2026 }
 const expense = { id: 1, nome: 'Mercado', valor: 80, data_pagamento: '2026-10-03', status: 'Pendente', comentario: 'Compra', installment_group_id: null, recurring_group_id: null }
 const failure = { data: null, error: { message: 'offline' } }
 const success = (data) => ({ data, error: null })
+
+test('six themes persist mode and palette together, synchronize tabs and survive blocked storage', () => {
+  for (const blocked of [false, true]) {
+    const values = new Map(), listeners = new Map()
+    const html = { dataset: {}, classList: { toggle: (_, enabled) => { html.dark = enabled } } }
+    const window = {
+      localStorage: { getItem: key => { if (blocked) throw Error('blocked'); return values.get(key) ?? null }, setItem: (key, value) => { if (blocked) throw Error('blocked'); values.set(key, value) } },
+      matchMedia: () => ({ matches: false }),
+      addEventListener: (type, listener) => listeners.set(type, listener),
+      removeEventListener: type => listeners.delete(type),
+      dispatchEvent: event => listeners.get(event.type)?.(event),
+    }
+    const themes = load('lib/themes.ts', {}, { window, document: { documentElement: html }, Event: class { constructor(type) { this.type = type } } })
+    assert.equal(themes.THEMES.filter(theme => theme.mode === 'light').length, 3)
+    assert.equal(themes.THEMES.filter(theme => theme.mode === 'dark').length, 3)
+    let changes = 0
+    const unsubscribe = themes.subscribeTheme(() => changes++)
+    for (const theme of themes.THEMES) {
+      themes.selectTheme(theme.id)
+      assert.equal(themes.getThemeSnapshot(), theme.id)
+      assert.equal(html.dark, theme.mode === 'dark')
+      if (!blocked) assert.equal(values.get(themes.THEME_STORAGE_KEY), theme.id)
+    }
+    assert.equal(changes, 6)
+    themes.selectTheme('invalid')
+    assert.equal(changes, 6)
+    values.set(themes.THEME_STORAGE_KEY, 'mint-light')
+    window.dispatchEvent({ type: 'storage', key: themes.THEME_STORAGE_KEY })
+    assert.equal(themes.getThemeSnapshot(), blocked ? 'lavender-light' : 'mint-light')
+    unsubscribe()
+    assert.equal(listeners.size, 0)
+  }
+})
+
+test('theme bootstrap restores preferences before hydration and rejects unknown stored values', () => {
+  const { THEME_INIT_SCRIPT } = load('lib/themes.ts')
+  for (const [stored, darkSystem, expected] of [['peach-dark', false, 'peach-dark'], ['mint-light', true, 'mint-light'], ['invalid', true, 'lavender-dark'], [null, false, 'lavender-light']]) {
+    const html = { dataset: {}, classList: { toggle: (_, value) => { html.dark = value } } }
+    vm.runInNewContext(THEME_INIT_SCRIPT, { localStorage: { getItem: () => stored }, window: { matchMedia: () => ({ matches: darkSystem }) }, document: { documentElement: html } })
+    assert.equal(html.dataset.theme, expected)
+    assert.equal(html.dark, expected.endsWith('-dark'))
+  }
+})
+
+test('all six palettes keep normal text at WCAG AA contrast', () => {
+  const css = fs.readFileSync(path.join(root, 'app/globals.css'), 'utf8')
+  const variables = block => Object.fromEntries([...block.matchAll(/--([\w-]+):\s*(#[0-9a-f]{6})/g)].map(match => [match[1], match[2]]))
+  const light = variables(css.match(/:root\s*\{([^}]+)\}/)[1])
+  const dark = variables(css.match(/\.dark\s*\{([^}]+)\}/)[1])
+  function luminance(hex) {
+    const rgb = hex.slice(1).match(/../g).map(value => parseInt(value, 16) / 255).map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
+    return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722
+  }
+  const { THEMES } = load('lib/themes.ts')
+  for (const theme of THEMES) {
+    const override = css.match(new RegExp(`:root\\[data-theme="${theme.id}"\\]\\s*\\{([^}]+)\\}`))
+    const colors = { ...light, ...(theme.mode === 'dark' ? dark : {}), ...(override ? variables(override[1]) : {}) }
+    for (const [fg, bg] of [['foreground', 'background'], ['foreground', 'card'], ['muted-foreground', 'background'], ['muted-foreground', 'muted'], ['primary-foreground', 'primary'], ['secondary-foreground', 'secondary'], ['accent-foreground', 'accent']]) {
+      const a = luminance(colors[fg]), b = luminance(colors[bg])
+      const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+      assert.ok(ratio >= 4.5, `${theme.id}: ${fg}/${bg} has contrast ${ratio.toFixed(2)}`)
+    }
+  }
+})
+
+test('dashboard prefers custom signed image and survives image storage failures', async () => {
+  for (const fail of [false, true]) {
+    const user = { id: 'abc', email: 'user@example.com', user_metadata: { profile_photo_path: 'abc/def.jpg', avatar_url: 'https://lh3.googleusercontent.com/photo' } }
+    const { default: HomePage } = load('app/page.tsx', {
+      '@/lib/supabase/server': { createClient: async () => ({ auth: { getUser: async () => ({ data: { user } }) }, storage: { from: () => ({ createSignedUrl: async path => { assert.equal(path, 'abc/def.jpg'); if (fail) throw new Error('unavailable'); return { data: { signedUrl: 'https://storage.example/signed' }, error: null } } }) } }) },
+      '@/app/actions': { signOut() {} }, '@/lib/tickets': load('lib/tickets.ts'), '@/lib/profile-photo': load('lib/profile-photo.ts'),
+      'next/navigation': { redirect: () => { throw new Error('LOGIN') } },
+    })
+    const tree = await HomePage()
+    const profile = find(tree, node => node.type === 'ProfilePhoto')
+    assert.equal(profile.props.photo, fail ? 'https://lh3.googleusercontent.com/photo' : 'https://storage.example/signed')
+    assert.equal(profile.props.custom, true)
+    assert.equal(profile.props.hasGooglePhoto, true)
+  }
+})
+
+test('profile photo button supports upload and image failure falls back to initials', async () => {
+  const runtime = hooks()
+  let refreshed = 0, saved = null
+  const { ProfilePhoto } = load('components/profile-photo.tsx', {
+    react: runtime.react, 'next/image': 'Image', 'next/navigation': { useRouter: () => ({ refresh: () => refreshed++ }) },
+    '@/lib/supabase/client': { createClient: () => ({}) },
+    '@/lib/profile-photo': { validateAvatar: () => null, saveProfilePhoto: async (_, file) => { saved = file; return { error: null } } },
+  })
+  let tree = runtime.render(ProfilePhoto, { name: 'Will Santos', photo: 'https://lh3.googleusercontent.com/photo', custom: true, hasGooglePhoto: true })
+  find(tree, node => node.type === 'Image').props.onError()
+  tree = runtime.render()
+  assert.equal(elements(tree, node => node.type === 'Image').length, 0)
+  find(tree, node => node.type === 'span' && node.props.children === 'WS')
+  const file = { size: 100, type: 'image/png' }
+  find(tree, node => node.props.type === 'file').props.onChange({ target: { files: [file] } })
+  tree = runtime.render()
+  await find(tree, node => node.type === 'Button' && node.props.children === 'Salvar foto').props.onClick()
+  tree = await runtime.flush()
+  assert.equal(saved, file)
+  assert.equal(refreshed, 1)
+  assert.equal(find(tree, node => node.type === 'Dialog').props.open, false)
+})
+
+test('profile photos accept safe Google URLs and only the current users custom path', () => {
+  const { googlePhoto, avatarPath, validateAvatar } = load('lib/profile-photo.ts')
+  assert.equal(googlePhoto({ id: 'a', user_metadata: { picture: 'https://lh3.googleusercontent.com/photo' } }), 'https://lh3.googleusercontent.com/photo')
+  for (const url of ['javascript:alert(1)', 'https://googleusercontent.com.evil.test/a', 'http://lh3.googleusercontent.com/a', 'https://x@lh3.googleusercontent.com/a']) assert.equal(googlePhoto({ id: 'a', user_metadata: { avatar_url: url } }), null)
+  assert.equal(avatarPath({ id: 'abc', user_metadata: { profile_photo_path: 'abc/def.jpg' } }), 'abc/def.jpg')
+  for (const path of ['def/abc.jpg', 'abc/../def.jpg', 'abc/def.svg']) assert.equal(avatarPath({ id: 'abc', user_metadata: { profile_photo_path: path } }), null)
+  assert.equal(validateAvatar({ type: 'image/png', size: 100 }), null)
+  assert.ok(validateAvatar({ type: 'image/svg+xml', size: 100 }))
+  assert.ok(validateAvatar({ type: 'image/png', size: 0 }))
+  assert.ok(validateAvatar({ type: 'image/png', size: 2097153 }))
+})
+
+test('profile photo upload persists preference, preserves Google data, and cleans old file only after success', async () => {
+  const calls = []
+  const user = { id: 'abc', user_metadata: { profile_photo_path: 'abc/def.jpg', avatar_url: 'https://lh3.googleusercontent.com/photo' } }
+  const client = {
+    auth: { getUser: async () => ({ data: { user }, error: null }), updateUser: async data => { calls.push(['update', data]); return { error: null } } },
+    storage: { from: () => ({ upload: async path => { calls.push(['upload', path]); return { error: null } }, remove: async paths => { calls.push(['remove', paths[0]]); return { error: null } } }) },
+  }
+  const { saveProfilePhoto } = load('lib/profile-photo.ts', {}, { crypto: { randomUUID: () => '123' } })
+  assert.equal((await saveProfilePhoto(client, { type: 'image/png', size: 100 })).error, null)
+  assert.equal(calls[0][1], 'abc/123.png')
+  assert.equal(calls[1][1].data.profile_photo_path, 'abc/123.png')
+  assert.equal(calls[1][1].data.avatar_url, undefined)
+  assert.equal(calls[2][1], 'abc/def.jpg')
+  calls.length = 0
+  assert.equal((await saveProfilePhoto(client, null)).error, null)
+  assert.equal(calls[0][1].data.profile_photo_path, null)
+  assert.equal(calls[1][1], 'abc/def.jpg')
+})
+
+test('profile photo failures reject anonymous upload and retain the old preference', async () => {
+  const { saveProfilePhoto } = load('lib/profile-photo.ts', {}, { crypto: { randomUUID: () => '123' } })
+  let uploaded = 0, updated = 0, removed = null
+  const client = {
+    auth: { getUser: async () => ({ data: { user: null }, error: null }), updateUser: async () => { updated++; return { error: {} } } },
+    storage: { from: () => ({ upload: async () => { uploaded++; return { error: null } }, remove: async paths => { removed = paths[0]; return { error: null } } }) },
+  }
+  assert.ok((await saveProfilePhoto(client, { type: 'image/png', size: 100 })).error)
+  assert.equal(uploaded, 0)
+  client.auth.getUser = async () => ({ data: { user: { id: 'abc', user_metadata: { profile_photo_path: 'abc/def.jpg' } } }, error: null })
+  assert.ok((await saveProfilePhoto(client, { type: 'image/png', size: 100 })).error)
+  assert.equal(removed, 'abc/123.png')
+  assert.equal(updated, 1)
+  assert.ok((await saveProfilePhoto(client, { type: 'image/svg+xml', size: 100 })).error)
+  assert.equal(uploaded, 1)
+})
 
 test('paying and undoing a row persists status and refreshes related views', async () => {
   for (const status of ['Pendente', 'Pago']) {
@@ -761,6 +913,7 @@ test('dashboard uses database ticket role and reserves administrator management 
       '@/lib/supabase/server': { createClient: async () => ({ auth: { getUser: async () => ({ data: { user } }) }, rpc: async () => ({ data: user.id !== 'other', error: null }) }) },
       '@/app/actions': { signOut() {} },
       '@/lib/tickets': load('lib/tickets.ts'),
+      '@/lib/profile-photo': load('lib/profile-photo.ts'),
       'next/navigation': { redirect: () => { throw new Error('LOGIN') } },
     })
     const tree = await HomePage()
