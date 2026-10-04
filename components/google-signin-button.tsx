@@ -43,13 +43,13 @@ return (
       <Button
         type="button"
         variant="outline"
-        size="icon"
-        className="h-9 w-9"
+        className="w-full gap-3"
         onClick={handleClick}
         aria-label="Entrar com Google"
         title="Entrar com Google"
       >
         <GoogleIcon />
+        Continuar com Google
       </Button>
     </div>
   )

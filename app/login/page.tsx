@@ -1,9 +1,14 @@
 import { login, recoverPassword } from './actions'
-import Image from 'next/image'
+import Link from 'next/link'
+import { WalletCards } from 'lucide-react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { SignupDialog } from '@/components/signup-dialog'
 import { GoogleSignInButton } from '@/components/google-signin-button'
+import { ThemeSelector } from '@/components/theme-selector'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
 export default async function LoginPage({
   searchParams,
@@ -26,102 +31,45 @@ export default async function LoginPage({
   }
 
   return (
-     <div className="flex justify-center items-center min-h-screen sm:px-4">
-      <div className="relative p-6 sm:p-8 sm:border sm:rounded-lg sm:shadow-md w-full h-screen sm:h-auto sm:max-w-sm sm:space-y-4 overflow-hidden flex flex-col justify-center">
-        <Image
-          src="/bg-canto.png"
-          alt=""
-          fill
-          sizes="(max-width: 639px) 100vw, 384px"
-        className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none z-0 opacity-40"
-        />
-        <div className="absolute inset-0 bg-white/80 z-0" />
+    <main className="relative isolate flex min-h-dvh items-center justify-center bg-background px-4 py-8 text-foreground sm:py-12">
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10" style={{ background: 'radial-gradient(ellipse at 0% 0%, color-mix(in srgb, var(--secondary) 60%, transparent), transparent 55%), radial-gradient(ellipse at 100% 100%, color-mix(in srgb, var(--primary) 8%, transparent), transparent 50%)' }} />
+      <div className="relative z-10 w-full max-w-md space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card p-3 text-card-foreground shadow-sm">
+          <span className="px-1 text-sm font-medium">Aparência</span>
+          <ThemeSelector />
+        </div>
+        <section aria-labelledby="login-heading" className="rounded-3xl border border-border bg-card p-6 text-card-foreground shadow-xl shadow-primary/5 sm:p-8">
+          <header className="mb-8 space-y-3 text-center">
+            <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-secondary text-secondary-foreground"><WalletCards className="size-7" aria-hidden="true" /></div>
+            <p className="text-xs font-medium uppercase tracking-widest text-primary">Painel de Despesas</p>
+            <h1 id="login-heading" className="text-2xl font-medium tracking-tight sm:text-3xl">{isRecoverMode ? 'Recuperar senha' : 'Bem-vindo de volta'}</h1>
+            <p className="text-sm text-muted-foreground">{isRecoverMode ? 'Enviaremos um link para você criar uma nova senha.' : 'Entre na sua conta para acompanhar suas despesas.'}</p>
+          </header>
 
-        {/* Conteúdo, acima da imagem */}
-        <div className="relative z-10 space-y-4">
-          <h2 className="text-2xl font-bold text-center">
-            {isRecoverMode ? 'Recuperar senha' : 'Expense tracker '}
-          </h2>
+          <form className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">E-mail</Label>
+              <Input id="email" name="email" type="email" autoComplete="email" placeholder="voce@exemplo.com" required />
+            </div>
+            {!isRecoverMode && <>
+              <div className="space-y-2">
+                <Label htmlFor="password">Senha</Label>
+                <Input id="password" name="password" type="password" autoComplete="current-password" required />
+              </div>
+              <div className="text-right"><Link href="/login?mode=recover" className="text-sm font-medium text-primary hover:underline">Esqueceu a senha?</Link></div>
+            </>}
+            <Button type="submit" formAction={isRecoverMode ? recoverPassword : login} className="w-full">{isRecoverMode ? 'Enviar link de recuperação' : 'Entrar'}</Button>
+          </form>
 
-        {isRecoverMode ? (
-          <form className="flex flex-col space-y-4">
-            <div className="flex flex-col">
-              <label htmlFor="email">E-mail:</label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                required
-                className="p-2 border rounded"
-              />
-            </div>
-            <button
-              formAction={recoverPassword}
-              className="bg-blue-500 text-white p-2 rounded w-full"
-            >
-              Enviar link de recuperação
-            </button>
-            <div className="text-center">
-              <a
-                href="/login"
-                className="text-sm text-blue-600 hover:underline"
-              >
-                Voltar para o login
-              </a>
-            </div>
-            {params?.message && (
-              <p className="text-center text-sm mt-4 text-red-500">
-                {params.message}
-              </p>
-            )}
-          </form>
-        ) : (
-          <form className="flex flex-col space-y-4">
-            <div className="flex flex-col">
-              <label htmlFor="email">E-mail:</label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                required
-                className="p-2 border border-black rounded"
-              />
-            </div>
-            <div className="flex flex-col">
-              <label htmlFor="password">Senha:</label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                required
-                className="p-2 border border-black rounded"
-              />
-            </div>
-            <div className="text-right">
-              <a
-                href="/login?mode=recover"
-                className="text-sm text-blue-600 hover:underline"
-              >
-                Esqueceu a senha?
-              </a>
-            </div>
-            <button
-              formAction={login}
-              className="bg-blue-500 text-white p-2 rounded w-full "
-            >
-              Entrar
-            </button>
-           <SignupDialog />
-           <GoogleSignInButton />
-            {params?.message && (
-              <p className="text-center text-sm mt-4 text-red-500">
-                {params.message}
-              </p>
-            )}
-          </form>
-        )}
+          {isRecoverMode ? <div className="mt-6 text-center"><Link href="/login" className="text-sm font-medium text-primary hover:underline">Voltar para o login</Link></div>
+            : <div className="mt-6 space-y-4">
+              <div className="flex items-center gap-3 text-xs text-muted-foreground"><span className="h-px flex-1 bg-border" />ou<span className="h-px flex-1 bg-border" /></div>
+              <GoogleSignInButton />
+              <div className="text-center"><SignupDialog /></div>
+            </div>}
+          {params?.message && <p role="alert" className="mt-5 rounded-2xl bg-destructive/10 p-3 text-center text-sm text-destructive">{params.message}</p>}
+        </section>
       </div>
-    </div>
-    </div>
+    </main>
   )
 }

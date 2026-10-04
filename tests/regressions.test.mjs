@@ -122,7 +122,7 @@ const expense = { id: 1, nome: 'Mercado', valor: 80, data_pagamento: '2026-10-03
 const failure = { data: null, error: { message: 'offline' } }
 const success = (data) => ({ data, error: null })
 
-test('six themes persist mode and palette together, synchronize tabs and survive blocked storage', () => {
+test('light and dark themes persist, synchronize tabs and survive blocked storage', () => {
   for (const blocked of [false, true]) {
     const values = new Map(), listeners = new Map()
     const html = { dataset: {}, classList: { toggle: (_, enabled) => { html.dark = enabled } } }
@@ -134,8 +134,8 @@ test('six themes persist mode and palette together, synchronize tabs and survive
       dispatchEvent: event => listeners.get(event.type)?.(event),
     }
     const themes = load('lib/themes.ts', {}, { window, document: { documentElement: html }, Event: class { constructor(type) { this.type = type } } })
-    assert.equal(themes.THEMES.filter(theme => theme.mode === 'light').length, 3)
-    assert.equal(themes.THEMES.filter(theme => theme.mode === 'dark').length, 3)
+    assert.equal(themes.THEMES.filter(theme => theme.mode === 'light').length, 1)
+    assert.equal(themes.THEMES.filter(theme => theme.mode === 'dark').length, 1)
     let changes = 0
     const unsubscribe = themes.subscribeTheme(() => changes++)
     for (const theme of themes.THEMES) {
@@ -144,12 +144,12 @@ test('six themes persist mode and palette together, synchronize tabs and survive
       assert.equal(html.dark, theme.mode === 'dark')
       if (!blocked) assert.equal(values.get(themes.THEME_STORAGE_KEY), theme.id)
     }
-    assert.equal(changes, 6)
+    assert.equal(changes, 2)
     themes.selectTheme('invalid')
-    assert.equal(changes, 6)
+    assert.equal(changes, 2)
     values.set(themes.THEME_STORAGE_KEY, 'mint-light')
     window.dispatchEvent({ type: 'storage', key: themes.THEME_STORAGE_KEY })
-    assert.equal(themes.getThemeSnapshot(), blocked ? 'lavender-light' : 'mint-light')
+    assert.equal(themes.getThemeSnapshot(), 'lavender-light')
     unsubscribe()
     assert.equal(listeners.size, 0)
   }
@@ -157,7 +157,7 @@ test('six themes persist mode and palette together, synchronize tabs and survive
 
 test('theme bootstrap restores preferences before hydration and rejects unknown stored values', () => {
   const { THEME_INIT_SCRIPT } = load('lib/themes.ts')
-  for (const [stored, darkSystem, expected] of [['peach-dark', false, 'peach-dark'], ['mint-light', true, 'mint-light'], ['invalid', true, 'lavender-dark'], [null, false, 'lavender-light']]) {
+  for (const [stored, darkSystem, expected] of [['lavender-dark', false, 'lavender-dark'], ['peach-dark', false, 'lavender-dark'], ['mint-light', true, 'lavender-light'], ['invalid', true, 'lavender-dark'], [null, false, 'lavender-light']]) {
     const html = { dataset: {}, classList: { toggle: (_, value) => { html.dark = value } } }
     vm.runInNewContext(THEME_INIT_SCRIPT, { localStorage: { getItem: () => stored }, window: { matchMedia: () => ({ matches: darkSystem }) }, document: { documentElement: html } })
     assert.equal(html.dataset.theme, expected)
@@ -165,7 +165,7 @@ test('theme bootstrap restores preferences before hydration and rejects unknown 
   }
 })
 
-test('all six palettes keep normal text at WCAG AA contrast', () => {
+test('light and dark palettes keep normal text at WCAG AA contrast', () => {
   const css = fs.readFileSync(path.join(root, 'app/globals.css'), 'utf8')
   const variables = block => Object.fromEntries([...block.matchAll(/--([\w-]+):\s*(#[0-9a-f]{6})/g)].map(match => [match[1], match[2]]))
   const light = variables(css.match(/:root\s*\{([^}]+)\}/)[1])
@@ -799,6 +799,25 @@ test('login skips the form for authenticated visitors and keeps password recover
   const recovery = await LoginPage({ searchParams: Promise.resolve({ mode: 'recover' }) })
   find(recovery, (node) => node.props.children === 'Recuperar senha')
   assert.equal(checks, 1)
+})
+
+test('Material login and recovery preserve field names, submission actions and account access', async () => {
+  const login = () => {}, recoverPassword = () => {}
+  const { default: LoginPage } = load('app/login/page.tsx', {
+    './actions': { login, recoverPassword }, 'next/image': 'Image',
+    'next/navigation': { redirect: () => { throw new Error('unexpected redirect') } },
+    '@/lib/supabase/server': { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: null }, error: null }) } }) },
+  })
+  for (const mode of [undefined, 'recover']) {
+    const tree = await LoginPage({ searchParams: Promise.resolve({ mode, message: 'Mensagem de autenticação' }) })
+    find(tree, node => node.type === 'ThemeSelector')
+    find(tree, node => node.type === 'Input' && node.props.name === 'email' && node.props.required)
+    assert.equal(find(tree, node => node.type === 'Button' && node.props.type === 'submit').props.formAction, mode ? recoverPassword : login)
+    assert.equal(elements(tree, node => node.type === 'Input' && node.props.name === 'password').length, mode ? 0 : 1)
+    assert.equal(elements(tree, node => node.type === 'GoogleSignInButton').length, mode ? 0 : 1)
+    assert.equal(elements(tree, node => node.type === 'SignupDialog').length, mode ? 0 : 1)
+    find(tree, node => node.props.role === 'alert' && node.props.children === 'Mensagem de autenticação')
+  }
 })
 
 test('ticket master identity requires a verified matching email, never user metadata', () => {
