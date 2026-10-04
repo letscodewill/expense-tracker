@@ -220,6 +220,7 @@ export function ExpensesDashboard({ navigationActions }: { navigationActions?: R
 
       {fabNewExpenseOpen && (
         <AddExpenseDialog
+          selected={selected}
           boardId={null}
           forceOpen
           onAdded={() => {

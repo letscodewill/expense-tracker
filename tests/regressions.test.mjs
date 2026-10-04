@@ -454,6 +454,38 @@ test('expense dialog opens populated, switches editing target, closes and opens 
   assert.equal(find(tree, (node) => node.props.id === 'nome').props.value, '')
 })
 
+test('recurring expenses start at the selected month, preserve days and route each future board', async () => {
+  for (const [period, input, dates] of [
+    [{ month: 10, year: 2026 }, '2026-10-05', ['2026-11-05', '2026-12-05', '2027-01-05']],
+    [{ month: 1, year: 2027 }, '2026-12-31', ['2027-02-28', '2027-03-28', '2027-04-28']],
+    [{ month: 10, year: 2026 }, '2026-12-15', ['2026-12-15', '2027-01-15', '2027-02-15']],
+  ]) {
+    const runtime = hooks(), db = database({ boards: Array(3).fill(success({ id: 'future-board' })) })
+    const { AddExpenseDialog } = load('components/add-expense-dialog.tsx', {
+      react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client },
+      '@/lib/supabase/safe-get-user': { safeGetUser: async () => ({ id: 'test-user' }) },
+    }, { crypto: { randomUUID: () => 'recurring-group' } })
+    let tree = runtime.render(AddExpenseDialog, { selected: period, boardId: 'selected-board', boardName: 'Cartão', forceOpen: true, onAdded() {} })
+    for (const [id, value] of [['nome', 'Assinatura'], ['valor', '80'], ['data', input]]) {
+      find(tree, node => node.props.id === id).props.onChange({ target: { value } })
+      tree = runtime.render()
+    }
+    find(tree, node => node.props.id === 'is-recurring').props.onChange({ target: { checked: true } })
+    tree = runtime.render()
+    await find(tree, node => node.type === 'Button' && node.props.children === 'Salvar').props.onClick()
+    const rows = db.requests.find(request => request.table === 'expenses').calls.find(([method]) => method === 'insert')[1]
+    assert.deepEqual(Array.from(rows, row => row.data_pagamento), dates)
+    assert.equal(rows[0].board_id, input > '2026-11-30' && period.year === 2026 ? 'future-board' : 'selected-board')
+    assert.ok(rows.every(row => row.recurring_group_id === 'recurring-group' && row.valor === 80))
+    const lookups = db.requests.filter(request => request.table === 'boards')
+    for (const [index, request] of lookups.entries()) {
+      const date = dates[index + (rows[0].board_id === 'selected-board' ? 1 : 0)]
+      assert.equal(request.calls.find(([method, column]) => method === 'eq' && column === 'month')[2], Number(date.slice(5, 7)) - 1)
+      assert.equal(request.calls.find(([method, column]) => method === 'eq' && column === 'year')[2], Number(date.slice(0, 4)))
+    }
+  }
+})
+
 test('visibility restores storage, toggles, notifies, synchronizes tabs and unsubscribes', () => {
   const target = new EventTarget(), data = new Map([['expense-tracker:values-hidden', 'true']])
   const window = Object.assign(target, { localStorage: { getItem: (key) => data.get(key) ?? null, setItem: (key, value) => data.set(key, value) } })

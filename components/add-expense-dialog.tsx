@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Plus } from 'lucide-react'
+import type { MonthYear } from '@/components/month-year-picker'
 
 type Expense = {
   id: number
@@ -129,6 +130,7 @@ type AddExpenseDialogProps = {
   onOpenChange?: (open: boolean) => void
   boardId?: string | null
   boardName?: string | null
+  selected?: MonthYear
   forceOpen?: boolean
 } & React.ComponentProps<typeof Dialog>
 
@@ -185,6 +187,7 @@ export function AddExpenseDialog({
   onOpenChange,
   boardId = null,
   boardName = null,
+  selected,
   forceOpen,
   ...props
 }: AddExpenseDialogProps) {
@@ -333,14 +336,23 @@ export function AddExpenseDialog({
     } else if (isRecurring) {
       const n = parseInt(recurringMonths, 10)
       const groupId = crypto.randomUUID()
+      // A stale payment date must never start a new series before the selected period.
+      const selectedStart = selected
+        ? new Date(Date.UTC(selected.year, selected.month, 1)).toISOString().slice(0, 10)
+        : null
+      let recurringStart = dataPagamento
+      if (selectedStart && recurringStart < selectedStart) {
+        const [year, month] = recurringStart.split('-').map(Number)
+        recurringStart = addMonthsISO(recurringStart, (selected!.year - year) * 12 + selected!.month - (month - 1))
+      }
 
       try {
         const rows = []
         for (let i = 0; i < n; i++) {
-          const dataOcorrencia = addMonthsISO(dataPagamento, i)
+          const dataOcorrencia = addMonthsISO(recurringStart, i)
 
           let targetBoardId = boardId
-          if (i > 0 && boardId && boardName) {
+          if (boardId && boardName && (i > 0 || (selected && dataOcorrencia.slice(0, 7) !== selectedStart!.slice(0, 7)))) {
             const [y, m] = dataOcorrencia.split('-').map(Number)
             targetBoardId = await getOrCreateBoardForMonth(supabase, user?.id, boardName, m - 1, y)
           }
@@ -442,10 +454,14 @@ export function AddExpenseDialog({
             <Input
               id="data"
               type="date"
+              min={!expenseToEdit && isRecurring && selected ? new Date(Date.UTC(selected.year, selected.month, 1)).toISOString().slice(0, 10) : undefined}
               value={dataPagamento}
               onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'dataPagamento', value: e.target.value })}
             />
             {fieldErrors.dataPagamento && <p className="text-sm text-red-600">{fieldErrors.dataPagamento}</p>}
+            {!expenseToEdit && isRecurring && selected && (
+              <p className="text-sm text-muted-foreground">A recorrência começa no mês selecionado ou depois. Uma data anterior será ajustada para o mês selecionado, mantendo o dia quando possível.</p>
+            )}
           </div>
 
           <div className="space-y-2">

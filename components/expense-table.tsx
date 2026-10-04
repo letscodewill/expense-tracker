@@ -342,6 +342,7 @@ export function ExpenseTable({
             <p className="text-sm text-red-600">{renamingBoardError}</p>
           )}
           <AddExpenseDialog
+            selected={selected}
             boardId={boardId}
             boardName={boardId ? title : null}
             expenseToEdit={editingExpense}
@@ -489,6 +490,7 @@ export function ExpenseTable({
 
       {editingExpense && (
         <AddExpenseDialog
+          selected={selected}
           boardId={boardId}
           expenseToEdit={editingExpense}
           onAdded={handleChanged}
