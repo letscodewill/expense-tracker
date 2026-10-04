@@ -39,7 +39,7 @@ export async function POST(request: Request) {
         text: { format: { type: 'json_schema', name: 'invoice', strict: true, schema: INVOICE_SCHEMA } },
       }),
     })
-    if (!response.ok) return Response.json({ error: response.status === 429 ? 'A IA atingiu um limite de uso ou saldo. Tente mais tarde ou use a leitura padrão.' : 'A IA não conseguiu analisar este PDF. PDFs protegidos precisam ser desbloqueados antes do envio.' }, { status: 502, headers })
+    if (!response.ok) return Response.json({ error: response.status === 429 ? 'A IA atingiu um limite de uso ou saldo. Tente mais tarde ou use a leitura padrão.' : 'A IA não conseguiu analisar este PDF. Tente novamente ou use a leitura padrão.' }, { status: 502, headers })
     const result = await response.json()
     if (result.status !== 'completed') throw new Error('Análise incompleta.')
     const text = result.output?.flatMap((item: { content?: { type: string; text?: string }[] }) => item.content ?? [])

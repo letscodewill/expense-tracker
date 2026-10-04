@@ -545,7 +545,7 @@ test('fifth business day excludes weekends for every possible starting weekday',
   }
 })
 
-function invoiceRuntime({ responses = {}, extract, selectedMonth = { month: 10, year: 2026 } } = {}) {
+function invoiceRuntime({ responses = {}, extract, prepare, fetch: fetchMock, selectedMonth = { month: 10, year: 2026 } } = {}) {
   const runtime = hooks(), db = database(responses), imported = []
   const pdf = load('lib/pdf-text-extract.ts', { 'pdfjs-dist': { version: 'test', GlobalWorkerOptions: {} } })
   const { ImportInvoiceDialog } = load('components/import-invoice-dialog.tsx', {
@@ -558,8 +558,9 @@ function invoiceRuntime({ responses = {}, extract, selectedMonth = { month: 10, 
     '@/lib/pdf-text-extract': {
       PdfPasswordRequiredError: pdf.PdfPasswordRequiredError,
       extractPdfText: extract ?? (async () => '03/10 Mercado 80,00\n20/09 Restaurante 50,00'),
+      preparePdfForAI: prepare ?? (async (file) => file),
     },
-  })
+  }, { FormData, fetch: fetchMock })
   const props = { selected: selectedMonth, boards: [{ id: 'existing-board', name: 'Cartão' }], onImported: (period) => imported.push(period) }
   let tree = runtime.render(ImportInvoiceDialog, props)
   tree.props.onOpenChange(true)
@@ -1102,4 +1103,70 @@ test('spreadsheet mapping flows into invoice review and saves only on confirmati
   assert.equal(payload[0].nome, 'Mercado')
   assert.equal(payload[0].valor, 123.45)
   assert.ok(payload.every((row) => row.data_pagamento === '2026-11-06'))
+})
+
+test('protected AI invoices ask for password, reject incorrect passwords locally and upload only the prepared PDF', async () => {
+  let invoice, uploads = 0
+  const prepared = new File(['%PDF-1.7 unlocked'], 'fatura.pdf', { type: 'application/pdf' })
+  invoice = invoiceRuntime({
+    prepare: async (_file, password) => {
+      if (password !== 'synthetic-password') throw new invoice.PdfPasswordRequiredError(password ? 'Senha incorreta.' : 'Senha necessária.')
+      return prepared
+    },
+    fetch: async (_url, options) => {
+      uploads++
+      assert.equal(options.body.get('password'), null)
+      assert.equal(await options.body.get('file').text(), '%PDF-1.7 unlocked')
+      return Response.json({ rows: [{ nome: 'Mercado', valor: 80 }], warnings: [] })
+    },
+  })
+  let tree = await invoice.runtime.flush()
+  find(tree, (node) => node.type === 'input' && node.props.type === 'checkbox').props.onChange({ target: { checked: true } })
+  tree = await invoice.upload(new File(['%PDF-1.7 encrypted'], 'fatura.pdf', { type: 'application/pdf' }))
+  assert.equal(uploads, 0)
+  find(tree, (node) => node.props.id === 'pdf-password').props.onChange({ target: { value: 'incorrect' } })
+  tree = await invoice.runtime.flush()
+  await find(tree, (node) => node.props.children === 'Confirmar').props.onClick()
+  tree = await invoice.runtime.flush()
+  assert.equal(uploads, 0)
+  assert.equal(find(tree, (node) => node.props.id === 'pdf-password').props.value, '')
+  find(tree, (node) => node.props.id === 'pdf-password').props.onChange({ target: { value: 'synthetic-password' } })
+  tree = await invoice.runtime.flush()
+  await find(tree, (node) => node.props.children === 'Confirmar').props.onClick()
+  tree = await invoice.runtime.flush()
+  assert.equal(uploads, 1)
+  assert.equal(invoice.db.requests.length, 0)
+  assert.equal(elements(tree, (node) => node.props.id === 'pdf-password').length, 0)
+  find(tree, (node) => node.props.children === 'Escolher outro arquivo').props.onClick()
+  tree = await invoice.runtime.flush()
+  find(tree, (node) => node.type === 'input' && node.props.type === 'checkbox').props.onChange({ target: { checked: true } })
+  tree = await invoice.runtime.flush()
+  await invoice.upload(new File(['%PDF-1.7 encrypted'], 'fatura.pdf', { type: 'application/pdf' }))
+  tree = await invoice.runtime.flush()
+  assert.equal(find(tree, (node) => node.props.id === 'pdf-password').props.value, '')
+})
+
+test('real encrypted PDFs are opened locally, rendered without encryption and released after preparation', async () => {
+  const { jsPDF } = nodeRequire('jspdf')
+  const source = new jsPDF({ encryption: { userPassword: 'fixture-password', ownerPassword: 'fixture-owner' } })
+  source.text('03/10 Mercado 80,00', 20, 20)
+  source.addPage(); source.text('20/10 Farmacia 25,00', 20, 20)
+  const file = new File([source.output('arraybuffer')], 'protegido.pdf', { type: 'application/pdf' })
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  const canvas = nodeRequire('@napi-rs/canvas')
+  const { preparePdfForAI, PdfPasswordRequiredError } = load('lib/pdf-text-extract.ts', { 'pdfjs-dist': pdfjs }, { File, document: { createElement: () => canvas.createCanvas(1, 1) } })
+  pdfjs.GlobalWorkerOptions.workerSrc = (await import('node:url')).pathToFileURL(nodeRequire.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs')).href
+  await assert.rejects(() => preparePdfForAI(file), (error) => error instanceof PdfPasswordRequiredError)
+  await assert.rejects(() => preparePdfForAI(file, 'wrong'), /Senha incorreta/)
+  const prepared = await preparePdfForAI(file, 'fixture-password')
+  assert.ok(prepared.size > 0 && prepared.size < 3 * 1024 * 1024)
+  const reopened = await pdfjs.getDocument({ data: await prepared.arrayBuffer() }).promise
+  try {
+    assert.equal(reopened.numPages, 2)
+    assert.equal((await reopened.getMetadata()).info.EncryptFilterName, null)
+  } finally { await reopened.loadingTask.destroy() }
+  const plain = new jsPDF()
+  plain.text('Compra', 20, 20)
+  const plainFile = new File([plain.output('arraybuffer')], 'normal.pdf', { type: 'application/pdf' })
+  assert.equal(await preparePdfForAI(plainFile), plainFile)
 })

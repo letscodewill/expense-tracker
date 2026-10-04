@@ -22,7 +22,9 @@ INVOICE_AI_ALLOWED_EMAILS é uma lista de e-mails separados por vírgula. Sem ch
 
 Há proteção local de dez tentativas por hora por usuário e uma análise simultânea por usuário. **Esse contador não é compartilhado entre instâncias serverless e reinicia junto com o processo. Não é um limite financeiro.** Para liberação ampla, implementar cotas persistentes por usuário e monitoramento de consumo, além do limite do projeto OpenAI.
 
-A opção de IA informa o envio à OpenAI antes do usuário escolher o arquivo. O PDF é enviado em uma requisição autenticada com store:false, sem ser salvo em Storage ou Files API. Isso não equivale a garantia de retenção zero pelo provedor; aplica-se a política de dados da API. Não envie PDFs com senha: use a leitura padrão com senha local ou exporte uma cópia desbloqueada.
+A opção de IA informa o envio à OpenAI antes do usuário escolher o arquivo. O PDF é aberto primeiro no navegador. Se estiver protegido, o sistema pede a senha e não envia nada até conseguir abri-lo. Senhas incorretas podem ser corrigidas. A senha não é enviada ao servidor nem à OpenAI e é limpa após a leitura ou ao fechar. Para PDFs criptografados, o navegador cria uma cópia temporária sem senha a partir das páginas renderizadas. Essa conversão pode aumentar o tamanho e consumir mais tokens de imagem; confira os resultados antes de salvar. A leitura por IA aceita até 20 páginas e 3 MB depois da preparação.
+
+O PDF é enviado em uma requisição autenticada com store:false, sem ser salvo em Storage ou Files API. Isso não equivale a garantia de retenção zero pelo provedor; aplica-se a política de dados da API. O worker PDF.js é servido pelo próprio site e copiado da versão instalada durante npm run dev/build, sem carregar código de um CDN externo.
 
 A IA retorna dados estruturados, que são validados no servidor. Não salva nada no banco; gravação acontece apenas ao confirmar na tela de revisão, com a sessão do próprio usuário e as políticas existentes.
 

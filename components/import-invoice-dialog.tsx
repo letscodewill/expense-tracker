@@ -1,5 +1,5 @@
 'use client'
-import { extractPdfText, PdfPasswordRequiredError } from '@/lib/pdf-text-extract'
+import { extractPdfText, preparePdfForAI, PdfPasswordRequiredError } from '@/lib/pdf-text-extract'
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { parseInvoiceText, type ParsedExpense } from '@/lib/invoice-parser'
@@ -101,8 +101,12 @@ export function ImportInvoiceDialog({
       if (!/\.pdf$/i.test(file.name)) throw new Error('Selecione um arquivo PDF, Excel (.xlsx) ou CSV.')
       let parsed: InvoiceRow[]
       if (useAI) {
+        const prepared = await preparePdfForAI(file, password)
+        setPdfPassword('')
+        setNeedsPassword(false)
+        setPendingFile(null)
         const form = new FormData()
-        form.append('file', file)
+        form.append('file', prepared)
         const response = await fetch('/api/invoices/analyze', { method: 'POST', body: form })
         const result = await response.json()
         if (!response.ok) throw new Error(result.error || 'Não foi possível analisar a fatura.')
@@ -126,10 +130,14 @@ export function ImportInvoiceDialog({
       setRows(parsed.map(({ nome, valor }) => ({ nome, valor })))
       setStep('review')
       setNeedsPassword(false)
+      setPdfPassword('')
+      setPendingFile(null)
     } catch (err) {
       if (err instanceof PdfPasswordRequiredError) {
         setNeedsPassword(true)
         setPendingFile(file)
+        setPdfPassword('')
+        if (password) setError(err.message)
       } else {
         setError(err instanceof Error ? err.message : 'Não foi possível ler este arquivo. Verifique o formato e tente novamente.')
       }
@@ -141,6 +149,9 @@ export function ImportInvoiceDialog({
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
+    setNeedsPassword(false)
+    setPdfPassword('')
+    setPendingFile(null)
     await processFile(file)
     e.target.value = ''
   }
@@ -165,7 +176,7 @@ export function ImportInvoiceDialog({
   }
 
   async function handleSubmitPassword() {
-    if (!pendingFile) return
+    if (!pendingFile || !pdfPassword || parsing) return
     await processFile(pendingFile, pdfPassword)
   }
 
@@ -320,21 +331,24 @@ export function ImportInvoiceDialog({
             <p className="text-sm text-muted-foreground">Até 3 MB e 500 despesas por importação. No Google Planilhas, use Arquivo → Fazer download → Microsoft Excel ou CSV.</p>
             <label className="flex items-start gap-3 rounded-2xl border p-4 text-sm">
               <input type="checkbox" checked={useAI} disabled={parsing || needsPassword} onChange={(event) => setUseAI(event.target.checked)} className="mt-1" />
-              <span><span className="font-medium">Ler PDF com inteligência artificial</span><span className="mt-1 block text-muted-foreground">Ao selecionar esta opção e enviar um PDF, o arquivo será enviado à OpenAI para análise. A disponibilidade depende da configuração do sistema. Planilhas são lidas sem IA. Para PDFs com senha, use a leitura padrão ou envie uma cópia desbloqueada.</span></span>
+              <span><span className="font-medium">Ler PDF com inteligência artificial</span><span className="mt-1 block text-muted-foreground">Ao selecionar esta opção e enviar um PDF, o conteúdo será enviado à OpenAI para análise. PDFs com senha são abertos no navegador antes do envio; a senha não é enviada. Até 20 páginas. A disponibilidade depende da configuração do sistema. Planilhas são lidas sem IA.</span></span>
             </label>
             {parsing && <p role="status" className="text-sm text-muted-foreground">{useAI ? 'Analisando o arquivo...' : 'Lendo o arquivo...'}</p>}
 
             {needsPassword && (
               <div className="space-y-2 pt-2 border-t">
                 <Label htmlFor="pdf-password">Este PDF está protegido. Digite a senha:</Label>
+                <p className="text-sm text-muted-foreground">A senha é usada apenas para abrir o PDF no seu navegador. Nada é importado antes da revisão.</p>
                 <div className="flex gap-2">
                   <Input
                     id="pdf-password"
                     type="password"
+                    autoComplete="off"
+                    disabled={parsing}
                     value={pdfPassword}
                     onChange={(e) => setPdfPassword(e.target.value)}
                   />
-                  <Button onClick={handleSubmitPassword} disabled={parsing}>
+                  <Button onClick={handleSubmitPassword} disabled={parsing || !pdfPassword}>
                     Confirmar
                   </Button>
                 </div>
