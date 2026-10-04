@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useTransition } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -346,6 +346,15 @@ export function ExpenseTable({
         </div>
       </div>
 
+      <div className="flex flex-wrap gap-x-8 gap-y-3 rounded-2xl bg-secondary/50 px-4 py-3" aria-label="Resumo das despesas">
+        {loading || isPending ? <p className="text-sm text-muted-foreground">Carregando totais...</p>
+          : fetchError ? <p className="text-sm text-destructive">Totais indisponíveis. Expanda o quadro para tentar novamente.</p>
+          : <>
+            <div><p className="text-xs text-muted-foreground">Total</p><p className="text-lg font-medium tabular-nums sm:text-xl"><MaskedValue value={total} /></p></div>
+            <div><p className="text-xs text-muted-foreground">Restante a pagar</p><p className="text-lg font-medium tabular-nums text-primary sm:text-xl"><MaskedValue value={pendente} /></p></div>
+          </>}
+      </div>
+
       {isOpen && <div className="space-y-4">
         <div className="material-table rounded-2xl border">
           {loading || isPending ? (
@@ -461,22 +470,6 @@ export function ExpenseTable({
                     )
                   })}
                 </TableBody>
-                <TableFooter>
-                  <TableRow>
-                    <TableCell colSpan={2}>Total</TableCell>
-                    <TableCell>
-                      <MaskedValue value={total} />
-                    </TableCell>
-                    <TableCell colSpan={3}></TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell colSpan={2}>Pendente de pagamento</TableCell>
-                    <TableCell>
-                      <MaskedValue value={pendente} />
-                    </TableCell>
-                    <TableCell colSpan={3}></TableCell>
-                  </TableRow>
-                </TableFooter>
               </Table>
             </div>
           )}

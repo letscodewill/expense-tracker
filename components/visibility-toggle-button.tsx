@@ -12,8 +12,9 @@ export function VisibilityToggleButton() {
       variant="ghost"
       size="icon-sm"
       onClick={toggle}
-      aria-label={hidden ? 'Mostrar valores' : 'Ocultar valores'}
-      title={hidden ? 'Mostrar valores' : 'Ocultar valores'}
+      aria-label={hidden ? 'Mostrar salário' : 'Ocultar salário'}
+      title={hidden ? 'Mostrar salário' : 'Ocultar salário'}
+      aria-pressed={hidden}
     >
       {hidden ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
     </Button>

@@ -5,12 +5,13 @@ import { useValuesVisibility } from '@/context/visibility-context'
 export type MaskedValueProps = {
   value: number
   className?: string
+  mask?: boolean
 }
 
-export function MaskedValue({ value, className }: MaskedValueProps) {
+export function MaskedValue({ value, className, mask = false }: MaskedValueProps) {
   const { hidden } = useValuesVisibility()
 
-  if (hidden) {
+  if (mask && hidden) {
     return <span className={className}>R$ ••••</span>
   }
 

@@ -121,6 +121,42 @@ const expense = { id: 1, nome: 'Mercado', valor: 80, data_pagamento: '2026-10-03
 const failure = { data: null, error: { message: 'offline' } }
 const success = (data) => ({ data, error: null })
 
+test('collapsing expense rows keeps title, total and unpaid balance visible', async () => {
+  for (const boardId of [null, 'board-1']) {
+    const runtime = hooks(), db = database({ expenses: [success([expense, { ...expense, id: 2, valor: 20, status: 'Pago' }])] })
+    const { ExpenseTable } = load('components/expense-table.tsx', { react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client } })
+    runtime.render(ExpenseTable, { boardId, title: 'Despesas do mês', selected })
+    let tree = await runtime.flush()
+    find(tree, node => node.props['aria-label'] === 'Alternar exibição do quadro').props.onClick()
+    tree = runtime.render()
+    assert.equal(elements(tree, node => node.type === 'Table').length, 0)
+    find(tree, node => node.type === 'h2' && node.props.children === 'Despesas do mês')
+    find(tree, node => node.type === 'MaskedValue' && node.props.value === 100)
+    find(tree, node => node.type === 'MaskedValue' && node.props.value === 80)
+    find(tree, node => node.props['aria-label'] === 'Alternar exibição do quadro').props.onClick()
+    tree = runtime.render()
+    assert.equal(elements(tree, node => node.type === 'Table').length, 1)
+    assert.equal(db.requests.length, 1)
+  }
+})
+
+test('salary privacy masks only opted-in salary while expense and remaining values stay readable', () => {
+  for (const hidden of [true, false]) {
+    const { MaskedValue } = load('components/masked-value.tsx', {
+      '@/context/visibility-context': { useValuesVisibility: () => ({ hidden }) },
+    })
+    assert.equal(MaskedValue({ value: 100, mask: true }).props.children, hidden ? 'R$ ••••' : (100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }))
+    assert.equal(MaskedValue({ value: 80 }).props.children, (80).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }))
+  }
+  const runtime = hooks(), db = database({ salaries: [success({ valor: 100 })] })
+  const { SalaryCard } = load('components/salary-card.tsx', { react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client } })
+  runtime.render(SalaryCard, { selected, totalExpenses: 80 })
+  return runtime.flush().then(tree => {
+    assert.equal(find(tree, node => node.type === 'MaskedValue' && node.props.value === 100).props.mask, true)
+    assert.equal(find(tree, node => node.type === 'MaskedValue' && node.props.value === 20).props.mask, undefined)
+  })
+})
+
 test('expense loading retries twice, keeps month/board filters and displays totals', async () => {
   const runtime = hooks(), db = database({ expenses: [failure, failure, success([expense])] })
   const delays = []
@@ -567,4 +603,166 @@ test('login skips the form for authenticated visitors and keeps password recover
   const recovery = await LoginPage({ searchParams: Promise.resolve({ mode: 'recover' }) })
   find(recovery, (node) => node.props.children === 'Recuperar senha')
   assert.equal(checks, 1)
+})
+
+test('ticket master identity requires a verified matching email, never user metadata', () => {
+  const { isMasterIdentity, validateTicketReply } = load('lib/tickets.ts')
+  assert.equal(isMasterIdentity(null), false)
+  assert.equal(isMasterIdentity({ email: 'williansantos38@gmail.com' }), false)
+  assert.equal(isMasterIdentity({ email: 'other@example.com', email_confirmed_at: '2026-10-04', user_metadata: { role: 'master' } }), false)
+  assert.equal(isMasterIdentity({ email: 'WillianSantos38@gmail.com', email_confirmed_at: '2026-10-04' }), true)
+  assert.equal(validateTicketReply(1, 'Resposta'), null)
+  assert.ok(validateTicketReply(-1, 'Resposta'))
+  assert.ok(validateTicketReply(1, '   '))
+  assert.ok(validateTicketReply(1, 'a'.repeat(10001)))
+})
+
+test('server ticket access checks the database role even for the verified master email', async () => {
+  for (const allowed of [true, false]) {
+    let rolesChecked = 0
+    const { getTicketAccess } = load('lib/tickets-server.ts', {
+      'server-only': {}, '@/lib/tickets': load('lib/tickets.ts'),
+      '@/lib/supabase/server': { createClient: async () => ({
+        auth: { getUser: async () => ({ data: { user: { id: 'master', email: 'williansantos38@gmail.com', email_confirmed_at: '2026-10-04' } }, error: null }) },
+        rpc: async (name) => { assert.equal(name, 'is_ticket_master'); rolesChecked++; return { data: allowed, error: null } },
+      }) },
+    })
+    assert.equal((await getTicketAccess()).master, allowed)
+    assert.equal(rolesChecked, 1)
+  }
+})
+
+test('ticket actions reject unauthorized callers without touching the database', async () => {
+  let writes = 0
+  const { answerTicket, changeTicketStatus } = load('app/tickets/actions.ts', {
+    '@/lib/tickets': load('lib/tickets.ts'),
+    '@/lib/tickets-server': { getTicketAccess: async () => ({ master: false, supabase: { rpc: async () => { writes++ } } }) },
+    'next/cache': { revalidatePath() {} },
+  })
+  assert.ok((await answerTicket(1, 'Resposta', true)).error)
+  assert.ok((await changeTicketStatus(1, 'finalizado')).error)
+  assert.equal(writes, 0)
+})
+
+test('master reply trims input, can finish atomically and validates status changes', async () => {
+  const writes = [], invalidated = []
+  const { answerTicket, changeTicketStatus } = load('app/tickets/actions.ts', {
+    '@/lib/tickets': load('lib/tickets.ts'),
+    '@/lib/tickets-server': { getTicketAccess: async () => ({ master: true, supabase: { rpc: async (...args) => { writes.push(args); return { error: null } } } }) },
+    'next/cache': { revalidatePath: (path) => invalidated.push(path) },
+  })
+  assert.equal((await answerTicket(42, ' Solução aplicada ', true)).error, null)
+  assert.equal(writes[0][0], 'answer_support_ticket')
+  assert.equal(writes[0][1].reply_message, 'Solução aplicada')
+  assert.equal(writes[0][1].finish_ticket, true)
+  assert.ok((await answerTicket(42, '', false)).error)
+  assert.ok((await changeTicketStatus(42, 'hacked')).error)
+  assert.equal(writes.length, 1)
+  assert.equal((await changeTicketStatus(42, 'finalizado')).error, null)
+  assert.equal((await changeTicketStatus(42, 'aberto')).error, null)
+  assert.equal(writes[2][1].new_status, 'aberto')
+  assert.ok(invalidated.includes('/tickets'))
+})
+
+test('ticket detail enforces ownership and returns 404 for another users ticket', async () => {
+  for (const master of [false, true]) {
+    const db = database({ reports: [success(master ? { protocol_number: 42, user_id: 'someone-else' } : null)], report_replies: [success([])] })
+    const { GET } = load('app/tickets/[protocol]/route.ts', {
+      '@/lib/tickets-server': { getTicketAccess: async () => ({ supabase: db.client, user: { id: 'viewer' }, master }) },
+    }, { Response })
+    const response = await GET({}, { params: Promise.resolve({ protocol: '42' }) })
+    assert.equal(response.status, master ? 200 : 404)
+    assert.equal(db.requests[0].calls.some(([method, column, value]) => method === 'eq' && column === 'user_id' && value === 'viewer'), !master)
+    assert.ok(response.headers.get('cache-control').includes('no-store'))
+    if (!master) assert.equal(db.requests.length, 1)
+  }
+})
+
+test('ticket listing rejects admin mode for regular accounts and scopes personal results', async () => {
+  const db = database({ reports: [success([])] })
+  const { GET } = load('app/api/tickets/route.ts', {
+    '@/lib/tickets-server': { getTicketAccess: async () => ({ supabase: db.client, user: { id: 'viewer' }, master: false }) },
+  }, { Response, URL })
+  assert.equal((await GET(new Request('https://expense.test/api/tickets?admin=true'))).status, 403)
+  assert.equal(db.requests.length, 0)
+  assert.equal((await GET(new Request('https://expense.test/api/tickets?offset=100'))).status, 200)
+  assert.ok(db.requests[0].calls.some(([method, column, value]) => method === 'eq' && column === 'user_id' && value === 'viewer'))
+  assert.ok(db.requests[0].calls.some(([method, from, to]) => method === 'range' && from === 100 && to === 199))
+  assert.equal((await GET(new Request('https://expense.test/api/tickets?offset=-1'))).status, 400)
+})
+
+test('anonymous ticket requests are rejected before any database queries', async () => {
+  const mocks = { '@/lib/tickets-server': { getTicketAccess: async () => ({ user: null, master: false }) } }
+  const { GET: details } = load('app/tickets/[protocol]/route.ts', mocks, { Response })
+  const { GET: list } = load('app/api/tickets/route.ts', mocks, { Response, URL })
+  assert.equal((await details({}, { params: Promise.resolve({ protocol: '1' }) })).status, 401)
+  assert.equal((await list(new Request('https://expense.test/api/tickets'))).status, 401)
+})
+
+test('admin ticket page denies direct navigation for ordinary users', async () => {
+  const { default: AdminPage } = load('app/admin/tickets/page.tsx', {
+    '@/lib/tickets-server': { getTicketAccess: async () => ({ user: { id: 'viewer' }, master: false }) },
+    'next/navigation': { notFound: () => { throw new Error('NOT_FOUND') }, redirect: () => { throw new Error('LOGIN') } },
+  })
+  await assert.rejects(AdminPage(), /NOT_FOUND/)
+})
+
+test('dashboard uses database ticket role and reserves administrator management for owner', async () => {
+  for (const user of [
+    { id: 'master', email: 'williansantos38@gmail.com', email_confirmed_at: '2026-10-04' },
+    { id: 'other', email: 'other@example.com', email_confirmed_at: '2026-10-04', user_metadata: { role: 'master' } },
+    { id: 'admin', email: 'admin@example.com', email_confirmed_at: '2026-10-04' },
+  ]) {
+    const { default: HomePage } = load('app/page.tsx', {
+      '@/lib/supabase/server': { createClient: async () => ({ auth: { getUser: async () => ({ data: { user } }) }, rpc: async () => ({ data: user.id !== 'other', error: null }) }) },
+      '@/app/actions': { signOut() {} },
+      '@/lib/tickets': load('lib/tickets.ts'),
+      'next/navigation': { redirect: () => { throw new Error('LOGIN') } },
+    })
+    const tree = await HomePage()
+    assert.equal(elements(tree, (node) => node.props.href === '/admin/tickets').length, user.id !== 'other' ? 1 : 0)
+    assert.equal(elements(tree, (node) => node.props.href === '/admin/administrators').length, user.id === 'master' ? 1 : 0)
+    find(tree, (node) => node.props.href === '/tickets')
+  }
+})
+
+test('administrator mutations reject non-owners and missing database ownership', async () => {
+  for (const email of ['admin@example.com', 'williansantos38@gmail.com']) {
+    const calls = []
+    const { updateAdministrator } = load('app/admin/administrators/actions.ts', {
+      '@/lib/supabase/server': { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { email, email_confirmed_at: 'confirmed' } }, error: null }) }, rpc: async name => { calls.push(name); return { data: false, error: null } } }) },
+      '@/lib/tickets': load('lib/tickets.ts'), 'next/cache': { revalidatePath() {} },
+    })
+    assert.ok((await updateAdministrator('add', 'target@example.com')).error)
+    assert.ok((await updateAdministrator('remove', '11111111-1111-1111-1111-111111111111')).error)
+    assert.equal(calls.some(name => name !== 'is_support_owner'), false)
+  }
+})
+
+test('owner administrator mutations validate, normalize, and handle database failures', async () => {
+  const calls = [], paths = []
+  let fail = false
+  const { updateAdministrator } = load('app/admin/administrators/actions.ts', {
+    '@/lib/supabase/server': { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { email: 'williansantos38@gmail.com', email_confirmed_at: 'confirmed' } }, error: null }) }, rpc: async (name, args) => { calls.push([name, args]); return { data: true, error: name !== 'is_support_owner' && fail ? {} : null } } }) },
+    '@/lib/tickets': load('lib/tickets.ts'), 'next/cache': { revalidatePath: path => paths.push(path) },
+  })
+  assert.ok((await updateAdministrator('add', 'invalid')).error)
+  assert.ok((await updateAdministrator('remove', 'invalid')).error)
+  assert.ok((await updateAdministrator('other', 'target@example.com')).error)
+  assert.equal(calls.every(([name]) => name === 'is_support_owner'), true)
+  assert.equal((await updateAdministrator('add', ' Target@Example.com ')).error, null)
+  assert.equal(calls.at(-1)[0], 'add_ticket_administrator')
+  assert.equal(calls.at(-1)[1].account_email, 'target@example.com')
+  assert.equal((await updateAdministrator('remove', '11111111-1111-1111-1111-111111111111')).error, null)
+  assert.equal(calls.at(-1)[0], 'remove_ticket_administrator')
+  assert.ok(paths.includes('/'))
+  fail = true
+  assert.ok((await updateAdministrator('add', 'target@example.com')).error)
+})
+
+test('confirmed delegated administrator can access tickets through database membership', async () => {
+  const { getTicketAccess } = load('lib/tickets-server.ts', {
+    'server-only': {}, '@/lib/supabase/server': { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { email: 'admin@example.com', email_confirmed_at: 'confirmed' } }, error: null }) }, rpc: async () => ({ data: true, error: null }) }) },
+  })
+  assert.equal((await getTicketAccess()).master, true)
 })

@@ -133,7 +133,7 @@ export function SalaryCard({ selected, totalExpenses }: SalaryCardProps) {
           ) : (
             <div className="space-y-1">
               <p className="text-3xl sm:text-4xl font-medium tracking-tight">
-                <MaskedValue value={salary} />
+                <MaskedValue value={salary} mask />
               </p>
               <div className="flex items-center justify-between pt-4 border-t">
                 <span className="text-sm text-muted-foreground">Vai sobrar</span>
