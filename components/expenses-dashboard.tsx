@@ -200,6 +200,7 @@ export function ExpensesDashboard() {
             boardId={board.id}
             title={board.name}
             selected={selected}
+            refreshKey={mainPanelRefreshKey}
             onDeleteBoard={() => handleDeleteBoard(board.id)}
             onChanged={bumpMainPanel}
           />

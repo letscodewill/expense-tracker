@@ -90,6 +90,8 @@ export function ExpenseTable({
   const [renamingBoard, setRenamingBoard] = useState(false)
   const [boardNameDraft, setBoardNameDraft] = useState(title)
   const [renamingBoardError, setRenamingBoardError] = useState('')
+  const [paymentError, setPaymentError] = useState('')
+  const [payingExpenseId, setPayingExpenseId] = useState<Expense['id'] | null>(null)
 
   const fetchExpenses = useCallback(
     async function loadExpenses(month: number, year: number, attempt = 0) {
@@ -201,15 +203,22 @@ export function ExpenseTable({
   const handleTogglePaid = useCallback(
     async (expense: Expense) => {
       const newStatus = expense.status === 'Pago' ? 'Pendente' : 'Pago'
-
-      const { error } = await supabase
-        .from('expenses')
-        .update({ status: newStatus })
-        .eq('id', expense.id)
-
-      if (!error) {
+      setPaymentError('')
+      setPayingExpenseId(expense.id)
+      try {
+        const { data, error } = await supabase
+          .from('expenses')
+          .update({ status: newStatus })
+          .eq('id', expense.id)
+          .select('id')
+        if (error || !data?.length) {
+          setPaymentError('Não foi possível atualizar o pagamento. Tente novamente.')
+          return
+        }
         handleChanged()
-      }
+      } catch {
+        setPaymentError('Não foi possível atualizar o pagamento. Tente novamente.')
+      } finally { setPayingExpenseId(null) }
     },
     [supabase, handleChanged]
   )
@@ -355,6 +364,7 @@ export function ExpenseTable({
           </>}
       </div>
 
+      {paymentError && <p role="alert" className="text-sm text-destructive">{paymentError}</p>}
       {isOpen && <div className="space-y-4">
         <div className="material-table rounded-2xl border">
           {loading || isPending ? (
@@ -428,6 +438,7 @@ export function ExpenseTable({
                                 size="sm"
                                 className={expense.status === 'Pago' ? 'text-yellow-600 hover:text-yellow-700' : 'text-green-600 hover:text-green-700'}
                                 onClick={() => handleTogglePaid(expense)}
+                                disabled={payingExpenseId !== null}
                                 title={expense.status === 'Pago' ? 'Marcar como pendente' : 'Marcar como pago'}
                               >
                                 {expense.status === 'Pago' ? 'Desfazer' : 'Pagar'}

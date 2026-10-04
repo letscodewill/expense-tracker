@@ -121,6 +121,50 @@ const expense = { id: 1, nome: 'Mercado', valor: 80, data_pagamento: '2026-10-03
 const failure = { data: null, error: { message: 'offline' } }
 const success = (data) => ({ data, error: null })
 
+test('paying and undoing a row persists status and refreshes related views', async () => {
+  for (const status of ['Pendente', 'Pago']) {
+    const runtime = hooks(), row = { ...expense, status }, db = database({ expenses: [success([row]), success([{ id: row.id }]), success([row])] })
+    let changed = 0
+    const { ExpenseTable } = load('components/expense-table.tsx', { react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client } })
+    runtime.render(ExpenseTable, { boardId: null, title: 'Principal', selected, onChanged: () => changed++ })
+    const tree = await runtime.flush()
+    await find(tree, node => node.props.title === (status === 'Pago' ? 'Marcar como pendente' : 'Marcar como pago')).props.onClick()
+    await runtime.flush()
+    const update = db.requests.find(request => request.calls.some(([method]) => method === 'update'))
+    assert.equal(update.calls.find(([method]) => method === 'update')[1].status, status === 'Pago' ? 'Pendente' : 'Pago')
+    assert.ok(update.calls.some(([method, column, value]) => method === 'eq' && column === 'id' && value === row.id))
+    assert.equal(changed, 1)
+  }
+})
+
+test('failed or unauthorized payment displays an error without refreshing as success', async () => {
+  for (const response of [failure, success([])]) {
+    const runtime = hooks(), db = database({ expenses: [success([expense]), response] })
+    let changed = 0
+    const { ExpenseTable } = load('components/expense-table.tsx', { react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client } })
+    runtime.render(ExpenseTable, { boardId: null, title: 'Principal', selected, onChanged: () => changed++ })
+    let tree = await runtime.flush()
+    await find(tree, node => node.props.title === 'Marcar como pago').props.onClick()
+    tree = await runtime.flush()
+    find(tree, node => node.props.role === 'alert')
+    assert.equal(changed, 0)
+    assert.equal(find(tree, node => node.props.title === 'Marcar como pago').props.disabled, false)
+  }
+})
+
+test('main panel changes invalidate secondary board tables too', async () => {
+  const runtime = hooks(), board = { id: 'board-1', name: 'Cartão', month: new Date().getMonth(), year: new Date().getFullYear() }
+  const db = database({ boards: [success([board]), success([board])], expenses: [success([]), success([])] })
+  const { ExpensesDashboard } = load('components/expenses-dashboard.tsx', { react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client } })
+  runtime.render(ExpensesDashboard, {})
+  let tree = await runtime.flush()
+  const secondary = find(tree, node => node.type === 'ExpenseTable' && node.props.boardId === board.id)
+  const before = secondary.props.refreshKey
+  find(tree, node => node.type === 'ExpenseTable' && node.props.boardId === null).props.onChanged()
+  tree = await runtime.flush()
+  assert.equal(find(tree, node => node.type === 'ExpenseTable' && node.props.boardId === board.id).props.refreshKey, before + 1)
+})
+
 test('collapsing expense rows keeps title, total and unpaid balance visible', async () => {
   for (const boardId of [null, 'board-1']) {
     const runtime = hooks(), db = database({ expenses: [success([expense, { ...expense, id: 2, valor: 20, status: 'Pago' }])] })
