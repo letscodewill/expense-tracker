@@ -1,6 +1,12 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useContext, useSyncExternalStore, type ReactNode } from 'react'
+import {
+  getVisibilitySnapshot,
+  getServerVisibilitySnapshot,
+  subscribeVisibility,
+  toggleVisibility,
+} from '@/lib/values-visibility-store'
 
 type VisibilityContextType = {
   hidden: boolean
@@ -9,27 +15,15 @@ type VisibilityContextType = {
 
 const VisibilityContext = createContext<VisibilityContextType | undefined>(undefined)
 
-const STORAGE_KEY = 'expense-tracker:values-hidden'
-
 export function VisibilityProvider({ children }: { children: ReactNode }) {
-  const [hidden, setHidden] = useState(false)
-
-  // Carrega a preferência salva, uma vez, ao montar.
-  useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved === 'true') setHidden(true)
-  }, [])
-
-  function toggle() {
-    setHidden((prev) => {
-      const next = !prev
-      localStorage.setItem(STORAGE_KEY, String(next))
-      return next
-    })
-  }
+  const hidden = useSyncExternalStore(
+    subscribeVisibility,
+    getVisibilitySnapshot,
+    getServerVisibilitySnapshot,
+  )
 
   return (
-    <VisibilityContext.Provider value={{ hidden, toggle }}>
+    <VisibilityContext.Provider value={{ hidden, toggle: toggleVisibility }}>
       {children}
     </VisibilityContext.Provider>
   )

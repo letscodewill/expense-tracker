@@ -75,7 +75,7 @@ export function parseInvoiceText(text: string, year: number): ParsedExpense[] {
     const parsed = tryDateSlash(line, year) ?? tryDateMonthName(line, year)
     if (!parsed) continue
 
-    let valueLine = parsed.rest
+    const valueLine = parsed.rest
     let value = extractValue(valueLine)
     let nome = valueLine
 

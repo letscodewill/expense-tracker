@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
+import autoTable, { type Table as PdfTable } from 'jspdf-autotable'
 import { Download } from 'lucide-react'
 
 type CheckboxProps = {
@@ -159,7 +159,8 @@ export function ReportsView() {
             headStyles: { fillColor: [40, 40, 40] },
         })
 
-        const finalY = (doc as any).lastAutoTable.finalY + 10
+        const lastTable = (doc as jsPDF & { lastAutoTable?: PdfTable }).lastAutoTable
+        const finalY = (lastTable?.finalY ?? 32) + 10
 
         doc.setFontSize(11)
         doc.setTextColor(0)

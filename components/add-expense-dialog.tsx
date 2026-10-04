@@ -1,7 +1,7 @@
 'use client'
 
 import { z } from 'zod'
-import { useReducer, useState, useEffect, useMemo } from 'react'
+import { useReducer, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { safeGetUser } from '@/lib/supabase/safe-get-user'
 import { Button } from '@/components/ui/button'
@@ -197,10 +197,15 @@ export function AddExpenseDialog({
 
   const supabase = createClient()
 
-  const [open, setOpen] = useState(!!expenseToEdit)
+  const [open, setOpen] = useState(!!expenseToEdit || !!forceOpen)
   const [loading, setLoading] = useState(false)
+  const [previousExpense, setPreviousExpense] = useState<Expense | null | undefined>(undefined)
+  const [previousForceOpen, setPreviousForceOpen] = useState(forceOpen)
 
-  useEffect(() => {
+  // Adjust the form before committing a changed editing target, without an effect.
+  if (expenseToEdit !== previousExpense || forceOpen !== previousForceOpen) {
+    setPreviousExpense(expenseToEdit)
+    setPreviousForceOpen(forceOpen)
     setOpen(!!expenseToEdit || !!forceOpen)
     if (expenseToEdit) {
       dispatch({ type: 'SET_FIELD', field: 'nome', value: expenseToEdit.nome })
@@ -209,7 +214,7 @@ export function AddExpenseDialog({
       dispatch({ type: 'SET_FIELD', field: 'status', value: expenseToEdit.status })
       dispatch({ type: 'SET_FIELD', field: 'comentario', value: expenseToEdit.comentario ?? '' })
     }
-  }, [expenseToEdit, forceOpen])
+  }
 
   const preview = useMemo(() => {
     if (!isInstallment || !dataPagamento) return null

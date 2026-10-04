@@ -27,9 +27,9 @@ type Expense = {
 }
 
 const statusColor: Record<Expense['status'], string> = {
-  Pendente: 'bg-yellow-500',
-  Pago: 'bg-green-500',
-  'VR/VA': 'bg-blue-500',
+  Pendente: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200',
+  Pago: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200',
+  'VR/VA': 'bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-200',
 }
 
 function delay(ms: number) {
@@ -92,7 +92,7 @@ export function ExpenseTable({
   const [renamingBoardError, setRenamingBoardError] = useState('')
 
   const fetchExpenses = useCallback(
-    async (month: number, year: number, attempt = 0) => {
+    async function loadExpenses(month: number, year: number, attempt = 0) {
       if (attempt === 0) {
         setLoading(true)
         setFetchError(false)
@@ -117,7 +117,7 @@ export function ExpenseTable({
         const MAX_ATTEMPTS = 3
         if (attempt + 1 < MAX_ATTEMPTS) {
           await delay(1000 * (attempt + 1))
-          return fetchExpenses(month, year, attempt + 1)
+          return loadExpenses(month, year, attempt + 1)
         }
 
         setFetchError(true)
@@ -214,10 +214,6 @@ export function ExpenseTable({
     [supabase, handleChanged]
   )
 
-  useEffect(() => {
-    if (!renamingBoard) setBoardNameDraft(title)
-  }, [title, renamingBoard])
-
   const handleRenameBoard = useCallback(async () => {
     if (!boardId) return
     const trimmed = boardNameDraft.trim()
@@ -255,7 +251,7 @@ export function ExpenseTable({
   const selectedLabel = MONTH_NAMES_PT[selected.month] + ' de ' + selected.year
 
   return (
-    <div className="space-y-4 rounded-xl border p-4 shadow-sm">
+    <div className="material-board space-y-5 rounded-3xl border p-4 sm:p-6 shadow-sm">
       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <Button
@@ -313,7 +309,7 @@ export function ExpenseTable({
             </div>
           ) : (
             <>
-              <h2 className="text-xl font-semibold truncate">{title}</h2>
+              <h2 className="text-xl font-medium tracking-tight truncate">{title}</h2>
               {boardId && (
                 <Button
                   variant="ghost"
@@ -351,7 +347,7 @@ export function ExpenseTable({
       </div>
 
       {isOpen && <div className="space-y-4">
-        <div className="rounded-xl border">
+        <div className="material-table rounded-2xl border">
           {loading || isPending ? (
             <p className="text-sm text-muted-foreground p-4">Carregando...</p>
           ) : fetchError ? (
@@ -416,7 +412,7 @@ export function ExpenseTable({
                         </TableCell>
                         <TableCell className="sm:table-cell">{expense.comentario}</TableCell>
                         <TableCell className="sm:table-cell">
-                          <div className="flex flex-col gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                          <div className="flex flex-col gap-1 md:opacity-70 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity">
                             <div className="flex gap-1">
                               <Button
                                 variant="ghost"

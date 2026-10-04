@@ -1,4 +1,5 @@
-import { login, signup, recoverPassword } from './actions'
+import { login, recoverPassword } from './actions'
+import Image from 'next/image'
 import { SignupDialog } from '@/components/signup-dialog'
 import { GoogleSignInButton } from '@/components/google-signin-button'
 
@@ -13,9 +14,11 @@ export default async function LoginPage({
   return (
      <div className="flex justify-center items-center min-h-screen sm:px-4">
       <div className="relative p-6 sm:p-8 sm:border sm:rounded-lg sm:shadow-md w-full h-screen sm:h-auto sm:max-w-sm sm:space-y-4 overflow-hidden flex flex-col justify-center">
-        <img
+        <Image
           src="/bg-canto.png"
           alt=""
+          fill
+          sizes="(max-width: 639px) 100vw, 384px"
         className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none z-0 opacity-40"
         />
         <div className="absolute inset-0 bg-white/80 z-0" />

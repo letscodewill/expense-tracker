@@ -12,8 +12,8 @@ export async function extractPdfText(file: File, password?: string): Promise<str
   let pdf
   try {
     pdf = await pdfjsLib.getDocument({ data: arrayBuffer, password }).promise
-  } catch (err: any) {
-    if (err?.name === 'PasswordException') {
+  } catch (err: unknown) {
+    if (typeof err === 'object' && err !== null && 'name' in err && err.name === 'PasswordException') {
       throw new PdfPasswordRequiredError('Este PDF está protegido por senha.')
     }
     throw err
@@ -29,7 +29,8 @@ export async function extractPdfText(file: File, password?: string): Promise<str
     let lineBuffer: string[] = []
     const lines: string[] = []
 
-    for (const item of content.items as any[]) {
+    for (const item of content.items) {
+      if (!('str' in item)) continue
       const y = item.transform[5]
       if (lastY !== null && Math.abs(y - lastY) > 2) {
         lines.push(lineBuffer.join(' '))

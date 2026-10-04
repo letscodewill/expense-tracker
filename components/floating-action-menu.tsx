@@ -70,7 +70,7 @@ export function FloatingActionMenu({
 
       <Button
         size="icon"
-        className="rounded-full h-14 w-14 shadow-lg"
+        className="material-fab rounded-2xl h-16 w-16 shadow-lg"
         onClick={() => setOpen((v) => !v)}
         aria-label={open ? 'Fechar menu' : 'Abrir menu de ações'}
       >

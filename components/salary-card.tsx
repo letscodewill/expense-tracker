@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { startTransition, useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -42,7 +42,7 @@ export function SalaryCard({ selected, totalExpenses }: SalaryCardProps) {
   }, [supabase, selected.month, selected.year])
 
   useEffect(() => {
-    fetchSalary()
+    startTransition(() => { void fetchSalary() })
   }, [fetchSalary])
 
   function startEditing() {
@@ -90,7 +90,7 @@ export function SalaryCard({ selected, totalExpenses }: SalaryCardProps) {
   const remaining = salary !== null ? salary - totalExpenses : null
 
   return (
-    <div className="rounded-xl border p-4 space-y-2">
+    <div className="material-salary rounded-3xl border p-6 sm:p-8 space-y-4">
       {editing ? (
         <div className="space-y-2">
           <Label htmlFor="salary-input">Salário do mês</Label>
@@ -132,10 +132,10 @@ export function SalaryCard({ selected, totalExpenses }: SalaryCardProps) {
             <p className="text-sm text-muted-foreground">Nenhum salário cadastrado para este mês.</p>
           ) : (
             <div className="space-y-1">
-              <p className="text-lg font-semibold">
+              <p className="text-3xl sm:text-4xl font-medium tracking-tight">
                 <MaskedValue value={salary} />
               </p>
-              <div className="flex items-center justify-between pt-2 border-t">
+              <div className="flex items-center justify-between pt-4 border-t">
                 <span className="text-sm text-muted-foreground">Vai sobrar</span>
                 <span
                   className={`font-semibold ${(remaining ?? 0) < 0 ? 'text-red-600' : 'text-green-600'

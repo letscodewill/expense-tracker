@@ -3,6 +3,7 @@ import { extractPdfText, PdfPasswordRequiredError } from '@/lib/pdf-text-extract
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { parseInvoiceText, type ParsedExpense } from '@/lib/invoice-parser'
+import { fifthBusinessDayISO } from '@/lib/payment-date'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,6 +12,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogTrigger,
   DialogFooter,
 } from '@/components/ui/dialog'
@@ -26,11 +28,12 @@ import { Upload, X } from 'lucide-react'
 import type { MonthYear } from '@/components/month-year-picker'
 
 type Board = { id: string; name: string }
+type InvoiceRow = Pick<ParsedExpense, 'nome' | 'valor'>
 
 export type ImportInvoiceDialogProps = {
   selected: MonthYear
   boards: Board[]
-  onImported: () => void
+  onImported: (paymentPeriod: MonthYear) => void
   open?: boolean
   onOpenChange?: (open: boolean) => void
   hideTrigger?: boolean
@@ -56,7 +59,12 @@ export function ImportInvoiceDialog({
   }
   const [step, setStep] = useState<'upload' | 'review'>('upload')
   const [parsing, setParsing] = useState(false)
-  const [rows, setRows] = useState<ParsedExpense[]>([])
+  const [rows, setRows] = useState<InvoiceRow[]>([])
+  const [paymentMonth, setPaymentMonth] = useState<MonthYear | null>(null)
+  const paymentPeriod = paymentMonth ?? selected
+  const paymentDate = fifthBusinessDayISO(paymentPeriod.year, paymentPeriod.month)
+  const paymentDateLabel = paymentDate.split('-').reverse().join('/')
+  const sameBoardMonth = paymentPeriod.month === selected.month && paymentPeriod.year === selected.year
   const [destination, setDestination] = useState<string>(MAIN_PANEL_VALUE)
   const [newBoardName, setNewBoardName] = useState('')
   const [saving, setSaving] = useState(false)
@@ -80,7 +88,7 @@ export function ImportInvoiceDialog({
         )
       }
 
-      setRows(parsed)
+      setRows(parsed.map(({ nome, valor }) => ({ nome, valor })))
       setStep('review')
       setNeedsPassword(false)
     } catch (err) {
@@ -113,9 +121,13 @@ export function ImportInvoiceDialog({
     setDestination(MAIN_PANEL_VALUE)
     setNewBoardName('')
     setError('')
+    setPaymentMonth(null)
+    setPendingFile(null)
+    setNeedsPassword(false)
+    setPdfPassword('')
   }
 
-  function updateRow(index: number, field: keyof ParsedExpense, value: string) {
+  function updateRow(index: number, field: keyof InvoiceRow, value: string) {
     setRows((prev) =>
       prev.map((row, i) =>
         i === index
@@ -130,14 +142,13 @@ export function ImportInvoiceDialog({
   }
 
   function addEmptyRow() {
-    const { month, year } = selected
-    const fallbackDate = `${year}-${String(month + 1).padStart(2, '0')}-01`
-    setRows((prev) => [...prev, { nome: '', valor: 0, data: fallbackDate }])
+    setRows((prev) => [...prev, { nome: '', valor: 0 }])
   }
 
   async function handleConfirm() {
-    if (rows.length === 0) {
-      setError('Nenhuma despesa para importar.')
+    const validRows = rows.filter((row) => row.nome.trim() && Number.isFinite(row.valor) && row.valor > 0)
+    if (validRows.length === 0) {
+      setError('Informe ao menos uma despesa com nome e valor maior que zero.')
       return
     }
     if (destination === NEW_BOARD_VALUE && !newBoardName.trim()) {
@@ -158,8 +169,8 @@ export function ImportInvoiceDialog({
         .insert({
           name: newBoardName.trim(),
           user_id: user?.id,
-          month: selected.month,
-          year: selected.year,
+          month: paymentPeriod.month,
+          year: paymentPeriod.year,
         })
         .select('id')
         .single()
@@ -175,11 +186,10 @@ export function ImportInvoiceDialog({
       targetBoardId = destination
     }
 
-    const payload = rows
-      .filter((r) => r.nome.trim() && r.valor > 0)
+    const payload = validRows
       .map((r) => ({
         nome: r.nome.trim(),
-        data_pagamento: r.data,
+        data_pagamento: paymentDate,
         valor: r.valor,
         status: 'Pendente' as const,
         comentario: null,
@@ -199,7 +209,7 @@ export function ImportInvoiceDialog({
 
     setOpen(false)
     reset()
-    onImported()
+    onImported(paymentPeriod)
   }
 
   return (
@@ -220,9 +230,10 @@ export function ImportInvoiceDialog({
     }
   />
 )}
-      <DialogContent className="max-w-2xl">
+      <DialogContent className={step === 'review' ? 'invoice-review-dialog' : 'max-w-2xl sm:max-w-2xl'}>
         <DialogHeader>
           <DialogTitle>Importar fatura (PDF)</DialogTitle>
+          <DialogDescription>Confira os nomes, valores e o mês de pagamento antes de importar.</DialogDescription>
         </DialogHeader>
 
         {step === 'upload' && (
@@ -259,16 +270,44 @@ export function ImportInvoiceDialog({
         )}
 
         {step === 'review' && (
-          <div className="space-y-4">
+          <div className="invoice-review-body flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
             {error && <p className="text-sm text-red-600">{error}</p>}
 
-            <div className="max-h-80 overflow-y-auto rounded-md border">
+            <div className="flex flex-wrap items-end gap-4 rounded-2xl bg-muted p-4">
+              <div className="space-y-2">
+                <Label htmlFor="invoice-payment-month">Mês de pagamento</Label>
+                <Input
+                  id="invoice-payment-month"
+                  type="month"
+                  value={`${paymentPeriod.year}-${String(paymentPeriod.month + 1).padStart(2, '0')}`}
+                  disabled={saving}
+                  onChange={(event) => {
+                    const match = /^(\d{4})-(\d{2})$/.exec(event.target.value)
+                    if (!match) return
+                    const year = Number(match[1])
+                    const month = Number(match[2]) - 1
+                    if (year < 1 || month < 0 || month > 11) return
+                    setPaymentMonth({ year, month })
+                    if (destination !== MAIN_PANEL_VALUE && destination !== NEW_BOARD_VALUE) {
+                      setDestination(MAIN_PANEL_VALUE)
+                    }
+                  }}
+                />
+              </div>
+              <div className="space-y-1 text-sm">
+                <p className="font-medium">Pagamento em <time dateTime={paymentDate}>{paymentDateLabel}</time></p>
+                <p className="text-muted-foreground">Todas as despesas serão pagas no quinto dia útil do mês escolhido.</p>
+                <p className="text-muted-foreground">Consideramos segunda a sexta, sem feriados.</p>
+              </div>
+            </div>
+
+            <div className="invoice-review-table min-h-48 flex-1 overflow-auto rounded-2xl border">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Nome</TableHead>
-                    <TableHead className="w-[110px]">Data</TableHead>
-                    <TableHead className="w-[110px]">Valor</TableHead>
+                    <TableHead className="min-w-[240px]">Nome</TableHead>
+                    <TableHead className="w-[160px]">Pagamento</TableHead>
+                    <TableHead className="w-[160px]">Valor (R$)</TableHead>
                     <TableHead className="w-[40px]"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -280,15 +319,12 @@ export function ImportInvoiceDialog({
                           value={row.nome}
                           onChange={(e) => updateRow(index, 'nome', e.target.value)}
                           className="h-8"
+                          aria-label={`Nome da despesa ${index + 1}`}
+                          disabled={saving}
                         />
                       </TableCell>
                       <TableCell>
-                        <Input
-                          type="date"
-                          value={row.data}
-                          onChange={(e) => updateRow(index, 'data', e.target.value)}
-                          className="h-8"
-                        />
+                        <time dateTime={paymentDate}>{paymentDateLabel}</time>
                       </TableCell>
                       <TableCell>
                         <Input
@@ -297,10 +333,12 @@ export function ImportInvoiceDialog({
                           value={row.valor}
                           onChange={(e) => updateRow(index, 'valor', e.target.value)}
                           className="h-8"
+                          aria-label={`Valor da despesa ${index + 1}`}
+                          disabled={saving}
                         />
                       </TableCell>
                       <TableCell>
-                        <Button variant="ghost" size="sm" onClick={() => removeRow(index)}>
+                        <Button variant="ghost" size="sm" onClick={() => removeRow(index)} disabled={saving} aria-label={`Remover despesa ${index + 1}`}>
                           <X className="h-4 w-4" />
                         </Button>
                       </TableCell>
@@ -310,19 +348,19 @@ export function ImportInvoiceDialog({
               </Table>
             </div>
 
-            <Button variant="outline" size="sm" onClick={addEmptyRow}>
+            <Button variant="outline" size="sm" onClick={addEmptyRow} disabled={saving} className="self-start">
               Adicionar linha manualmente
             </Button>
 
             <div className="space-y-2 pt-2 border-t">
               <Label>Adicionar despesas em:</Label>
-              <Select value={destination} onValueChange={(value) => setDestination(value ?? MAIN_PANEL_VALUE)}>
+              <Select value={destination} onValueChange={(value) => setDestination(value ?? MAIN_PANEL_VALUE)} disabled={saving}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={MAIN_PANEL_VALUE}>Painel principal</SelectItem>
-                  {boards.map((b) => (
+                  {sameBoardMonth && boards.map((b) => (
                     <SelectItem key={b.id} value={b.id}>
                       {b.name}
                     </SelectItem>
@@ -336,13 +374,14 @@ export function ImportInvoiceDialog({
                   placeholder="Nome do novo quadro"
                   value={newBoardName}
                   onChange={(e) => setNewBoardName(e.target.value)}
+                  disabled={saving}
                 />
               )}
             </div>
           </div>
         )}
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0">
           {step === 'review' && (
             <Button onClick={handleConfirm} disabled={saving}>
               {saving ? 'Importando...' : `Importar ${rows.length} despesa(s)`}

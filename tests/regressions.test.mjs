@@ -1,0 +1,461 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
+import vm from 'node:vm'
+import { createRequire } from 'node:module'
+import { fileURLToPath } from 'node:url'
+import ts from 'typescript'
+
+const nodeRequire = createRequire(import.meta.url)
+
+// Run the actual TypeScript modules with isolated services, without contacting
+// Supabase or changing real financial data. UI primitives remain opaque elements.
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const primitives = new Proxy({}, { get: (_, name) => String(name) })
+function load(file, mocks = {}, globals = {}) {
+  const filename = path.join(root, file)
+  const output = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
+    fileName: filename,
+  }).outputText
+  const loadedModule = { exports: {} }
+  const localRequire = (name) => {
+    if (Object.hasOwn(mocks, name)) return mocks[name]
+    if (name.includes('month-year-picker')) return { MonthYearPicker: 'MonthYearPicker', MONTH_NAMES_PT: Array(12).fill('Mês') }
+    if (name.startsWith('@/components/') || name === 'lucide-react') return primitives
+    if (name.startsWith('./') && file.startsWith('components/')) return primitives
+    if (name === 'next/link') return 'Link'
+    return nodeRequire(name)
+  }
+  vm.runInNewContext(output, {
+    module: loadedModule, exports: loadedModule.exports, require: localRequire,
+    console: { ...console, error() {} },
+    setTimeout: (callback) => { callback(); return 0 },
+    ...globals,
+  }, { filename })
+  return loadedModule.exports
+}
+
+function hooks() {
+  const slots = []
+  let cursor = 0, dirty = false, pending = [], tree, component, props
+  const equal = (a, b) => a && b && a.length === b.length && a.every((value, i) => Object.is(value, b[i]))
+  const react = {
+    useState(initial) {
+      const index = cursor++
+      if (!slots[index]) slots[index] = { value: typeof initial === 'function' ? initial() : initial }
+      return [slots[index].value, (next) => {
+        const value = typeof next === 'function' ? next(slots[index].value) : next
+        if (!Object.is(value, slots[index].value)) { slots[index].value = value; dirty = true }
+      }]
+    },
+    useReducer(reducer, initial) {
+      const [value, set] = react.useState(initial)
+      return [value, (action) => set((previous) => reducer(previous, action))]
+    },
+    useMemo(callback, deps) {
+      const index = cursor++
+      if (!slots[index] || !equal(slots[index].deps, deps)) slots[index] = { value: callback(), deps }
+      return slots[index].value
+    },
+    useCallback(callback, deps) { return react.useMemo(() => callback, deps) },
+    useEffect(callback, deps) {
+      const index = cursor++
+      if (!slots[index] || !equal(slots[index].deps, deps)) {
+        slots[index] = { deps }; pending.push(callback)
+      }
+    },
+    startTransition(callback) { callback() },
+    useTransition() { return [false, react.startTransition] },
+  }
+  function render(nextComponent = component, nextProps = props) {
+    component = nextComponent; props = nextProps
+    let iterations = 0
+    do {
+      dirty = false; cursor = 0; tree = component(props)
+      assert.ok(++iterations < 25, 'render must converge')
+    } while (dirty)
+    const effects = pending; pending = []; effects.forEach((effect) => effect())
+    return tree
+  }
+  async function flush() {
+    for (let i = 0; i < 8; i++) {
+      await new Promise(setImmediate)
+      if (dirty) render()
+    }
+    return tree
+  }
+  return { react, render, flush }
+}
+function elements(node, predicate) {
+  if (Array.isArray(node)) return node.flatMap((child) => elements(child, predicate))
+  if (!node || typeof node !== 'object' || !node.props) return []
+  return [...(predicate(node) ? [node] : []), ...elements(node.props.children, predicate)]
+}
+function find(tree, predicate) {
+  const found = elements(tree, predicate)[0]
+  assert.ok(found, 'expected UI element exists')
+  return found
+}
+function database(responses) {
+  const requests = []
+  const client = {
+    auth: { getUser: async () => ({ data: { user: { id: 'test-user' } } }) },
+    from(table) {
+      const request = { table, calls: [] }; requests.push(request)
+      const query = new Proxy({}, { get: (_, method) => {
+        if (method === 'then') return (resolve, reject) => {
+          const response = responses[table]?.shift() ?? { data: [], error: null }
+          return Promise.resolve(response).then(resolve, reject)
+        }
+        return (...args) => { request.calls.push([method, ...args]); return query }
+      } })
+      return query
+    },
+  }
+  return { client, requests }
+}
+const selected = { month: 9, year: 2026 }
+const expense = { id: 1, nome: 'Mercado', valor: 80, data_pagamento: '2026-10-03', status: 'Pendente', comentario: 'Compra', installment_group_id: null, recurring_group_id: null }
+const failure = { data: null, error: { message: 'offline' } }
+const success = (data) => ({ data, error: null })
+
+test('expense loading retries twice, keeps month/board filters and displays totals', async () => {
+  const runtime = hooks(), db = database({ expenses: [failure, failure, success([expense])] })
+  const delays = []
+  const { ExpenseTable } = load('components/expense-table.tsx', { react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client } }, {
+    setTimeout(callback, duration) { delays.push(duration); callback(); return 0 },
+  })
+  runtime.render(ExpenseTable, { boardId: 'board-1', title: 'Cartão', selected })
+  const tree = await runtime.flush()
+  assert.equal(db.requests.length, 3)
+  assert.deepEqual(delays, [1000, 2000])
+  for (const request of db.requests) {
+    assert.ok(request.calls.some(([method, column, value]) => method === 'eq' && column === 'board_id' && value === 'board-1'))
+    assert.ok(request.calls.some(([method, column, value]) => method === 'gte' && column === 'data_pagamento' && value === '2026-10-01'))
+  }
+  assert.ok(elements(tree, (node) => node.type === 'MaskedValue' && node.props.value === 80).length >= 3)
+})
+
+test('expense loading stops after three failures and can be retried manually', async () => {
+  const runtime = hooks(), db = database({ expenses: [failure, failure, failure, success([expense])] })
+  const { ExpenseTable } = load('components/expense-table.tsx', { react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client } })
+  runtime.render(ExpenseTable, { boardId: null, title: 'Principal', selected })
+  let tree = await runtime.flush()
+  assert.equal(db.requests.length, 3)
+  find(tree, (node) => node.props.children === 'Tentar novamente').props.onClick()
+  tree = await runtime.flush()
+  assert.equal(db.requests.length, 4)
+  assert.ok(db.requests[3].calls.some(([method, column, value]) => method === 'is' && column === 'board_id' && value === null))
+  assert.ok(elements(tree, (node) => node.type === 'MaskedValue').length > 0)
+})
+
+test('board draft uses the current title when editing and preserves cancellation', async () => {
+  const runtime = hooks(), db = database({ expenses: [success([])] })
+  const { ExpenseTable } = load('components/expense-table.tsx', { react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client } })
+  runtime.render(ExpenseTable, { boardId: 'board-1', title: 'Antigo', selected })
+  await runtime.flush()
+  let tree = runtime.render(ExpenseTable, { boardId: 'board-1', title: 'Atualizado', selected })
+  find(tree, (node) => node.props['aria-label'] === 'Renomear quadro').props.onClick()
+  tree = await runtime.flush()
+  assert.equal(find(tree, (node) => node.props.placeholder === 'Nome do quadro').props.value, 'Atualizado')
+  find(tree, (node) => node.props['aria-label'] === 'Cancelar').props.onClick()
+  tree = await runtime.flush()
+  assert.equal(elements(tree, (node) => node.props.placeholder === 'Nome do quadro').length, 0)
+})
+
+test('dashboard loads boards after retry and stops after three failures', async () => {
+  for (const responses of [[failure, failure, success([{ id: 'board-1', name: 'Cartão', ...selected }])], [failure, failure, failure]]) {
+    const runtime = hooks(), db = database({ boards: [...responses], expenses: [success([{ valor: 80 }])] })
+    const { ExpensesDashboard } = load('components/expenses-dashboard.tsx', { react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client } })
+    runtime.render(ExpensesDashboard, {})
+    const tree = await runtime.flush()
+    assert.equal(db.requests.filter((request) => request.table === 'boards').length, 3)
+    assert.equal(find(tree, (node) => node.type === 'SalaryCard').props.totalExpenses, 80)
+    if (responses[2].error) find(tree, (node) => node.props.children === 'Tentar novamente')
+    else find(tree, (node) => node.type === 'ExpenseTable' && node.props.boardId === 'board-1')
+  }
+})
+
+test('salary loads, calculates remaining balance, rejects invalid edits and saves valid edits', async () => {
+  const runtime = hooks(), db = database({ salaries: [success({ valor: 1000 }), success(null)] })
+  const { SalaryCard } = load('components/salary-card.tsx', { react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client } })
+  runtime.render(SalaryCard, { selected, totalExpenses: 80 })
+  let tree = await runtime.flush()
+  find(tree, (node) => node.type === 'MaskedValue' && node.props.value === 920)
+  find(tree, (node) => node.props['aria-label'] === 'Editar salário').props.onClick()
+  tree = await runtime.flush()
+  find(tree, (node) => node.props.id === 'salary-input').props.onChange({ target: { value: '-1' } })
+  tree = await runtime.flush()
+  await find(tree, (node) => node.props['aria-label'] === 'Salvar').props.onClick()
+  tree = await runtime.flush()
+  find(tree, (node) => node.props.children === 'Informe um valor válido.')
+  assert.equal(db.requests.length, 1)
+  find(tree, (node) => node.props.id === 'salary-input').props.onChange({ target: { value: '1200,50' } })
+  tree = await runtime.flush()
+  await find(tree, (node) => node.props['aria-label'] === 'Salvar').props.onClick()
+  tree = await runtime.flush()
+  find(tree, (node) => node.type === 'MaskedValue' && node.props.value === 1120.5)
+  assert.equal(db.requests[1].calls.find(([method]) => method === 'upsert')[1].valor, 1200.5)
+})
+
+test('expense dialog opens populated, switches editing target, closes and opens through FAB', async () => {
+  const runtime = hooks(), db = database({})
+  const { AddExpenseDialog } = load('components/add-expense-dialog.tsx', {
+    react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client },
+    '@/lib/supabase/safe-get-user': { safeGetUser: async () => ({ id: 'test-user' }) },
+  })
+  const props = { onAdded() {}, expenseToEdit: expense }
+  let tree = runtime.render(AddExpenseDialog, props)
+  assert.equal(tree.props.open, true)
+  assert.equal(find(tree, (node) => node.props.id === 'nome').props.value, 'Mercado')
+  assert.equal(find(tree, (node) => node.props.id === 'valor').props.value, '80')
+  tree = runtime.render(AddExpenseDialog, { ...props, expenseToEdit: { ...expense, id: 2, nome: 'Aluguel', valor: 900 } })
+  assert.equal(find(tree, (node) => node.props.id === 'nome').props.value, 'Aluguel')
+  tree.props.onOpenChange(false)
+  tree = await runtime.flush()
+  assert.equal(tree.props.open, false)
+  tree = runtime.render(AddExpenseDialog, { ...props, expenseToEdit: null, forceOpen: false })
+  tree = runtime.render(AddExpenseDialog, { ...props, expenseToEdit: null, forceOpen: true })
+  assert.equal(tree.props.open, true)
+  assert.equal(find(tree, (node) => node.props.id === 'nome').props.value, '')
+})
+
+test('visibility restores storage, toggles, notifies, synchronizes tabs and unsubscribes', () => {
+  const target = new EventTarget(), data = new Map([['expense-tracker:values-hidden', 'true']])
+  const window = Object.assign(target, { localStorage: { getItem: (key) => data.get(key) ?? null, setItem: (key, value) => data.set(key, value) } })
+  const store = load('lib/values-visibility-store.ts', {}, { window, Event })
+  assert.equal(store.getServerVisibilitySnapshot(), false)
+  assert.equal(store.getVisibilitySnapshot(), true)
+  let notifications = 0
+  const unsubscribe = store.subscribeVisibility(() => notifications++)
+  store.toggleVisibility()
+  assert.equal(store.getVisibilitySnapshot(), false)
+  assert.equal(data.get('expense-tracker:values-hidden'), 'false')
+  assert.equal(notifications, 1)
+  const event = new Event('storage'); event.key = 'expense-tracker:values-hidden'
+  data.set(event.key, 'true'); window.dispatchEvent(event)
+  assert.equal(store.getVisibilitySnapshot(), true)
+  assert.equal(notifications, 2)
+  unsubscribe(); store.toggleVisibility()
+  assert.equal(notifications, 2)
+})
+
+test('visibility remains usable when localStorage is blocked', () => {
+  const window = Object.assign(new EventTarget(), { localStorage: { getItem() { throw new Error('blocked') }, setItem() { throw new Error('blocked') } } })
+  const store = load('lib/values-visibility-store.ts', {}, { window, Event })
+  assert.equal(store.getVisibilitySnapshot(), false)
+  store.toggleVisibility(); assert.equal(store.getVisibilitySnapshot(), true)
+  store.toggleVisibility(); assert.equal(store.getVisibilitySnapshot(), false)
+})
+
+test('PDF extraction groups lines, handles multiple pages and skips non-text markers', async () => {
+  const text = (str, y) => ({ str, transform: [1, 0, 0, 1, 0, y] })
+  const pdf = { numPages: 2, getPage: async (number) => ({ getTextContent: async () => ({ items: number === 1 ? [{ type: 'beginMarkedContent' }, text('Mercado', 10), text('80,00', 10), text('Outra linha', 20)] : [text('Segunda página', 10)] }) }) }
+  const pdfjs = { version: 'test', GlobalWorkerOptions: {}, getDocument: () => ({ promise: Promise.resolve(pdf) }) }
+  const { extractPdfText } = load('lib/pdf-text-extract.ts', { 'pdfjs-dist': pdfjs })
+  assert.equal(await extractPdfText({ arrayBuffer: async () => new ArrayBuffer(0) }), 'Mercado 80,00\nOutra linha\nSegunda página\n')
+})
+
+test('PDF extraction identifies passwords and preserves unrelated failures', async () => {
+  for (const error of [{ name: 'PasswordException' }, new Error('invalid PDF'), null]) {
+    const pdfjs = { version: 'test', GlobalWorkerOptions: {}, getDocument: () => ({ promise: Promise.reject(error) }) }
+    const { extractPdfText, PdfPasswordRequiredError } = load('lib/pdf-text-extract.ts', { 'pdfjs-dist': pdfjs })
+    await assert.rejects(extractPdfText({ arrayBuffer: async () => new ArrayBuffer(0) }), (received) => error?.name === 'PasswordException' ? received instanceof PdfPasswordRequiredError : received === error)
+  }
+})
+
+test('invoice parsing preserves Brazilian currency, dates and split-line amounts', () => {
+  const { parseInvoiceText } = load('lib/invoice-parser.ts')
+  const result = parseInvoiceText('03/10 Mercado 1.234,56\n04 OUT Restaurante\n80,00\nVALOR TOTAL 1.314,56', 2026)
+  assert.equal(JSON.stringify(result), JSON.stringify([{ nome: 'Mercado', valor: 1234.56, data: '2026-10-03' }, { nome: 'Restaurante', valor: 80, data: '2026-10-04' }]))
+})
+
+test('report PDF positions totals after the table and provides a safe fallback', async () => {
+  for (const tableEnd of [100, undefined]) {
+    const runtime = hooks(), db = database({ expenses: [success([expense])] }), calls = []
+    class Pdf {
+      setFontSize() {} setTextColor() {}
+      text(...args) { calls.push(args) }
+      save(name) { calls.push(['save', name]) }
+    }
+    const { ReportsView } = load('components/reports-view.tsx', {
+      react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client },
+      jspdf: Pdf, 'jspdf-autotable': (doc) => { if (tableEnd !== undefined) doc.lastAutoTable = { finalY: tableEnd } },
+    })
+    let tree = runtime.render(ReportsView, {})
+    await find(tree, (node) => node.props.children === 'Buscar').props.onClick()
+    tree = await runtime.flush()
+    find(tree, (node) => node.props.onClick?.name === 'handleExportPdf').props.onClick()
+    const total = calls.find(([text]) => text.startsWith('Total do período'))
+    assert.equal(total[2], (tableEnd ?? 32) + 10)
+    assert.ok(total[0].includes('80,00'))
+    assert.ok(calls.some(([type]) => type === 'save'))
+  }
+})
+
+test('fifth business day excludes weekends for every possible starting weekday', () => {
+  const { fifthBusinessDayISO } = load('lib/payment-date.ts')
+  for (const [year, month, expected] of [
+    [2026, 5, '2026-06-05'], // Monday
+    [2026, 8, '2026-09-07'], // Tuesday
+    [2026, 3, '2026-04-07'], // Wednesday
+    [2026, 9, '2026-10-07'], // Thursday
+    [2026, 4, '2026-05-07'], // Friday
+    [2026, 7, '2026-08-07'], // Saturday
+    [2026, 10, '2026-11-06'], // Sunday; November 2 is counted
+    [2028, 1, '2028-02-07'], // Leap year
+    [1, 0, '0001-01-05'],
+  ]) assert.equal(fifthBusinessDayISO(year, month), expected)
+  for (const [year, month] of [[2026, -1], [2026, 12], [2026, 1.5], [0, 0], [10000, 0], [NaN, 0]]) {
+    assert.throws(() => fifthBusinessDayISO(year, month), (error) => error.name === 'RangeError')
+  }
+})
+
+function invoiceRuntime({ responses = {}, extract, selectedMonth = { month: 10, year: 2026 } } = {}) {
+  const runtime = hooks(), db = database(responses), imported = []
+  const pdf = load('lib/pdf-text-extract.ts', { 'pdfjs-dist': { version: 'test', GlobalWorkerOptions: {} } })
+  const { ImportInvoiceDialog } = load('components/import-invoice-dialog.tsx', {
+    react: runtime.react,
+    '@/lib/supabase/client': { createClient: () => db.client },
+    '@/lib/invoice-parser': load('lib/invoice-parser.ts'),
+    '@/lib/payment-date': load('lib/payment-date.ts'),
+    '@/lib/pdf-text-extract': {
+      PdfPasswordRequiredError: pdf.PdfPasswordRequiredError,
+      extractPdfText: extract ?? (async () => '03/10 Mercado 80,00\n20/09 Restaurante 50,00'),
+    },
+  })
+  const props = { selected: selectedMonth, boards: [{ id: 'existing-board', name: 'Cartão' }], onImported: (period) => imported.push(period) }
+  let tree = runtime.render(ImportInvoiceDialog, props)
+  tree.props.onOpenChange(true)
+  async function upload() {
+    tree = await runtime.flush()
+    await find(tree, (node) => node.props.id === 'invoice-pdf').props.onChange({ target: { files: [{}] } })
+    return runtime.flush()
+  }
+  return { runtime, db, imported, upload, ImportInvoiceDialog, props, PdfPasswordRequiredError: pdf.PdfPasswordRequiredError }
+}
+
+test('invoice review is spacious and imports all rows on the selected fifth business day', async () => {
+  const invoice = invoiceRuntime()
+  let tree = await invoice.upload()
+  find(tree, (node) => node.type === 'DialogContent' && node.props.className === 'invoice-review-dialog')
+  assert.equal(elements(tree, (node) => node.props.type === 'date').length, 0)
+  assert.equal(find(tree, (node) => node.props.id === 'invoice-payment-month').props.value, '2026-11')
+  assert.equal(elements(tree, (node) => node.type === 'time' && node.props.dateTime === '2026-11-06').length, 3)
+  await find(tree, (node) => node.props.children === 'Importar 2 despesa(s)').props.onClick()
+  tree = await invoice.runtime.flush()
+  const payload = invoice.db.requests[0].calls.find(([method]) => method === 'insert')[1]
+  assert.equal(payload.length, 2)
+  assert.ok(payload.every((row) => row.data_pagamento === '2026-11-06' && row.board_id === null))
+  assert.equal(payload[0].nome, 'Mercado')
+  assert.equal(payload[0].valor, 80)
+  assert.equal(JSON.stringify(invoice.imported), '[{"month":10,"year":2026}]')
+  assert.equal(tree.props.open, false)
+})
+
+test('changing payment month updates every row and creates the board in the correct year', async () => {
+  const invoice = invoiceRuntime({ responses: { boards: [success({ id: 'new-board' })] } })
+  let tree = await invoice.upload()
+  find(tree, (node) => node.props.id === 'invoice-payment-month').props.onChange({ target: { value: '2027-01' } })
+  tree = await invoice.runtime.flush()
+  assert.equal(elements(tree, (node) => node.type === 'time' && node.props.dateTime === '2027-01-07').length, 3)
+  assert.equal(elements(tree, (node) => node.type === 'SelectItem' && node.props.value === 'existing-board').length, 0)
+  find(tree, (node) => node.type === 'Select' && node.props.value === '__main__').props.onValueChange('__new__')
+  tree = await invoice.runtime.flush()
+  find(tree, (node) => node.props.placeholder === 'Nome do novo quadro').props.onChange({ target: { value: ' Fatura janeiro ' } })
+  tree = await invoice.runtime.flush()
+  await find(tree, (node) => node.props.children === 'Importar 2 despesa(s)').props.onClick()
+  await invoice.runtime.flush()
+  const board = invoice.db.requests.find((request) => request.table === 'boards').calls.find(([method]) => method === 'insert')[1]
+  assert.equal(board.month, 0)
+  assert.equal(board.year, 2027)
+  assert.equal(board.name, 'Fatura janeiro')
+  const rows = invoice.db.requests.find((request) => request.table === 'expenses').calls.find(([method]) => method === 'insert')[1]
+  assert.ok(rows.every((row) => row.data_pagamento === '2027-01-07' && row.board_id === 'new-board'))
+})
+
+test('existing board destinations reset when the payment month changes', async () => {
+  const invoice = invoiceRuntime()
+  let tree = await invoice.upload()
+  find(tree, (node) => node.type === 'Select').props.onValueChange('existing-board')
+  tree = await invoice.runtime.flush()
+  find(tree, (node) => node.props.id === 'invoice-payment-month').props.onChange({ target: { value: '2026-12' } })
+  tree = await invoice.runtime.flush()
+  find(tree, (node) => node.type === 'Select' && node.props.value === '__main__')
+  await find(tree, (node) => node.props.children === 'Importar 2 despesa(s)').props.onClick()
+  const payload = invoice.db.requests[0].calls.find(([method]) => method === 'insert')[1]
+  assert.ok(payload.every((row) => row.board_id === null && row.data_pagamento === '2026-12-07'))
+})
+
+test('manual invoice rows support edits and removal and cannot import empty expenses', async () => {
+  const invoice = invoiceRuntime({ extract: async () => '' })
+  let tree = await invoice.upload()
+  find(tree, (node) => node.props.children === 'Adicionar linha manualmente').props.onClick()
+  tree = await invoice.runtime.flush()
+  await find(tree, (node) => node.props.children === 'Importar 1 despesa(s)').props.onClick()
+  tree = await invoice.runtime.flush()
+  assert.equal(invoice.db.requests.length, 0)
+  find(tree, (node) => node.props['aria-label'] === 'Nome da despesa 1').props.onChange({ target: { value: ' Compra manual ' } })
+  tree = await invoice.runtime.flush()
+  find(tree, (node) => node.props['aria-label'] === 'Valor da despesa 1').props.onChange({ target: { value: '12,50' } })
+  tree = await invoice.runtime.flush()
+  find(tree, (node) => node.props.children === 'Adicionar linha manualmente').props.onClick()
+  tree = await invoice.runtime.flush()
+  find(tree, (node) => node.props['aria-label'] === 'Remover despesa 2').props.onClick()
+  tree = await invoice.runtime.flush()
+  await find(tree, (node) => node.props.children === 'Importar 1 despesa(s)').props.onClick()
+  const payload = invoice.db.requests[0].calls.find(([method]) => method === 'insert')[1]
+  assert.equal(payload[0].nome, 'Compra manual')
+  assert.equal(payload[0].valor, 12.5)
+  assert.equal(payload[0].data_pagamento, '2026-11-06')
+})
+
+test('invoice reset uses the new dashboard month on reopening', async () => {
+  const invoice = invoiceRuntime()
+  let tree = await invoice.upload()
+  find(tree, (node) => node.props.id === 'invoice-payment-month').props.onChange({ target: { value: '2027-01' } })
+  tree = await invoice.runtime.flush()
+  tree.props.onOpenChange(false)
+  tree = await invoice.runtime.flush()
+  tree = invoice.runtime.render(invoice.ImportInvoiceDialog, { ...invoice.props, selected: { month: 11, year: 2026 } })
+  tree.props.onOpenChange(true)
+  tree = await invoice.runtime.flush()
+  await find(tree, (node) => node.props.id === 'invoice-pdf').props.onChange({ target: { files: [{}] } })
+  tree = await invoice.runtime.flush()
+  assert.equal(find(tree, (node) => node.props.id === 'invoice-payment-month').props.value, '2026-12')
+})
+
+test('invoice review keeps rows available when saving fails', async () => {
+  const invoice = invoiceRuntime({ responses: { expenses: [failure] } })
+  let tree = await invoice.upload()
+  await find(tree, (node) => node.props.children === 'Importar 2 despesa(s)').props.onClick()
+  tree = await invoice.runtime.flush()
+  assert.equal(tree.props.open, true)
+  find(tree, (node) => node.props.children === 'Não foi possível salvar as despesas. Tente novamente.')
+  assert.equal(invoice.imported.length, 0)
+  find(tree, (node) => node.props['aria-label'] === 'Nome da despesa 1' && node.props.value === 'Mercado')
+})
+
+test('password-protected invoices use the payment date and clear the password on close', async () => {
+  let invoice
+  invoice = invoiceRuntime({ extract: async (_file, password) => {
+    if (password !== 'correct') throw new invoice.PdfPasswordRequiredError('Password required')
+    return '03/10 Mercado 80,00'
+  } })
+  let tree = await invoice.upload()
+  find(tree, (node) => node.props.id === 'pdf-password').props.onChange({ target: { value: 'correct' } })
+  tree = await invoice.runtime.flush()
+  await find(tree, (node) => node.props.children === 'Confirmar').props.onClick()
+  tree = await invoice.runtime.flush()
+  find(tree, (node) => node.type === 'time' && node.props.dateTime === '2026-11-06')
+  tree.props.onOpenChange(false)
+  tree = await invoice.runtime.flush()
+  tree.props.onOpenChange(true)
+  tree = await invoice.runtime.flush()
+  assert.equal(elements(tree, (node) => node.props.id === 'pdf-password').length, 0)
+  await find(tree, (node) => node.props.id === 'invoice-pdf').props.onChange({ target: { files: [{}] } })
+  tree = await invoice.runtime.flush()
+  assert.equal(find(tree, (node) => node.props.id === 'pdf-password').props.value, '')
+})

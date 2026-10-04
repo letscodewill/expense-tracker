@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { startTransition, useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { MonthYearPicker, type MonthYear } from '@/components/month-year-picker'
 import { ExpenseTable } from '@/components/expense-table'
@@ -71,7 +71,7 @@ export function ExpensesDashboard() {
   }, [fetchMainPanelTotal, mainPanelRefreshKey])
 
   const fetchBoards = useCallback(
-    async (attempt = 0) => {
+    async function loadBoards(attempt = 0) {
       if (attempt === 0) {
         setLoadingBoards(true)
         setBoardsError(false)
@@ -88,7 +88,7 @@ export function ExpensesDashboard() {
         const MAX_ATTEMPTS = 3
         if (attempt + 1 < MAX_ATTEMPTS) {
           await delay(1000 * (attempt + 1))
-          return fetchBoards(attempt + 1)
+          return loadBoards(attempt + 1)
         }
 
         setBoardsError(true)
@@ -104,7 +104,7 @@ export function ExpensesDashboard() {
   )
 
   useEffect(() => {
-    fetchBoards()
+    startTransition(() => { void fetchBoards() })
   }, [fetchBoards])
 
  async function handleDeleteBoard(boardId: string) {
@@ -142,8 +142,8 @@ export function ExpensesDashboard() {
   )
 
   return (
-    <div className="space-y-10">
-      <div className="flex flex-wrap justify-end items-center gap-2">
+    <div className="space-y-6">
+      <div className="material-toolbar flex flex-wrap items-center gap-3">
         <MonthYearPicker value={selected} onChange={setSelected} />
         {!isCurrentMonth(selected) && (
           <Button variant="outline" size="sm" onClick={handleGoToCurrentMonth}>
@@ -159,7 +159,8 @@ export function ExpensesDashboard() {
         <ImportInvoiceDialog
           selected={selected}
           boards={boardsForMonth}
-          onImported={() => {
+          onImported={(paymentPeriod) => {
+            setSelected(paymentPeriod)
             fetchBoards()
             setMainPanelRefreshKey((k) => k + 1)
           }}
@@ -239,7 +240,8 @@ export function ExpensesDashboard() {
         open={fabImportOpen}
         onOpenChange={setFabImportOpen}
         hideTrigger
-        onImported={() => {
+        onImported={(paymentPeriod) => {
+          setSelected(paymentPeriod)
           fetchBoards()
           setMainPanelRefreshKey((k) => k + 1)
           setFabImportOpen(false)
