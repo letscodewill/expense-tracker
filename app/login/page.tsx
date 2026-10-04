@@ -1,5 +1,7 @@
 import { login, recoverPassword } from './actions'
 import Image from 'next/image'
+import { redirect } from 'next/navigation'
+import { createClient } from '@/lib/supabase/server'
 import { SignupDialog } from '@/components/signup-dialog'
 import { GoogleSignInButton } from '@/components/google-signin-button'
 
@@ -10,6 +12,18 @@ export default async function LoginPage({
 }) {
   const params = await searchParams
   const isRecoverMode = params?.mode === 'recover'
+
+  if (!isRecoverMode) {
+    let authenticated = false
+    try {
+      const supabase = await createClient()
+      const { data, error } = await supabase.auth.getUser()
+      authenticated = !error && !!data.user
+    } catch (error) {
+      console.warn('[login] Could not validate existing session:', error)
+    }
+    if (authenticated) redirect('/')
+  }
 
   return (
      <div className="flex justify-center items-center min-h-screen sm:px-4">

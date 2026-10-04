@@ -30,7 +30,7 @@ function load(file, mocks = {}, globals = {}) {
   }
   vm.runInNewContext(output, {
     module: loadedModule, exports: loadedModule.exports, require: localRequire,
-    console: { ...console, error() {} },
+    console: { ...console, error() {}, warn() {} },
     setTimeout: (callback) => { callback(); return 0 },
     ...globals,
   }, { filename })
@@ -458,4 +458,113 @@ test('password-protected invoices use the payment date and clear the password on
   await find(tree, (node) => node.props.id === 'invoice-pdf').props.onChange({ target: { files: [{}] } })
   tree = await invoice.runtime.flush()
   assert.equal(find(tree, (node) => node.props.id === 'pdf-password').props.value, '')
+})
+
+const testAuthEnv = { NEXT_PUBLIC_SUPABASE_URL: 'https://testproject.supabase.co', NEXT_PUBLIC_SUPABASE_ANON_KEY: 'test-public-key' }
+const sessionConfig = () => load('lib/supabase/session-config.ts', {}, { URL })
+
+test('session policy enforces 45 days while preserving deletions and cookie attributes', () => {
+  const config = sessionConfig()
+  assert.equal(config.SESSION_MAX_AGE, 3888000)
+  const options = config.sessionCookieOptions('token', { maxAge: 34560000, secure: true, sameSite: 'lax' })
+  assert.equal(options.maxAge, 3888000)
+  assert.equal(options.secure, true)
+  assert.ok(Math.abs(options.expires.getTime() - Date.now() - 3888000000) < 1000)
+  assert.equal(config.sessionCookieOptions('', { maxAge: 0 }).maxAge, 0)
+  assert.equal(config.isSessionCookie('sb-testproject-auth-token.1', testAuthEnv.NEXT_PUBLIC_SUPABASE_URL), true)
+  assert.equal(config.isSessionCookie('sb-other-auth-token', testAuthEnv.NEXT_PUBLIC_SUPABASE_URL), false)
+  assert.equal(config.isSessionCookie('sb-testproject-auth-token-code-verifier', testAuthEnv.NEXT_PUBLIC_SUPABASE_URL), false)
+})
+
+async function sessionResponse(initialCookies, authenticate) {
+  const { NextRequest } = nodeRequire('next/server')
+  const request = new NextRequest('https://expense.test/', { headers: { cookie: initialCookies } })
+  const { updateSession } = load('lib/supabase/middleware.ts', {
+    './session-config': sessionConfig(),
+    '@supabase/ssr': { createServerClient: (_url, _key, options) => ({ auth: { getUser: () => authenticate(options.cookies) } }) },
+  }, { process: { env: testAuthEnv }, URL })
+  return { response: await updateSession(request), request }
+}
+
+test('valid sessions extend cookies by 45 days on every visit, including token chunks', async () => {
+  const { response } = await sessionResponse('sb-testproject-auth-token.0=part0; sb-testproject-auth-token.1=part1; unrelated=value', async () => ({ data: { user: { id: 'user' } }, error: null }))
+  for (const name of ['sb-testproject-auth-token.0', 'sb-testproject-auth-token.1']) {
+    assert.equal(response.cookies.get(name).maxAge, 3888000)
+  }
+  assert.equal(response.cookies.get('unrelated'), undefined)
+  assert.ok(response.headers.get('cache-control').includes('no-store'))
+})
+
+test('refreshed tokens reach both server requests and browser responses without reviving old chunks', async () => {
+  const { response, request } = await sessionResponse('sb-testproject-auth-token.0=old; sb-testproject-auth-token.1=obsolete', async (cookies) => {
+    cookies.setAll([
+      { name: 'sb-testproject-auth-token.0', value: '', options: { path: '/', maxAge: 0 } },
+      { name: 'sb-testproject-auth-token.1', value: '', options: { path: '/', maxAge: 0 } },
+      { name: 'sb-testproject-auth-token', value: 'new-token', options: { path: '/', maxAge: 34560000 } },
+    ], { 'Cache-Control': 'private, no-store' })
+    return { data: { user: { id: 'user' } }, error: null }
+  })
+  assert.equal(request.cookies.get('sb-testproject-auth-token').value, 'new-token')
+  assert.equal(request.cookies.get('sb-testproject-auth-token.1'), undefined)
+  assert.equal(response.cookies.get('sb-testproject-auth-token').value, 'new-token')
+  assert.equal(response.cookies.get('sb-testproject-auth-token').maxAge, 3888000)
+  assert.equal(response.cookies.get('sb-testproject-auth-token.1').maxAge, 0)
+})
+
+test('transient auth failures preserve cookies, and invalid sessions clear only this project', async () => {
+  for (const shouldThrow of [false, true]) {
+    const { response, request } = await sessionResponse('sb-testproject-auth-token=token', async () => {
+      const error = new Error('temporary outage')
+      if (shouldThrow) throw error
+      return { data: { user: null }, error }
+    })
+    assert.equal(response.cookies.getAll().length, 0)
+    assert.equal(request.cookies.get('sb-testproject-auth-token').value, 'token')
+  }
+  const { response } = await sessionResponse('sb-testproject-auth-token=invalid; sb-other-auth-token=other', async () => ({ data: { user: null }, error: { code: 'refresh_token_not_found' } }))
+  assert.equal(response.cookies.get('sb-testproject-auth-token').maxAge, 0)
+  assert.equal(response.cookies.get('sb-other-auth-token'), undefined)
+})
+
+test('anonymous access does not create a session', async () => {
+  const { response } = await sessionResponse('', async () => ({ data: { user: null }, error: null }))
+  assert.equal(response.cookies.getAll().length, 0)
+})
+
+test('browser and server writes enforce lifetime even when the SDK supplies 400 days', async () => {
+  const sdk = nodeRequire('@supabase/ssr')
+  let browserOptions, serverOptions
+  const writes = []
+  const document = { cookie: '' }
+  const { createClient: browserClient } = load('lib/supabase/client.ts', {
+    './session-config': sessionConfig(),
+    '@supabase/ssr': { ...sdk, createBrowserClient: (_url, _key, options) => { browserOptions = options; return {} } },
+  }, { document, process: { env: testAuthEnv } })
+  browserClient()
+  browserOptions.cookies.setAll([{ name: 'sb-testproject-auth-token', value: 'token', options: { path: '/', maxAge: 34560000 } }])
+  assert.ok(document.cookie.includes('Max-Age=3888000'))
+  browserOptions.cookies.setAll([{ name: 'sb-testproject-auth-token', value: '', options: { path: '/', maxAge: 0 } }])
+  assert.ok(document.cookie.includes('Max-Age=0'))
+  const { createClient: serverClient } = load('lib/supabase/server.ts', {
+    './session-config': sessionConfig(),
+    '@supabase/ssr': { createServerClient: (_url, _key, options) => { serverOptions = options; return {} } },
+    'next/headers': { cookies: async () => ({ getAll: () => [], set: (...args) => writes.push(args) }) },
+  }, { process: { env: testAuthEnv } })
+  await serverClient()
+  serverOptions.cookies.setAll([{ name: 'sb-testproject-auth-token', value: 'token', options: { maxAge: 34560000 } }])
+  assert.equal(writes[0][2].maxAge, 3888000)
+})
+
+test('login skips the form for authenticated visitors and keeps password recovery available', async () => {
+  let checks = 0
+  const { default: LoginPage } = load('app/login/page.tsx', {
+    './actions': { login() {}, recoverPassword() {} },
+    'next/image': 'Image',
+    'next/navigation': { redirect: (destination) => { throw { destination } } },
+    '@/lib/supabase/server': { createClient: async () => ({ auth: { getUser: async () => { checks++; return { data: { user: { id: 'user' } }, error: null } } } }) },
+  })
+  await assert.rejects(LoginPage({ searchParams: Promise.resolve({}) }), (result) => result.destination === '/')
+  const recovery = await LoginPage({ searchParams: Promise.resolve({ mode: 'recover' }) })
+  find(recovery, (node) => node.props.children === 'Recuperar senha')
+  assert.equal(checks, 1)
 })

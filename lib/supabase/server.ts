@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { SESSION_COOKIE_OPTIONS, sessionCookieOptions } from './session-config'
 
 function getSupabaseEnv() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -27,15 +28,12 @@ function getSupabaseEnv() {
 export async function createClient() {
   const { url, anonKey } = getSupabaseEnv()
   const cookieStore = await cookies()
-  const THIRTY_DAYS = 60 * 60 * 24 * 30
 
   return createServerClient(
     url,
     anonKey,
     {
-      cookieOptions: {
-        maxAge: THIRTY_DAYS,
-      },
+      cookieOptions: SESSION_COOKIE_OPTIONS,
       cookies: {
         getAll() {
           return cookieStore.getAll()
@@ -43,7 +41,7 @@ export async function createClient() {
         setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
+              cookieStore.set(name, value, sessionCookieOptions(value, options))
             )
           } catch {
             // O setAll foi chamado a partir de um Server Component.
