@@ -553,6 +553,8 @@ function invoiceRuntime({ responses = {}, extract, selectedMonth = { month: 10, 
     '@/lib/supabase/client': { createClient: () => db.client },
     '@/lib/invoice-parser': load('lib/invoice-parser.ts'),
     '@/lib/payment-date': load('lib/payment-date.ts'),
+    '@/lib/spreadsheet-import': load('lib/spreadsheet-import.ts'),
+    '@/lib/invoice-ai': load('lib/invoice-ai.ts'),
     '@/lib/pdf-text-extract': {
       PdfPasswordRequiredError: pdf.PdfPasswordRequiredError,
       extractPdfText: extract ?? (async () => '03/10 Mercado 80,00\n20/09 Restaurante 50,00'),
@@ -561,9 +563,9 @@ function invoiceRuntime({ responses = {}, extract, selectedMonth = { month: 10, 
   const props = { selected: selectedMonth, boards: [{ id: 'existing-board', name: 'Cartão' }], onImported: (period) => imported.push(period) }
   let tree = runtime.render(ImportInvoiceDialog, props)
   tree.props.onOpenChange(true)
-  async function upload() {
+  async function upload(file = { name: 'fatura.pdf', size: 100 }) {
     tree = await runtime.flush()
-    await find(tree, (node) => node.props.id === 'invoice-pdf').props.onChange({ target: { files: [{}] } })
+    await find(tree, (node) => node.props.id === 'invoice-pdf').props.onChange({ target: { files: [file] } })
     return runtime.flush()
   }
   return { runtime, db, imported, upload, ImportInvoiceDialog, props, PdfPasswordRequiredError: pdf.PdfPasswordRequiredError }
@@ -654,7 +656,7 @@ test('invoice reset uses the new dashboard month on reopening', async () => {
   tree = invoice.runtime.render(invoice.ImportInvoiceDialog, { ...invoice.props, selected: { month: 11, year: 2026 } })
   tree.props.onOpenChange(true)
   tree = await invoice.runtime.flush()
-  await find(tree, (node) => node.props.id === 'invoice-pdf').props.onChange({ target: { files: [{}] } })
+  await find(tree, (node) => node.props.id === 'invoice-pdf').props.onChange({ target: { files: [{ name: 'fatura.pdf', size: 100 }] } })
   tree = await invoice.runtime.flush()
   assert.equal(find(tree, (node) => node.props.id === 'invoice-payment-month').props.value, '2026-12')
 })
@@ -687,7 +689,7 @@ test('password-protected invoices use the payment date and clear the password on
   tree.props.onOpenChange(true)
   tree = await invoice.runtime.flush()
   assert.equal(elements(tree, (node) => node.props.id === 'pdf-password').length, 0)
-  await find(tree, (node) => node.props.id === 'invoice-pdf').props.onChange({ target: { files: [{}] } })
+  await find(tree, (node) => node.props.id === 'invoice-pdf').props.onChange({ target: { files: [{ name: 'fatura.pdf', size: 100 }] } })
   tree = await invoice.runtime.flush()
   assert.equal(find(tree, (node) => node.props.id === 'pdf-password').props.value, '')
 })
@@ -981,4 +983,123 @@ test('confirmed delegated administrator can access tickets through database memb
     'server-only': {}, '@/lib/supabase/server': { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { email: 'admin@example.com', email_confirmed_at: 'confirmed' } }, error: null }) }, rpc: async () => ({ data: true, error: null }) }) },
   })
   assert.equal((await getTicketAccess()).master, true)
+})
+
+test('spreadsheet CSV preserves Brazilian decimals, quotes and multiline names', () => {
+  const { parseCSV, mapSpreadsheet, suggestColumns, parseCurrency } = load('lib/spreadsheet-import.ts')
+  const cells = parseCSV('\uFEFFDescrição;Valor\r\n"Loja; centro";"R$ 1.234,56"\r\n"Nome ""especial""\ncontinuação";12,50\r\nEstorno;-20,00\r\nIncompleta;abc')
+  assert.equal(cells[1][0], 'Loja; centro')
+  assert.equal(cells[2][0], 'Nome "especial"\ncontinuação')
+  assert.equal(suggestColumns(cells).amount, 1)
+  const result = mapSpreadsheet(cells, 0, 1, true)
+  assert.equal(result.rows.length, 2)
+  assert.equal(result.rows[0].valor, 1234.56)
+  assert.equal(result.warnings.length, 2)
+  assert.equal(parseCurrency('(12,50)'), -12.5)
+  assert.equal(parseCurrency('12.50'), 12.5)
+  assert.equal(parseCurrency('1,234.56'), 1234.56)
+  assert.equal(parseCurrency('12xyz'), null)
+  assert.throws(() => parseCSV('Nome,Valor\n"aberto,12'), /aspas/)
+  assert.throws(() => mapSpreadsheet(cells, 0, 0, true), /diferentes/)
+  assert.throws(() => mapSpreadsheet(Array(501).fill(['Compra', '1']), 0, 1, false), /500/)
+})
+
+test('Excel reader handles multiple tabs, cached formulas and upload limits', async () => {
+  const ExcelJS = nodeRequire('exceljs')
+  const workbook = new ExcelJS.Workbook()
+  const first = workbook.addWorksheet('Cartão')
+  first.addRow(['Nome', 'Valor'])
+  first.addRow(['Mercado', 123.45])
+  first.addRow(['Parcela 1/3', { formula: '100/2', result: 50 }])
+  workbook.addWorksheet('Outro cartão').addRow(['Farmácia', 20])
+  const bytes = await workbook.xlsx.writeBuffer()
+  const { readSpreadsheet } = load('lib/spreadsheet-import.ts')
+  const file = { name: 'fatura.xlsx', size: bytes.length, arrayBuffer: async () => bytes }
+  const sheets = await readSpreadsheet(file)
+  assert.equal(sheets.length, 2)
+  assert.equal(sheets[0].cells[1][1], '123.45')
+  assert.equal(sheets[0].cells[2][1], '50')
+  await assert.rejects(() => readSpreadsheet({ ...file, size: 4000000 }), /3 MB/)
+  await assert.rejects(() => readSpreadsheet({ ...file, name: 'antigo.xls' }), /xlsx/)
+})
+
+test('AI output rejects malformed expenses and preserves safe review warnings', () => {
+  const { validateAIInvoice } = load('lib/invoice-ai.ts')
+  const result = validateAIInvoice({ rows: [{ nome: ' Compra 1/3 ', valor: 12.345 }], warnings: ['Há um estorno: confira o total.'] })
+  assert.equal(result.rows[0].nome, 'Compra 1/3')
+  assert.equal(result.rows[0].valor, 12.35)
+  for (const valor of [-1, 0, Infinity, '10', 10000001]) assert.throws(() => validateAIInvoice({ rows: [{ nome: 'Compra', valor }], warnings: [] }))
+  assert.throws(() => validateAIInvoice({ rows: [{ nome: '', valor: 10 }], warnings: [] }))
+  assert.throws(() => validateAIInvoice({ rows: [], warnings: [42] }))
+})
+
+test('AI analysis rejects bad origin, anonymous users, missing setup and unauthorized accounts without calling OpenAI', async () => {
+  let calls = 0
+  const run = async (origin, user, env = {}) => {
+    const { POST } = load('app/api/invoices/analyze/route.ts', {
+      '@/lib/supabase/server': { createClient: async () => ({ auth: { getUser: async () => ({ data: { user }, error: null }) } }) },
+      '@/lib/invoice-ai': load('lib/invoice-ai.ts'),
+      '@/lib/invoice-ai-limit': load('lib/invoice-ai-limit.ts'),
+    }, { Response, Request, File, Buffer, AbortSignal, process: { env }, fetch: async () => { calls++; throw new Error('Must not call') } })
+    return POST(new Request('https://example.com/api/invoices/analyze', { method: 'POST', headers: origin ? { origin } : {} }))
+  }
+  assert.equal((await run('https://evil.test', null)).status, 403)
+  assert.equal((await run('https://example.com', null)).status, 401)
+  assert.equal((await run('https://example.com', { id: 'u', email: 'owner@example.com' })).status, 503)
+  assert.equal((await run('https://example.com', { id: 'u', email: 'other@example.com' }, { OPENAI_API_KEY: 'test', INVOICE_AI_ALLOWED_EMAILS: 'owner@example.com' })).status, 403)
+  assert.equal(calls, 0)
+})
+
+test('AI analysis validates structured results, keeps API key server-side and handles incomplete provider responses', async () => {
+  let requestBody, fail = false
+  const { POST } = load('app/api/invoices/analyze/route.ts', {
+    '@/lib/supabase/server': { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: 'owner', email: 'owner@example.com' } }, error: null }) } }) },
+    '@/lib/invoice-ai': load('lib/invoice-ai.ts'),
+    '@/lib/invoice-ai-limit': load('lib/invoice-ai-limit.ts'),
+  }, { Response, Request, File, Buffer, AbortSignal, process: { env: { OPENAI_API_KEY: 'secret-test', INVOICE_AI_ALLOWED_EMAILS: 'owner@example.com' } },
+    fetch: async (_url, options) => {
+      requestBody = JSON.parse(options.body)
+      return Response.json({ status: fail ? 'incomplete' : 'completed', output: [{ content: [{ type: 'output_text', text: JSON.stringify({ rows: [{ nome: 'Compra', valor: 10 }], warnings: [] }) }] }] })
+    } })
+  const request = (bytes = '%PDF-1.7 synthetic') => {
+    const form = new FormData()
+    form.append('file', new File([bytes], 'fatura.pdf', { type: 'application/pdf' }))
+    return new Request('https://example.com/api/invoices/analyze', { method: 'POST', headers: { origin: 'https://example.com' }, body: form })
+  }
+  assert.equal((await POST(request('not-a-pdf'))).status, 400)
+  const response = await POST(request())
+  assert.equal(response.status, 200)
+  assert.equal((await response.json()).rows[0].valor, 10)
+  assert.equal(requestBody.store, false)
+  assert.equal(requestBody.text.format.strict, true)
+  assert.equal(JSON.stringify(requestBody).includes('secret-test'), false)
+  fail = true
+  assert.equal((await POST(request())).status, 502)
+})
+
+test('AI local limiter prevents overlapping analyses and expires hourly attempts', () => {
+  const { reserveInvoiceAnalysis } = load('lib/invoice-ai-limit.ts')
+  let release = reserveInvoiceAnalysis('u', 1000)
+  assert.equal(typeof release, 'function')
+  assert.equal(reserveInvoiceAnalysis('u', 1001), null)
+  release()
+  for (let index = 0; index < 9; index++) { release = reserveInvoiceAnalysis('u', 1002); release() }
+  assert.equal(reserveInvoiceAnalysis('u', 1003), null)
+  assert.equal(typeof reserveInvoiceAnalysis('u', 3601000), 'function')
+})
+
+test('spreadsheet mapping flows into invoice review and saves only on confirmation with fifth business day', async () => {
+  const invoice = invoiceRuntime()
+  let tree = await invoice.upload({ name: 'export-google.csv', size: 100, text: async () => 'Valor;Descrição\n123,45;Mercado\n50,00;Parcela 1/3\n-10,00;Estorno' })
+  assert.equal(find(tree, (node) => node.props.id === 'import-name-column').props.value, 1)
+  assert.equal(invoice.db.requests.length, 0)
+  find(tree, (node) => node.props.children === 'Conferir despesas').props.onClick()
+  tree = await invoice.runtime.flush()
+  find(tree, (node) => node.type === 'DialogContent' && node.props.className === 'invoice-review-dialog')
+  assert.equal(invoice.db.requests.length, 0)
+  await find(tree, (node) => node.props.children === 'Importar 2 despesa(s)').props.onClick()
+  const payload = invoice.db.requests[0].calls.find(([method]) => method === 'insert')[1]
+  assert.equal(payload[0].nome, 'Mercado')
+  assert.equal(payload[0].valor, 123.45)
+  assert.ok(payload.every((row) => row.data_pagamento === '2026-11-06'))
 })

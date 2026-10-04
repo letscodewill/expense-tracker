@@ -4,6 +4,8 @@ import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { parseInvoiceText, type ParsedExpense } from '@/lib/invoice-parser'
 import { fifthBusinessDayISO } from '@/lib/payment-date'
+import { readSpreadsheet, suggestColumns, mapSpreadsheet, MAX_IMPORT_BYTES, MAX_IMPORT_ROWS, type ImportSheet } from '@/lib/spreadsheet-import'
+import { validateAIInvoice } from '@/lib/invoice-ai'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -57,7 +59,14 @@ export function ImportInvoiceDialog({
     setOpenState(value)
     onOpenChange?.(value)
   }
-  const [step, setStep] = useState<'upload' | 'review'>('upload')
+  const [step, setStep] = useState<'upload' | 'mapping' | 'review'>('upload')
+  const [useAI, setUseAI] = useState(false)
+  const [warnings, setWarnings] = useState<string[]>([])
+  const [sheets, setSheets] = useState<ImportSheet[]>([])
+  const [sheetIndex, setSheetIndex] = useState(0)
+  const [nameColumn, setNameColumn] = useState(0)
+  const [amountColumn, setAmountColumn] = useState(1)
+  const [hasHeader, setHasHeader] = useState(true)
   const [parsing, setParsing] = useState(false)
   const [rows, setRows] = useState<InvoiceRow[]>([])
   const [paymentMonth, setPaymentMonth] = useState<MonthYear | null>(null)
@@ -78,8 +87,34 @@ export function ImportInvoiceDialog({
     setError('')
 
     try {
-      const text = await extractPdfText(file, password)
-      const parsed = parseInvoiceText(text, selected.year)
+      if (file.size > MAX_IMPORT_BYTES) throw new Error('O arquivo deve ter no máximo 3 MB.')
+      if (/\.(xlsx|csv)$/i.test(file.name)) {
+        const loaded = await readSpreadsheet(file)
+        if (!loaded.length) throw new Error('A planilha está vazia.')
+        setSheets(loaded)
+        selectSheet(0, loaded)
+        setWarnings([])
+        setNeedsPassword(false)
+        setStep('mapping')
+        return
+      }
+      if (!/\.pdf$/i.test(file.name)) throw new Error('Selecione um arquivo PDF, Excel (.xlsx) ou CSV.')
+      let parsed: InvoiceRow[]
+      if (useAI) {
+        const form = new FormData()
+        form.append('file', file)
+        const response = await fetch('/api/invoices/analyze', { method: 'POST', body: form })
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.error || 'Não foi possível analisar a fatura.')
+        const analyzed = validateAIInvoice(result)
+        parsed = analyzed.rows
+        setWarnings(analyzed.warnings)
+      } else {
+        const text = await extractPdfText(file, password)
+        parsed = parseInvoiceText(text, selected.year)
+        setWarnings([])
+      }
+      if (parsed.length > MAX_IMPORT_ROWS) throw new Error(`Importe no máximo ${MAX_IMPORT_ROWS} despesas por vez.`)
 
       if (parsed.length === 0) {
         setError(
@@ -96,8 +131,7 @@ export function ImportInvoiceDialog({
         setNeedsPassword(true)
         setPendingFile(file)
       } else {
-        console.error('Erro ao processar PDF:', err)
-        setError('Não foi possível ler este PDF. Verifique se o arquivo não está corrompido.')
+        setError(err instanceof Error ? err.message : 'Não foi possível ler este arquivo. Verifique o formato e tente novamente.')
       }
     } finally {
       setParsing(false)
@@ -108,6 +142,26 @@ export function ImportInvoiceDialog({
     const file = e.target.files?.[0]
     if (!file) return
     await processFile(file)
+    e.target.value = ''
+  }
+
+  function selectSheet(index: number, loaded = sheets) {
+    setSheetIndex(index)
+    const suggested = suggestColumns(loaded[index].cells)
+    setNameColumn(suggested.name)
+    setAmountColumn(suggested.amount)
+    setHasHeader(suggested.header)
+  }
+
+  function reviewSpreadsheet() {
+    try {
+      const result = mapSpreadsheet(sheets[sheetIndex].cells, nameColumn, amountColumn, hasHeader)
+      if (!result.rows.length) throw new Error('Nenhuma despesa válida. Confira as colunas selecionadas.')
+      setRows(result.rows)
+      setWarnings(result.warnings)
+      setError('')
+      setStep('review')
+    } catch (err) { setError(err instanceof Error ? err.message : 'Não foi possível ler as colunas.') }
   }
 
   async function handleSubmitPassword() {
@@ -125,6 +179,9 @@ export function ImportInvoiceDialog({
     setPendingFile(null)
     setNeedsPassword(false)
     setPdfPassword('')
+    setSheets([])
+    setWarnings([])
+    setUseAI(false)
   }
 
   function updateRow(index: number, field: keyof InvoiceRow, value: string) {
@@ -142,13 +199,15 @@ export function ImportInvoiceDialog({
   }
 
   function addEmptyRow() {
+    if (rows.length >= MAX_IMPORT_ROWS) return
     setRows((prev) => [...prev, { nome: '', valor: 0 }])
   }
 
   async function handleConfirm() {
-    const validRows = rows.filter((row) => row.nome.trim() && Number.isFinite(row.valor) && row.valor > 0)
-    if (validRows.length === 0) {
-      setError('Informe ao menos uma despesa com nome e valor maior que zero.')
+    if (saving) return
+    const validRows = rows.filter((row) => row.nome.trim() && row.nome.length <= 200 && Number.isFinite(row.valor) && row.valor > 0 && row.valor <= 10000000)
+    if (validRows.length === 0 || validRows.length !== rows.length || rows.length > MAX_IMPORT_ROWS) {
+      setError('Corrija ou remova as linhas inválidas. Informe nome e valor maior que zero em todas as despesas.')
       return
     }
     if (destination === NEW_BOARD_VALUE && !newBoardName.trim()) {
@@ -159,7 +218,13 @@ export function ImportInvoiceDialog({
     setSaving(true)
     setError('')
 
+    try {
     const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      setError('Entre novamente para salvar as despesas.')
+      setSaving(false)
+      return
+    }
 
     let targetBoardId: string | null = null
 
@@ -210,12 +275,18 @@ export function ImportInvoiceDialog({
     setOpen(false)
     reset()
     onImported(paymentPeriod)
+    } catch {
+      setError('Não foi possível salvar as despesas. Verifique sua conexão e tente novamente.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
     <Dialog
       open={open}
       onOpenChange={(isOpen) => {
+        if (parsing || saving) return
         setOpen(isOpen)
         if (!isOpen) reset()
       }}
@@ -230,23 +301,28 @@ export function ImportInvoiceDialog({
     }
   />
 )}
-      <DialogContent className={step === 'review' ? 'invoice-review-dialog' : 'max-w-2xl sm:max-w-2xl'}>
+      <DialogContent className={step === 'review' ? 'invoice-review-dialog' : 'max-h-[90dvh] overflow-y-auto max-w-2xl sm:max-w-2xl'}>
         <DialogHeader>
-          <DialogTitle>Importar fatura (PDF)</DialogTitle>
+          <DialogTitle>Importar fatura ou planilha</DialogTitle>
           <DialogDescription>Confira os nomes, valores e o mês de pagamento antes de importar.</DialogDescription>
         </DialogHeader>
 
         {step === 'upload' && (
           <div className="space-y-4 py-4">
-            <Label htmlFor="invoice-pdf">Selecione o PDF da fatura</Label>
+            <Label htmlFor="invoice-pdf">Selecione um PDF, Excel (.xlsx) ou CSV</Label>
             <Input
               id="invoice-pdf"
               type="file"
-              accept="application/pdf"
+              accept=".pdf,.xlsx,.csv,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
               onChange={handleFileChange}
               disabled={parsing}
             />
-            {parsing && <p className="text-sm text-muted-foreground">Lendo o PDF...</p>}
+            <p className="text-sm text-muted-foreground">Até 3 MB e 500 despesas por importação. No Google Planilhas, use Arquivo → Fazer download → Microsoft Excel ou CSV.</p>
+            <label className="flex items-start gap-3 rounded-2xl border p-4 text-sm">
+              <input type="checkbox" checked={useAI} disabled={parsing || needsPassword} onChange={(event) => setUseAI(event.target.checked)} className="mt-1" />
+              <span><span className="font-medium">Ler PDF com inteligência artificial</span><span className="mt-1 block text-muted-foreground">Ao selecionar esta opção e enviar um PDF, o arquivo será enviado à OpenAI para análise. A disponibilidade depende da configuração do sistema. Planilhas são lidas sem IA. Para PDFs com senha, use a leitura padrão ou envie uma cópia desbloqueada.</span></span>
+            </label>
+            {parsing && <p role="status" className="text-sm text-muted-foreground">{useAI ? 'Analisando o arquivo...' : 'Lendo o arquivo...'}</p>}
 
             {needsPassword && (
               <div className="space-y-2 pt-2 border-t">
@@ -269,9 +345,31 @@ export function ImportInvoiceDialog({
           </div>
         )}
 
+        {step === 'mapping' && <div className="space-y-4 py-4">
+          <div className="space-y-2"><Label htmlFor="import-sheet">Aba da planilha</Label>
+            <select id="import-sheet" className="w-full rounded-xl border bg-background p-3" value={sheetIndex} onChange={(event) => selectSheet(Number(event.target.value))}>
+              {sheets.map((sheet, index) => <option key={index} value={index}>{sheet.name}</option>)}
+            </select>
+          </div>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={hasHeader} onChange={(event) => setHasHeader(event.target.checked)} />A primeira linha contém os títulos das colunas</label>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {([{ label: 'Coluna do nome', id: 'import-name-column', value: nameColumn, update: setNameColumn }, { label: 'Coluna do valor', id: 'import-amount-column', value: amountColumn, update: setAmountColumn }]).map((field) => <div key={field.id} className="space-y-2">
+              <Label htmlFor={field.id}>{field.label}</Label>
+              <select id={field.id} className="w-full rounded-xl border bg-background p-3" value={field.value} onChange={(event) => field.update(Number(event.target.value))}>
+                {Array.from({ length: Math.max(...sheets[sheetIndex].cells.map((cell) => cell.length)) }, (_, index) => <option key={index} value={index}>Coluna {index + 1}{hasHeader ? ` — ${sheets[sheetIndex].cells[0]?.[index] || 'Sem título'}` : ''}</option>)}
+              </select>
+            </div>)}
+          </div>
+          <div className="max-h-48 overflow-auto rounded-xl border"><Table><TableHeader><TableRow>{sheets[sheetIndex].cells[0]?.map((_, index) => <TableHead key={index}>Coluna {index + 1}</TableHead>)}</TableRow></TableHeader><TableBody>{sheets[sheetIndex].cells.slice(0, 5).map((cell, index) => <TableRow key={index}>{cell.map((value, column) => <TableCell key={column}>{value}</TableCell>)}</TableRow>)}</TableBody></Table></div>
+          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+          <Button onClick={reviewSpreadsheet}>Conferir despesas</Button>
+        </div>}
+
         {step === 'review' && (
           <div className="invoice-review-body flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
             {error && <p className="text-sm text-red-600">{error}</p>}
+            {warnings.length > 0 && <details className="rounded-xl border p-3 text-sm"><summary className="cursor-pointer font-medium">{warnings.length} aviso(s) na leitura — confira antes de importar</summary><ul className="mt-2 list-disc space-y-1 pl-5">{warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></details>}
+            <p className="text-sm font-medium">Total das despesas: {rows.reduce((sum, row) => sum + row.valor, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}. Confira com a fatura; créditos e estornos não são importados como despesas.</p>
 
             <div className="flex flex-wrap items-end gap-4 rounded-2xl bg-muted p-4">
               <div className="space-y-2">
@@ -348,7 +446,7 @@ export function ImportInvoiceDialog({
               </Table>
             </div>
 
-            <Button variant="outline" size="sm" onClick={addEmptyRow} disabled={saving} className="self-start">
+            <Button variant="outline" size="sm" onClick={addEmptyRow} disabled={saving || rows.length >= MAX_IMPORT_ROWS} className="self-start">
               Adicionar linha manualmente
             </Button>
 
@@ -356,7 +454,7 @@ export function ImportInvoiceDialog({
               <Label>Adicionar despesas em:</Label>
               <Select value={destination} onValueChange={(value) => setDestination(value ?? MAIN_PANEL_VALUE)} disabled={saving}>
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue>{destination === MAIN_PANEL_VALUE ? 'Painel principal' : destination === NEW_BOARD_VALUE ? '+ Criar novo quadro' : boards.find((board) => board.id === destination)?.name}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={MAIN_PANEL_VALUE}>Painel principal</SelectItem>
@@ -382,6 +480,7 @@ export function ImportInvoiceDialog({
         )}
 
         <DialogFooter className="shrink-0">
+          {step !== 'upload' && <Button variant="outline" disabled={saving || parsing} onClick={reset}>Escolher outro arquivo</Button>}
           {step === 'review' && (
             <Button onClick={handleConfirm} disabled={saving}>
               {saving ? 'Importando...' : `Importar ${rows.length} despesa(s)`}
