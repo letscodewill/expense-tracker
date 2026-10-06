@@ -23,6 +23,8 @@ function load(file, mocks = {}, globals = {}) {
   const localRequire = (name) => {
     if (Object.hasOwn(mocks, name)) return mocks[name]
     if (name === '@/lib/expense-duplicates') return load('lib/expense-duplicates.ts')
+    if (name === '@/lib/budgeting') return load('lib/budgeting.ts')
+    if (name === '@/lib/use-categories') return { CATEGORY_CHANGE_EVENT: 'expense-categories-changed', useCategories: () => ({ categories: [...load('lib/budgeting.ts').CATEGORIES], loading: false, error: '' }) }
     if (name.includes('month-year-picker')) return { MonthYearPicker: 'MonthYearPicker', MONTH_NAMES_PT: Array(12).fill('Mês') }
     if (name.startsWith('@/components/') || name === 'lucide-react') return primitives
     if (name.startsWith('./') && file.startsWith('components/')) return primitives
@@ -336,6 +338,41 @@ test('collapsing expense rows keeps title, total and unpaid balance visible', as
     assert.equal(elements(tree, node => node.type === 'Table').length, 1)
     assert.equal(db.requests.length, 1)
   }
+})
+
+test('VR/VA and paid expenses do not contribute to pending balance in any board', async () => {
+  for (const boardId of [null, 'secondary']) {
+    const runtime = hooks(), db = database({ expenses: [success([expense, { ...expense, id: 2, valor: 20, status: 'Pago' }, { ...expense, id: 3, valor: 30, status: 'VR/VA' }])] })
+    const { ExpenseTable } = load('components/expense-table.tsx', { react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client } })
+    runtime.render(ExpenseTable, { selected, boardId, title: 'Despesas' })
+    const tree = await runtime.flush()
+    const values = elements(tree, node => node.type === 'MaskedValue').map(node => node.props.value)
+    assert.ok(values.includes(130), 'total includes all expenses')
+    assert.ok(values.includes(80), 'pending balance contains only pending expenses')
+    assert.ok(!values.includes(110), 'VR/VA is excluded from pending balance')
+  }
+})
+
+test('budget and reminders have a protected page and dashboard links without rendering the cards', async () => {
+  for (const signedIn of [true, false]) {
+    const { default: PlanningPage } = load('app/planning/page.tsx', {
+      '@/lib/supabase/server': { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: signedIn ? { id: 'owner' } : null } }) } }) },
+      'next/navigation': { redirect(destination) { throw { destination } } },
+    })
+    if (!signedIn) {
+      await assert.rejects(PlanningPage({ searchParams: Promise.resolve({ month: '2026-11' }) }), error => error.destination === '/login')
+    } else {
+      const tree = await PlanningPage({ searchParams: Promise.resolve({ month: '2026-11' }) })
+      assert.equal(JSON.stringify(find(tree, node => node.type === 'PlanningView').props.initialPeriod), '{"year":2026,"month":10}')
+      const invalid = await PlanningPage({ searchParams: Promise.resolve({ month: '2026-99' }) })
+      assert.ok(find(invalid, node => node.type === 'PlanningView').props.initialPeriod.month <= 11)
+    }
+  }
+  const runtime = hooks(), db = database({})
+  const { ExpensesDashboard } = load('components/expenses-dashboard.tsx', { react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client } })
+  const tree = runtime.render(ExpensesDashboard, {})
+  assert.equal(elements(tree, node => node.type === 'BudgetReminders').length, 0)
+  find(tree, node => node.type === 'Link' && node.props.href.startsWith('/planning?month='))
 })
 
 test('salary privacy masks only opted-in salary while expense and remaining values stay readable', () => {
@@ -673,6 +710,110 @@ test('manual entries warn before writing and recover safely from duplicate looku
   const submit = find(tree, node => node.props.children === 'Salvar').props.onClick
   await Promise.all([submit(), submit()])
   assert.equal(db.requests.filter(request => request.calls.some(([method]) => method === 'insert')).length, 1)
+})
+
+test('category budgets sum actual expenses by payment month without counting summaries twice', () => {
+  const { categoryTotals, monthStart, dueExpenses } = load('lib/budgeting.ts')
+  assert.equal(monthStart(2026, -1), '2025-12-01')
+  const rows = [
+    { id: 1, nome: 'Mercado', valor: 0.1, category: 'Mercado', data_pagamento: '2026-11-01', status: 'Pago' },
+    { id: 2, nome: 'Mercado', valor: 0.2, category: 'Mercado', data_pagamento: '2026-11-02', status: 'Pendente' },
+    { id: 3, nome: 'Quadro', valor: 100, category: 'Mercado', data_pagamento: '2026-11-01', status: 'Pendente', represents_board_id: 'b' },
+    { id: 4, nome: 'Antigo', valor: 50, category: 'Mercado', data_pagamento: '2026-10-01', status: 'Pendente' },
+    { id: 5, nome: 'Transporte', valor: 20, category: 'Transporte', data_pagamento: '2026-11-06', status: 'VR/VA' },
+  ]
+  assert.equal(categoryTotals(rows, '2026-11').Mercado, 0.3)
+  assert.equal(categoryTotals(rows, '2026-11').Transporte, 20)
+  assert.deepEqual(Array.from(dueExpenses(rows, '2026-11-01', 3), row => row.id), [4,2])
+  assert.equal(dueExpenses(rows, '2026-11-01', 0).length, 1)
+})
+
+test('budget panel persists monthly limits, preferences and keeps edits when refreshing reminders', async () => {
+  const runtime = hooks(), db = database({ category_budgets: [success([{ category: 'Mercado', amount: 200 }])] })
+  let timer, requests = 0
+  class BrowserNotification { static permission = 'default'; static async requestPermission() { requests++; this.permission = 'granted'; return 'granted' } }
+  const { BudgetReminders } = load('components/budget-reminders.tsx', {
+    react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client },
+  }, { window: { Notification: BrowserNotification, isSecureContext: true }, Notification: BrowserNotification,
+    setInterval: callback => { timer = callback; return 1 }, clearInterval() {}, localStorage: { getItem() {}, setItem() {} } })
+  let tree = runtime.render(BudgetReminders, { selected: { month: 10, year: 2026 }, refreshKey: 0 })
+  tree = await runtime.flush()
+  find(tree, node => node.props['aria-label'] === 'Limite de Mercado').props.onChange({ target: { value: '250' } })
+  tree = await runtime.flush()
+  timer(); tree = await runtime.flush()
+  assert.equal(find(tree, node => node.props['aria-label'] === 'Limite de Mercado').props.value, '250')
+  await find(tree, node => node.props.children === 'Salvar orçamento do mês').props.onClick()
+  const payload = db.requests.find(request => request.table === 'category_budgets' && request.calls.some(([method]) => method === 'upsert')).calls.find(([method]) => method === 'upsert')[1]
+  assert.equal(payload[0].month, '2026-11-01'); assert.equal(payload[0].amount, 250)
+  tree = await runtime.flush()
+  await find(tree, node => node.props.children === 'Ativar notificações no navegador').props.onClick()
+  tree = await runtime.flush()
+  assert.equal(requests, 1)
+  find(tree, node => node.props.children === 'Desativar notificações')
+  assert.equal(db.requests.find(request => request.table === 'reminder_preferences' && request.calls.some(([method]) => method === 'upsert')).calls.find(([method]) => method === 'upsert')[1].browser_enabled, true)
+})
+
+test('browser reminders respect account preference, permission and daily deduplication', async () => {
+  for (const permission of ['granted', 'denied']) {
+    const runtime = hooks()
+    const db = database({ expenses: [success([]), success([{ ...expense, category: 'Mercado', data_pagamento: '2000-01-01' }])], reminder_preferences: [success({ browser_enabled: true, days_before: 3 })] })
+    let delivered = 0
+    class BrowserNotification { static permission = permission; constructor() { delivered++ } }
+    const { BudgetReminders } = load('components/budget-reminders.tsx', { react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client } }, {
+      window: { Notification: BrowserNotification, isSecureContext: true }, Notification: BrowserNotification,
+      localStorage: { getItem() { throw Error('blocked') }, setItem() { throw Error('blocked') } }, setInterval() { return 1 }, clearInterval() {},
+    })
+    runtime.render(BudgetReminders, { selected, refreshKey: 0 }); await runtime.flush()
+    runtime.render(); await runtime.flush()
+    assert.equal(delivered, permission === 'granted' ? 1 : 0)
+  }
+})
+
+test('custom categories load from the account and refresh after changes', async () => {
+  const runtime = hooks(), db = database({ expense_categories: [success([{ name: 'Sem categoria' }, { name: 'Pets' }]), success([{ name: 'Sem categoria' }])] })
+  const listeners = new Map()
+  const { useCategories } = load('lib/use-categories.ts', { react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client } }, { window: { addEventListener: (event, callback) => listeners.set(event, callback), removeEventListener() {} } })
+  let state
+  function Consumer() { state = useCategories(); return null }
+  runtime.render(Consumer, {}); await runtime.flush()
+  assert.equal(JSON.stringify(state.categories), '["Sem categoria","Pets"]')
+  await listeners.get('expense-categories-changed')(); await runtime.flush()
+  assert.equal(JSON.stringify(state.categories), '["Sem categoria"]')
+  assert.ok(db.requests.every(request => request.calls.some(([method, column, value]) => method === 'eq' && column === 'user_id' && value === 'test-user')))
+  const { categoryTotals } = load('lib/budgeting.ts')
+  assert.equal(categoryTotals([{ ...expense, category: 'Pets' }], '2026-10', ['Sem categoria', 'Pets']).Pets, 80)
+})
+
+test('category management validates names, saves the owner and removes only after confirmation', async () => {
+  const runtime = hooks(), db = database({ expense_categories: [success([{ name: 'Pets' }]), success([{ name: 'Mercado' }])] })
+  let changed = 0, confirmed = false
+  const { CategoryManager } = load('components/category-manager.tsx', { react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client } }, { window: { confirm: () => confirmed, dispatchEvent() {} }, Event })
+  let tree = runtime.render(CategoryManager, { onChanged() { changed++ } })
+  find(tree, node => node.props['aria-label'] === 'Nome da nova categoria').props.onChange({ target: { value: ' mercado ' } }); tree = runtime.render()
+  await find(tree, node => node.props.children === 'Adicionar categoria').props.onClick(); tree = await runtime.flush()
+  assert.equal(db.requests.length, 0)
+  find(tree, node => node.props['aria-label'] === 'Nome da nova categoria').props.onChange({ target: { value: '  Pets  ' } }); tree = runtime.render()
+  await find(tree, node => node.props.children === 'Adicionar categoria').props.onClick(); tree = await runtime.flush()
+  const payload = db.requests[0].calls.find(([method]) => method === 'insert')[1]
+  assert.equal(payload.name, 'Pets'); assert.equal(payload.user_id, 'test-user')
+  assert.equal(elements(tree, node => node.props['aria-label'] === 'Remover categoria Sem categoria').length, 0)
+  await find(tree, node => node.props['aria-label'] === 'Remover categoria Mercado').props.onClick()
+  assert.equal(db.requests.length, 1)
+  confirmed = true
+  await find(tree, node => node.props['aria-label'] === 'Remover categoria Mercado').props.onClick()
+  await runtime.flush()
+  assert.equal(changed, 2)
+  assert.ok(db.requests[1].calls.some(([method, column, value]) => method === 'eq' && column === 'user_id' && value === 'test-user'))
+})
+
+test('invoice categories are reviewed and included in saved expenses', async () => {
+  const invoice = invoiceRuntime()
+  let tree = await invoice.upload()
+  find(tree, node => node.props['aria-label'] === 'Categoria da despesa 1').props.onChange({ target: { value: 'Mercado' } })
+  tree = await invoice.runtime.flush()
+  await find(tree, node => node.props.children === 'Importar 2 despesa(s)').props.onClick()
+  const payload = invoice.db.requests.find(request => request.calls.some(([method]) => method === 'insert')).calls.find(([method]) => method === 'insert')[1]
+  assert.equal(payload[0].category, 'Mercado'); assert.equal(payload[1].category, 'Sem categoria')
 })
 
 test('invoice review is spacious and imports all rows on the selected fifth business day', async () => {

@@ -24,6 +24,7 @@ type Expense = {
   valor_total: number | null
   recurring_group_id: string | null
   recurring_number: number | null
+  category?: string
 }
 
 const statusColor: Record<Expense['status'], string> = {
@@ -254,7 +255,7 @@ export function ExpenseTable({
 
   const total = expenses.reduce((sum, e) => sum + e.valor, 0)
   const pendente = expenses.reduce(
-    (sum, e) => sum + (e.status !== 'Pago' ? e.valor : 0),
+    (sum, e) => sum + (e.status === 'Pendente' ? e.valor : 0),
     0
   )
   const selectedLabel = MONTH_NAMES_PT[selected.month] + ' de ' + selected.year
@@ -395,6 +396,7 @@ export function ExpenseTable({
                     <TableHead>Valor</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Comentário</TableHead>
+                    <TableHead>Categoria</TableHead>
                     <TableHead className="w-[180px]">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -431,6 +433,7 @@ export function ExpenseTable({
                           <Badge className={statusColor[expense.status]}>{expense.status}</Badge>
                         </TableCell>
                         <TableCell className="sm:table-cell">{expense.comentario}</TableCell>
+                        <TableCell>{expense.category ?? 'Sem categoria'}</TableCell>
                         <TableCell className="sm:table-cell">
                           <div className="flex flex-col gap-1 md:opacity-70 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity">
                             <div className="flex gap-1">

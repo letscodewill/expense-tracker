@@ -146,6 +146,7 @@ export function ExpensesDashboard({ navigationActions }: { navigationActions?: R
     <div className="space-y-6">
       <nav aria-label="Navegação do Dashboard" className="material-toolbar flex flex-wrap items-center gap-2 sm:gap-3">
         {navigationActions}
+        <Link href={`/planning?month=${selected.year}-${String(selected.month + 1).padStart(2, '0')}`} className="inline-flex items-center rounded-full border border-border px-4 py-2 text-sm font-medium hover:bg-accent">Orçamento e lembretes</Link>
       </nav>
 
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">

@@ -8,6 +8,7 @@ import { parseInvoiceText, type ParsedExpense } from '@/lib/invoice-parser'
 import { fifthBusinessDayISO } from '@/lib/payment-date'
 import { readSpreadsheet, suggestColumns, mapSpreadsheet, MAX_IMPORT_BYTES, MAX_IMPORT_ROWS, type ImportSheet } from '@/lib/spreadsheet-import'
 import { validateAIInvoice } from '@/lib/invoice-ai'
+import { useCategories } from '@/lib/use-categories'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -32,7 +33,7 @@ import { Upload, X } from 'lucide-react'
 import type { MonthYear } from '@/components/month-year-picker'
 
 type Board = { id: string; name: string }
-type InvoiceRow = Pick<ParsedExpense, 'nome' | 'valor'>
+type InvoiceRow = Pick<ParsedExpense, 'nome' | 'valor'> & { category?: string }
 
 export type ImportInvoiceDialogProps = {
   selected: MonthYear
@@ -55,6 +56,7 @@ export function ImportInvoiceDialog({
   hideTrigger,
 }: ImportInvoiceDialogProps) {
   const supabase = createClient()
+  const { categories, loading: categoriesLoading, error: categoriesError } = useCategories()
   const [openState, setOpenState] = useState(false)
   const open = openProp ?? openState
   const setOpen = (value: boolean) => {
@@ -226,6 +228,10 @@ export function ImportInvoiceDialog({
 
   async function handleConfirm() {
     if (inFlight.current) return
+    if (categoriesLoading || categoriesError || rows.some(row => !categories.includes(row.category ?? 'Sem categoria'))) {
+      setError(categoriesError || 'Escolha categorias disponíveis antes de importar.')
+      return
+    }
     const validRows = rows.filter((row) => row.nome.trim() && row.nome.length <= 200 && Number.isFinite(row.valor) && row.valor > 0 && row.valor <= 10000000)
     if (validRows.length === 0 || validRows.length !== rows.length || rows.length > MAX_IMPORT_ROWS) {
       setError('Corrija ou remova as linhas inválidas. Informe nome e valor maior que zero em todas as despesas.')
@@ -294,6 +300,7 @@ export function ImportInvoiceDialog({
         nome: r.nome.trim(),
         data_pagamento: paymentDate,
         valor: r.valor,
+        category: r.category ?? 'Sem categoria',
         status: 'Pendente' as const,
         comentario: null,
         user_id: user?.id,
@@ -449,6 +456,7 @@ export function ImportInvoiceDialog({
                     <TableHead className="min-w-[240px]">Nome</TableHead>
                     <TableHead className="w-[160px]">Pagamento</TableHead>
                     <TableHead className="w-[160px]">Valor (R$)</TableHead>
+                    <TableHead className="min-w-[180px]">Categoria</TableHead>
                     <TableHead className="w-[40px]"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -478,6 +486,7 @@ export function ImportInvoiceDialog({
                           disabled={saving}
                         />
                       </TableCell>
+                      <TableCell><select aria-label={`Categoria da despesa ${index + 1}`} value={row.category ?? 'Sem categoria'} disabled={saving || categoriesLoading || !!categoriesError} onChange={event => updateRow(index, 'category', event.target.value)} className="w-full rounded-lg border bg-background p-2">{categories.map(category => <option key={category} value={category}>{category}</option>)}</select></TableCell>
                       <TableCell>
                         <Button variant="ghost" size="sm" onClick={() => removeRow(index)} disabled={saving} aria-label={`Remover despesa ${index + 1}`}>
                           <X className="h-4 w-4" />

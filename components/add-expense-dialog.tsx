@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/select'
 import { Plus } from 'lucide-react'
 import type { MonthYear } from '@/components/month-year-picker'
+import { useCategories } from '@/lib/use-categories'
 
 type Expense = {
   id: number
@@ -40,6 +41,7 @@ type Expense = {
   valor_total: number | null
   recurring_group_id: string | null
   recurring_number: number | null
+  category?: string
 }
 
 const MIN_INSTALLMENTS = 2
@@ -95,6 +97,7 @@ const initialState = {
   valor: '',
   status: 'Pendente',
   comentario: '',
+  category: 'Sem categoria',
   isInstallment: false,
   installments: '2',
   isRecurring: false,
@@ -195,19 +198,20 @@ export function AddExpenseDialog({
 }: AddExpenseDialogProps) {
   const [formState, dispatch] = useReducer(formReducer, initialState)
   const {
-    nome, dataPagamento, valor, status, comentario,
+    nome, dataPagamento, valor, status, comentario, category,
     isInstallment, installments, isRecurring, recurringMonths,
     error, fieldErrors,
   } = formState
 
   const supabase = createClient()
+  const { categories, loading: categoriesLoading, error: categoriesError } = useCategories()
 
   const [open, setOpen] = useState(!!expenseToEdit || !!forceOpen)
   const [loading, setLoading] = useState(false)
   const inFlight = useRef(false)
   const [duplicateReview, setDuplicateReview] = useState<{ key: string; draft: string; warnings: DuplicateWarning[] } | null>(null)
   const [acceptedDuplicates, setAcceptedDuplicates] = useState('')
-  const draftKey = JSON.stringify([nome, dataPagamento, valor, status, comentario, isInstallment, installments, isRecurring, recurringMonths, boardId, selected, expenseToEdit?.id])
+  const draftKey = JSON.stringify([nome, dataPagamento, valor, status, comentario, category, isInstallment, installments, isRecurring, recurringMonths, boardId, selected, expenseToEdit?.id])
   const [previousExpense, setPreviousExpense] = useState<Expense | null | undefined>(undefined)
   const [previousForceOpen, setPreviousForceOpen] = useState(forceOpen)
 
@@ -222,6 +226,7 @@ export function AddExpenseDialog({
       dispatch({ type: 'SET_FIELD', field: 'valor', value: String(expenseToEdit.valor) })
       dispatch({ type: 'SET_FIELD', field: 'status', value: expenseToEdit.status })
       dispatch({ type: 'SET_FIELD', field: 'comentario', value: expenseToEdit.comentario ?? '' })
+      dispatch({ type: 'SET_FIELD', field: 'category', value: expenseToEdit.category ?? 'Sem categoria' })
     }
   }
 
@@ -252,6 +257,10 @@ export function AddExpenseDialog({
 
   async function handleSubmit() {
     if (inFlight.current) return
+    if (categoriesLoading || categoriesError || !categories.includes(category)) {
+      dispatch({ type: 'SET_ERROR', error: categoriesError || 'Escolha uma categoria disponível antes de salvar.' })
+      return
+    }
     const result = expenseSchema.safeParse(formState)
 
     if (!result.success) {
@@ -299,6 +308,7 @@ export function AddExpenseDialog({
       const { error: updateError } = await supabase
         .from('expenses')
         .update({
+          category,
           nome: nome.trim(),
           data_pagamento: dataPagamento,
           valor: totalValor,
@@ -346,6 +356,7 @@ export function AddExpenseDialog({
             valor_total: totalValor,
             recurring_group_id: null,
             recurring_number: null,
+            category,
           })
         }
 
@@ -395,6 +406,7 @@ export function AddExpenseDialog({
             valor_total: null,
             recurring_group_id: groupId,
             recurring_number: i + 1,
+            category,
           })
         }
 
@@ -430,6 +442,7 @@ export function AddExpenseDialog({
         valor_total: null,
         recurring_group_id: null,
         recurring_number: null,
+        category,
       })
 
       setLoading(false)
@@ -624,6 +637,7 @@ export function AddExpenseDialog({
             />
           </div>
 
+          <div className="space-y-2"><Label htmlFor="expense-category">Categoria</Label><select id="expense-category" disabled={categoriesLoading || !!categoriesError} className="w-full rounded-xl border bg-background p-3" value={category} onChange={event => dispatch({ type: 'SET_FIELD', field: 'category', value: event.target.value })}>{categories.map(value => <option key={value} value={value}>{value}</option>)}</select>{categoriesError && <p role="alert" className="text-sm text-destructive">{categoriesError}</p>}<p className="text-xs text-muted-foreground">Crie ou remova categorias na página Orçamento e lembretes.</p></div>
           {error && <p className="text-sm text-red-600">{error}</p>}
         </fieldset>
 
