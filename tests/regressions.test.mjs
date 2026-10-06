@@ -22,6 +22,7 @@ function load(file, mocks = {}, globals = {}) {
   const loadedModule = { exports: {} }
   const localRequire = (name) => {
     if (Object.hasOwn(mocks, name)) return mocks[name]
+    if (name === '@/lib/expense-duplicates') return load('lib/expense-duplicates.ts')
     if (name.includes('month-year-picker')) return { MonthYearPicker: 'MonthYearPicker', MONTH_NAMES_PT: Array(12).fill('Mês') }
     if (name.startsWith('@/components/') || name === 'lucide-react') return primitives
     if (name.startsWith('./') && file.startsWith('components/')) return primitives
@@ -55,6 +56,7 @@ function hooks() {
       const [value, set] = react.useState(initial)
       return [value, (action) => set((previous) => reducer(previous, action))]
     },
+    useRef(initial) { return react.useMemo(() => ({ current: initial }), []) },
     useMemo(callback, deps) {
       const index = cursor++
       if (!slots[index] || !equal(slots[index].deps, deps)) slots[index] = { value: callback(), deps }
@@ -473,7 +475,7 @@ test('recurring expenses start at the selected month, preserve days and route ea
     find(tree, node => node.props.id === 'is-recurring').props.onChange({ target: { checked: true } })
     tree = runtime.render()
     await find(tree, node => node.type === 'Button' && node.props.children === 'Salvar').props.onClick()
-    const rows = db.requests.find(request => request.table === 'expenses').calls.find(([method]) => method === 'insert')[1]
+    const rows = db.requests.find(request => request.table === 'expenses' && request.calls.some(([method]) => method === 'insert')).calls.find(([method]) => method === 'insert')[1]
     assert.deepEqual(Array.from(rows, row => row.data_pagamento), dates)
     assert.equal(rows[0].board_id, input > '2026-11-30' && period.year === 2026 ? 'future-board' : 'selected-board')
     assert.ok(rows.every(row => row.recurring_group_id === 'recurring-group' && row.valor === 80))
@@ -604,6 +606,75 @@ function invoiceRuntime({ responses = {}, extract, prepare, fetch: fetchMock, se
   return { runtime, db, imported, upload, ImportInvoiceDialog, props, PdfPasswordRequiredError: pdf.PdfPasswordRequiredError }
 }
 
+test('duplicate matching normalizes accents and cents, distinguishes months and excludes edited rows', async () => {
+  const { detectExpenseDuplicates, checkExpenseDuplicates } = load('lib/expense-duplicates.ts')
+  const row = { nome: '  MERCÁDO  Central ', valor: 80.001, data_pagamento: '2026-11-06' }
+  const existing = [{ ...row, id: 1, nome: 'mercado central', data_pagamento: '2026-11-30', board_id: 'another-board' }]
+  assert.equal(detectExpenseDuplicates([row], existing).length, 1)
+  assert.equal(detectExpenseDuplicates([row], existing, 1).length, 0)
+  assert.equal(detectExpenseDuplicates([{ ...row, data_pagamento: '2026-12-01' }], existing).length, 0)
+  assert.equal(detectExpenseDuplicates([{ ...row, valor: 81 }], existing).length, 0)
+  assert.equal(detectExpenseDuplicates([row, row], []).length, 2)
+  const db = database({ expenses: [success(Array.from({ length: 1000 }, (_, id) => ({ ...row, id, valor: 1 }))), success(existing)] })
+  assert.equal((await checkExpenseDuplicates(db.client, 'owner', [row])).length, 1)
+  assert.equal(db.requests.length, 2)
+  assert.ok(db.requests.every(request => request.calls.some(([method, column, value]) => method === 'eq' && column === 'user_id' && value === 'owner')))
+  assert.ok(db.requests.every(request => request.calls.some(([method, column, value]) => method === 'is' && column === 'represents_board_id' && value === null)))
+  assert.deepEqual(db.requests[1].calls.find(([method]) => method === 'range'), ['range', 1000, 1999])
+})
+
+test('invoice duplicate warnings require review, invalidate on edits and never create boards before approval', async () => {
+  const existing = [{ id: 1, nome: 'Mercado', valor: 80, data_pagamento: '2026-11-20', board_id: 'other' }]
+  const invoice = invoiceRuntime({ responses: { expenses: [success(existing), success(existing), success(existing)] } })
+  let tree = await invoice.upload()
+  const submit = () => find(tree, node => node.props.children === 'Importar 2 despesa(s)').props.onClick()
+  await submit(); tree = await invoice.runtime.flush()
+  const notice = find(tree, node => node.type === 'DuplicateExpenseNotice')
+  assert.equal(notice.props.warnings.length, 1)
+  assert.ok(invoice.db.requests.every(request => !request.calls.some(([method]) => method === 'insert')))
+  notice.props.onConfirm(true); tree = await invoice.runtime.flush()
+  find(tree, node => node.props['aria-label'] === 'Valor da despesa 2').props.onChange({ target: { value: '51' } })
+  tree = await invoice.runtime.flush()
+  await submit(); tree = await invoice.runtime.flush()
+  assert.equal(find(tree, node => node.type === 'DuplicateExpenseNotice').props.confirmed, false)
+  find(tree, node => node.type === 'DuplicateExpenseNotice').props.onConfirm(true)
+  tree = await invoice.runtime.flush()
+  await submit()
+  assert.equal(invoice.imported.length, 1)
+})
+
+test('invoice retry reuses a newly created board and synchronous double clicks do not save twice', async () => {
+  const invoice = invoiceRuntime({ responses: { boards: [success({ id: 'created' })], expenses: [success([]), failure, success([]), success([])] } })
+  let tree = await invoice.upload()
+  find(tree, node => node.type === 'Select').props.onValueChange('__new__'); tree = await invoice.runtime.flush()
+  find(tree, node => node.props.placeholder === 'Nome do novo quadro').props.onChange({ target: { value: 'Cartão' } }); tree = await invoice.runtime.flush()
+  const submit = find(tree, node => node.props.children === 'Importar 2 despesa(s)').props.onClick
+  await Promise.all([submit(), submit()]); tree = await invoice.runtime.flush()
+  assert.equal(invoice.imported.length, 0)
+  await find(tree, node => node.props.children === 'Importar 2 despesa(s)').props.onClick()
+  assert.equal(invoice.db.requests.filter(request => request.table === 'boards').length, 1)
+  assert.equal(invoice.imported.length, 1)
+})
+
+test('manual entries warn before writing and recover safely from duplicate lookup failure', async () => {
+  const runtime = hooks(), db = database({ expenses: [failure, success([{ ...expense, board_id: null }]), success([{ ...expense, board_id: null }])] })
+  const { AddExpenseDialog } = load('components/add-expense-dialog.tsx', {
+    react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client },
+    '@/lib/supabase/safe-get-user': { safeGetUser: async () => ({ id: 'test-user' }) },
+  })
+  let tree = runtime.render(AddExpenseDialog, { onAdded() {}, forceOpen: true })
+  for (const [id, value] of [['nome', 'Mercado'], ['valor', '80'], ['data', expense.data_pagamento]]) {
+    find(tree, node => node.props.id === id).props.onChange({ target: { value } }); tree = runtime.render()
+  }
+  await find(tree, node => node.props.children === 'Salvar').props.onClick(); tree = await runtime.flush()
+  assert.equal(find(tree, node => node.props.children === 'Salvar').props.disabled, false)
+  await find(tree, node => node.props.children === 'Salvar').props.onClick(); tree = await runtime.flush()
+  find(tree, node => node.type === 'DuplicateExpenseNotice').props.onConfirm(true); tree = await runtime.flush()
+  const submit = find(tree, node => node.props.children === 'Salvar').props.onClick
+  await Promise.all([submit(), submit()])
+  assert.equal(db.requests.filter(request => request.calls.some(([method]) => method === 'insert')).length, 1)
+})
+
 test('invoice review is spacious and imports all rows on the selected fifth business day', async () => {
   const invoice = invoiceRuntime()
   let tree = await invoice.upload()
@@ -613,7 +684,7 @@ test('invoice review is spacious and imports all rows on the selected fifth busi
   assert.equal(elements(tree, (node) => node.type === 'time' && node.props.dateTime === '2026-11-06').length, 3)
   await find(tree, (node) => node.props.children === 'Importar 2 despesa(s)').props.onClick()
   tree = await invoice.runtime.flush()
-  const payload = invoice.db.requests[0].calls.find(([method]) => method === 'insert')[1]
+  const payload = invoice.db.requests.find(request => request.calls.some(([method]) => method === 'insert')).calls.find(([method]) => method === 'insert')[1]
   assert.equal(payload.length, 2)
   assert.ok(payload.every((row) => row.data_pagamento === '2026-11-06' && row.board_id === null))
   assert.equal(payload[0].nome, 'Mercado')
@@ -639,7 +710,7 @@ test('changing payment month updates every row and creates the board in the corr
   assert.equal(board.month, 0)
   assert.equal(board.year, 2027)
   assert.equal(board.name, 'Fatura janeiro')
-  const rows = invoice.db.requests.find((request) => request.table === 'expenses').calls.find(([method]) => method === 'insert')[1]
+  const rows = invoice.db.requests.find((request) => request.table === 'expenses' && request.calls.some(([method]) => method === 'insert')).calls.find(([method]) => method === 'insert')[1]
   assert.ok(rows.every((row) => row.data_pagamento === '2027-01-07' && row.board_id === 'new-board'))
 })
 
@@ -652,7 +723,7 @@ test('existing board destinations reset when the payment month changes', async (
   tree = await invoice.runtime.flush()
   find(tree, (node) => node.type === 'Select' && node.props.value === '__main__')
   await find(tree, (node) => node.props.children === 'Importar 2 despesa(s)').props.onClick()
-  const payload = invoice.db.requests[0].calls.find(([method]) => method === 'insert')[1]
+  const payload = invoice.db.requests.find(request => request.calls.some(([method]) => method === 'insert')).calls.find(([method]) => method === 'insert')[1]
   assert.ok(payload.every((row) => row.board_id === null && row.data_pagamento === '2026-12-07'))
 })
 
@@ -673,7 +744,7 @@ test('manual invoice rows support edits and removal and cannot import empty expe
   find(tree, (node) => node.props['aria-label'] === 'Remover despesa 2').props.onClick()
   tree = await invoice.runtime.flush()
   await find(tree, (node) => node.props.children === 'Importar 1 despesa(s)').props.onClick()
-  const payload = invoice.db.requests[0].calls.find(([method]) => method === 'insert')[1]
+  const payload = invoice.db.requests.find(request => request.calls.some(([method]) => method === 'insert')).calls.find(([method]) => method === 'insert')[1]
   assert.equal(payload[0].nome, 'Compra manual')
   assert.equal(payload[0].valor, 12.5)
   assert.equal(payload[0].data_pagamento, '2026-11-06')
@@ -695,7 +766,7 @@ test('invoice reset uses the new dashboard month on reopening', async () => {
 })
 
 test('invoice review keeps rows available when saving fails', async () => {
-  const invoice = invoiceRuntime({ responses: { expenses: [failure] } })
+  const invoice = invoiceRuntime({ responses: { expenses: [success([]), failure] } })
   let tree = await invoice.upload()
   await find(tree, (node) => node.props.children === 'Importar 2 despesa(s)').props.onClick()
   tree = await invoice.runtime.flush()
@@ -1131,7 +1202,7 @@ test('spreadsheet mapping flows into invoice review and saves only on confirmati
   find(tree, (node) => node.type === 'DialogContent' && node.props.className === 'invoice-review-dialog')
   assert.equal(invoice.db.requests.length, 0)
   await find(tree, (node) => node.props.children === 'Importar 2 despesa(s)').props.onClick()
-  const payload = invoice.db.requests[0].calls.find(([method]) => method === 'insert')[1]
+  const payload = invoice.db.requests.find(request => request.calls.some(([method]) => method === 'insert')).calls.find(([method]) => method === 'insert')[1]
   assert.equal(payload[0].nome, 'Mercado')
   assert.equal(payload[0].valor, 123.45)
   assert.ok(payload.every((row) => row.data_pagamento === '2026-11-06'))

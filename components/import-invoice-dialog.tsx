@@ -1,6 +1,8 @@
 'use client'
 import { extractPdfText, preparePdfForAI, PdfPasswordRequiredError } from '@/lib/pdf-text-extract'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { checkExpenseDuplicates, type DuplicateWarning } from '@/lib/expense-duplicates'
+import { DuplicateExpenseNotice } from '@/components/duplicate-expense-notice'
 import { createClient } from '@/lib/supabase/client'
 import { parseInvoiceText, type ParsedExpense } from '@/lib/invoice-parser'
 import { fifthBusinessDayISO } from '@/lib/payment-date'
@@ -81,6 +83,11 @@ export function ImportInvoiceDialog({
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [needsPassword, setNeedsPassword] = useState(false)
   const [pdfPassword, setPdfPassword] = useState('')
+  const inFlight = useRef(false)
+  const createdBoard = useRef<{ key: string; id: string } | null>(null)
+  const [duplicateReview, setDuplicateReview] = useState<{ key: string; draft: string; warnings: DuplicateWarning[] } | null>(null)
+  const [acceptedDuplicates, setAcceptedDuplicates] = useState('')
+  const draftKey = JSON.stringify([rows, paymentDate, destination, newBoardName])
 
   async function processFile(file: File, password?: string) {
     setParsing(true)
@@ -181,6 +188,9 @@ export function ImportInvoiceDialog({
   }
 
   function reset() {
+    setDuplicateReview(null)
+    setAcceptedDuplicates('')
+    createdBoard.current = null
     setStep('upload')
     setRows([])
     setDestination(MAIN_PANEL_VALUE)
@@ -215,7 +225,7 @@ export function ImportInvoiceDialog({
   }
 
   async function handleConfirm() {
-    if (saving) return
+    if (inFlight.current) return
     const validRows = rows.filter((row) => row.nome.trim() && row.nome.length <= 200 && Number.isFinite(row.valor) && row.valor > 0 && row.valor <= 10000000)
     if (validRows.length === 0 || validRows.length !== rows.length || rows.length > MAX_IMPORT_ROWS) {
       setError('Corrija ou remova as linhas inválidas. Informe nome e valor maior que zero em todas as despesas.')
@@ -226,6 +236,7 @@ export function ImportInvoiceDialog({
       return
     }
 
+    inFlight.current = true
     setSaving(true)
     setError('')
 
@@ -237,9 +248,23 @@ export function ImportInvoiceDialog({
       return
     }
 
+    const candidates = validRows.map(row => ({ ...row, data_pagamento: paymentDate }))
+    const duplicates = await checkExpenseDuplicates(supabase, user.id, candidates)
+    const reviewKey = JSON.stringify([draftKey, duplicates])
+    if (duplicates.length && acceptedDuplicates !== reviewKey) {
+      setDuplicateReview({ key: reviewKey, draft: draftKey, warnings: duplicates })
+      setAcceptedDuplicates('')
+      setError('Revise as possíveis duplicidades abaixo antes de importar.')
+      return
+    }
+
     let targetBoardId: string | null = null
 
     if (destination === NEW_BOARD_VALUE) {
+      const boardKey = JSON.stringify([user.id, newBoardName.trim(), paymentPeriod])
+      if (createdBoard.current?.key === boardKey) {
+        targetBoardId = createdBoard.current.id
+      } else {
       const { data: newBoard, error: boardError } = await supabase
         .from('boards')
         .insert({
@@ -258,6 +283,8 @@ export function ImportInvoiceDialog({
         return
       }
       targetBoardId = newBoard.id
+      createdBoard.current = { key: boardKey, id: newBoard.id }
+      }
     } else if (destination !== MAIN_PANEL_VALUE) {
       targetBoardId = destination
     }
@@ -289,6 +316,7 @@ export function ImportInvoiceDialog({
     } catch {
       setError('Não foi possível salvar as despesas. Verifique sua conexão e tente novamente.')
     } finally {
+      inFlight.current = false
       setSaving(false)
     }
   }
@@ -297,7 +325,7 @@ export function ImportInvoiceDialog({
     <Dialog
       open={open}
       onOpenChange={(isOpen) => {
-        if (parsing || saving) return
+        if (parsing || inFlight.current) return
         setOpen(isOpen)
         if (!isOpen) reset()
       }}
@@ -381,6 +409,7 @@ export function ImportInvoiceDialog({
 
         {step === 'review' && (
           <div className="invoice-review-body flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
+            {duplicateReview?.draft === draftKey && <DuplicateExpenseNotice warnings={duplicateReview.warnings} confirmed={acceptedDuplicates === duplicateReview.key} onConfirm={value => setAcceptedDuplicates(value ? duplicateReview.key : '')} />}
             {error && <p className="text-sm text-red-600">{error}</p>}
             {warnings.length > 0 && <details className="rounded-xl border p-3 text-sm"><summary className="cursor-pointer font-medium">{warnings.length} aviso(s) na leitura — confira antes de importar</summary><ul className="mt-2 list-disc space-y-1 pl-5">{warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></details>}
             <p className="text-sm font-medium">Total das despesas: {rows.reduce((sum, row) => sum + row.valor, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}. Confira com a fatura; créditos e estornos não são importados como despesas.</p>

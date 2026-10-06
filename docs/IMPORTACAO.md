@@ -30,4 +30,4 @@ A IA retorna dados estruturados, que são validados no servidor. Não salva nada
 
 ## Validação antes de liberar
 
-Testes automatizados usam arquivos sintéticos e respostas simuladas, sem enviar dados financeiros nem gastar créditos. Após configurar a chave, validar PDFs de bancos diferentes, inclusive digitalizados, parcelas, estornos e arquivos ilegíveis. Conferir itens e total manualmente. Testar limites de saldo, timeout, senha e repetição da importação. A implementação ainda não impede automaticamente reimportar uma fatura: conferir duplicidades antes de confirmar.
+Testes automatizados usam arquivos sintéticos e respostas simuladas, sem enviar dados financeiros nem gastar créditos. Após configurar a chave, validar PDFs de bancos diferentes, inclusive digitalizados, parcelas, estornos e arquivos ilegíveis. Conferir itens e total manualmente. Testar limites de saldo, timeout, senha e repetição da importação. Possíveis duplicidades por nome, valor e mês, incluindo linhas repetidas no arquivo, exigem revisão antes de salvar. A confirmação permite manter despesas legítimas iguais; consulte [DUPLICIDADES.md](DUPLICIDADES.md) para critérios e limites.

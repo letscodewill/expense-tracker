@@ -1,7 +1,9 @@
 'use client'
 
 import { z } from 'zod'
-import { useReducer, useState, useMemo } from 'react'
+import { useReducer, useState, useMemo, useRef } from 'react'
+import { checkExpenseDuplicates, type DuplicateWarning } from '@/lib/expense-duplicates'
+import { DuplicateExpenseNotice } from '@/components/duplicate-expense-notice'
 import { createClient } from '@/lib/supabase/client'
 import { safeGetUser } from '@/lib/supabase/safe-get-user'
 import { Button } from '@/components/ui/button'
@@ -202,6 +204,10 @@ export function AddExpenseDialog({
 
   const [open, setOpen] = useState(!!expenseToEdit || !!forceOpen)
   const [loading, setLoading] = useState(false)
+  const inFlight = useRef(false)
+  const [duplicateReview, setDuplicateReview] = useState<{ key: string; draft: string; warnings: DuplicateWarning[] } | null>(null)
+  const [acceptedDuplicates, setAcceptedDuplicates] = useState('')
+  const draftKey = JSON.stringify([nome, dataPagamento, valor, status, comentario, isInstallment, installments, isRecurring, recurringMonths, boardId, selected, expenseToEdit?.id])
   const [previousExpense, setPreviousExpense] = useState<Expense | null | undefined>(undefined)
   const [previousForceOpen, setPreviousForceOpen] = useState(forceOpen)
 
@@ -245,6 +251,7 @@ export function AddExpenseDialog({
   }, [isInstallment, dataPagamento, installments, valor])
 
   async function handleSubmit() {
+    if (inFlight.current) return
     const result = expenseSchema.safeParse(formState)
 
     if (!result.success) {
@@ -256,11 +263,37 @@ export function AddExpenseDialog({
       return
     }
 
+    inFlight.current = true
     setLoading(true)
     dispatch({ type: 'SET_ERROR', error: '' })
 
+    try {
     const user = await safeGetUser()
+    if (!user) {
+      dispatch({ type: 'SET_ERROR', error: 'Entre novamente para salvar a despesa.' })
+      return
+    }
     const totalValor = parseFloat(valor.replace(',', '.')) || 0
+    const selectedStart = selected ? new Date(Date.UTC(selected.year, selected.month, 1)).toISOString().slice(0, 10) : null
+    let recurringStart = dataPagamento
+    if (!expenseToEdit && isRecurring && selected && selectedStart && recurringStart < selectedStart) {
+      const [year, month] = recurringStart.split('-').map(Number)
+      recurringStart = addMonthsISO(recurringStart, (selected.year - year) * 12 + selected.month - (month - 1))
+    }
+    const count = expenseToEdit ? 1 : isInstallment ? Number(installments) : isRecurring ? Number(recurringMonths) : 1
+    const cents = Math.round(totalValor * 100)
+    const candidates = Array.from({ length: count }, (_, index) => ({
+      nome: nome.trim(),
+      valor: !expenseToEdit && isInstallment ? (Math.floor(cents / count) + (index < cents % count ? 1 : 0)) / 100 : totalValor,
+      data_pagamento: addMonthsISO(!expenseToEdit && isRecurring ? recurringStart : dataPagamento, index),
+    }))
+    const duplicates = await checkExpenseDuplicates(supabase, user.id, candidates, expenseToEdit?.id)
+    const reviewKey = JSON.stringify([draftKey, duplicates])
+    if (duplicates.length && acceptedDuplicates !== reviewKey) {
+      setDuplicateReview({ key: reviewKey, draft: draftKey, warnings: duplicates })
+      setAcceptedDuplicates('')
+      return
+    }
 
     if (expenseToEdit) {
       const { error: updateError } = await supabase
@@ -336,15 +369,6 @@ export function AddExpenseDialog({
     } else if (isRecurring) {
       const n = parseInt(recurringMonths, 10)
       const groupId = crypto.randomUUID()
-      // A stale payment date must never start a new series before the selected period.
-      const selectedStart = selected
-        ? new Date(Date.UTC(selected.year, selected.month, 1)).toISOString().slice(0, 10)
-        : null
-      let recurringStart = dataPagamento
-      if (selectedStart && recurringStart < selectedStart) {
-        const [year, month] = recurringStart.split('-').map(Number)
-        recurringStart = addMonthsISO(recurringStart, (selected!.year - year) * 12 + selected!.month - (month - 1))
-      }
 
       try {
         const rows = []
@@ -420,10 +444,18 @@ export function AddExpenseDialog({
     setOpen(false)
     onOpenChange?.(false)
     onAdded()
+    setDuplicateReview(null)
+    setAcceptedDuplicates('')
+    } catch (err) {
+      dispatch({ type: 'SET_ERROR', error: err instanceof Error ? err.message : 'Não foi possível salvar. Tente novamente.' })
+    } finally {
+      inFlight.current = false
+      setLoading(false)
+    }
   }
 
   return (
-    <Dialog open={open} onOpenChange={(isOpen) => { setOpen(isOpen); onOpenChange?.(isOpen); if (!isOpen) dispatch({ type: 'RESET' })}} {...props}>
+    <Dialog open={open} onOpenChange={(isOpen) => { if (inFlight.current) return; setOpen(isOpen); onOpenChange?.(isOpen); if (!isOpen) { dispatch({ type: 'RESET' }); setDuplicateReview(null); setAcceptedDuplicates('') } }} {...props}>
       <DialogTrigger
         render={
           <Button variant="outline" size="sm">
@@ -432,12 +464,13 @@ export function AddExpenseDialog({
           </Button>
         }
       />
-      <DialogContent>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{expenseToEdit ? 'Editar despesa' : 'Nova despesa'}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
+        <fieldset disabled={loading} className="space-y-4 py-2">
+          {duplicateReview?.draft === draftKey && <DuplicateExpenseNotice warnings={duplicateReview.warnings} confirmed={acceptedDuplicates === duplicateReview.key} onConfirm={value => setAcceptedDuplicates(value ? duplicateReview.key : '')} />}
           <div className="space-y-2">
             <Label htmlFor="nome">Nome</Label>
             <Input
@@ -592,7 +625,7 @@ export function AddExpenseDialog({
           </div>
 
           {error && <p className="text-sm text-red-600">{error}</p>}
-        </div>
+        </fieldset>
 
         <DialogFooter>
           <Button onClick={handleSubmit} disabled={loading}>
