@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { SignupDialog } from '@/components/signup-dialog'
 import { GoogleSignInButton } from '@/components/google-signin-button'
 import { ThemeSelector } from '@/components/theme-selector'
+import { PwaInstallButton } from '@/components/pwa-install-button'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -66,6 +67,7 @@ export default async function LoginPage({
               <div className="flex items-center gap-3 text-xs text-muted-foreground"><span className="h-px flex-1 bg-border" />ou<span className="h-px flex-1 bg-border" /></div>
               <GoogleSignInButton />
               <div className="text-center"><SignupDialog /></div>
+              <div className="flex justify-center"><PwaInstallButton /></div>
             </div>}
           {params?.message && <p role="alert" className="mt-5 rounded-2xl bg-destructive/10 p-3 text-center text-sm text-destructive">{params.message}</p>}
         </section>

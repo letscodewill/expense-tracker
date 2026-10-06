@@ -1,0 +1,7 @@
+# Ícone NoControle
+
+Gerado com a ferramenta integrada imagegen a partir do favicon fornecido pelo usuário. A imagem final está em `public/icons/icon-source.png`; `scripts/generate-pwa-icons.mjs` produz o favicon ICO/PNG de 32 px e as versões PWA/Apple. Nenhuma chave da API do projeto foi utilizada.
+
+Prompt final:
+
+Create one polished production-ready square app icon / favicon for NoControle, a Brazilian personal expense tracker with a modern Material Design lavender/purple interface. Use the attached original favicon as inspiration: a small spiral notebook / expense ledger with a Brazilian real symbol and a pencil. Redesign it with a sophisticated, minimal, bold geometric style that remains legible at 32 pixels. Composition: a single off-white rounded ledger/notepad with three simple binding loops at the top, a clear compact R$ mark centered on the page, and one short elegant diagonal pencil along its lower right edge. Simplify all details heavily. Center the entire symbol inside the central 65% of the square so it fits a circular maskable app icon. Full-bleed opaque deep violet background #381e72, soft lavender accents #d0bcff and off-white #f6edff. Flat vector-like rendering, clean smooth edges, strong contrast, restrained subtle depth only. No mockup, no perspective, no surrounding scene, no wordmark, no borders or rounded corners on the outer square, no tiny decorative lines, no gradients with glare. Exactly one square icon, no sheet of variants. Preserve the recognizable ledger/real/pencil concept rather than a wallet.

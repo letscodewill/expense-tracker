@@ -806,6 +806,28 @@ test('category management validates names, saves the owner and removes only afte
   assert.ok(db.requests[1].calls.some(([method, column, value]) => method === 'eq' && column === 'user_id' && value === 'test-user'))
 })
 
+test('PWA install button shows iPhone instructions, invokes supported prompts and hides in standalone mode', async () => {
+  for (const standalone of [false, true]) {
+    const runtime = hooks(), listeners = new Map()
+    let nativePrompts = 0
+    const { PwaInstallButton } = load('components/pwa-install-button.tsx', { react: runtime.react }, {
+      queueMicrotask, navigator: { userAgent: 'iPhone', platform: 'iPhone', maxTouchPoints: 1 },
+      window: { matchMedia: () => ({ matches: standalone, addEventListener() {}, removeEventListener() {} }), addEventListener: (name, handler) => listeners.set(name, handler), removeEventListener() {} },
+    })
+    runtime.render(PwaInstallButton, {}); let tree = await runtime.flush()
+    if (standalone) { assert.equal(tree, null); continue }
+    find(tree, node => node.type === 'Button').props.onClick(); tree = await runtime.flush()
+    find(tree, node => node.props.children === 'Abra este site no Safari.')
+    assert.equal(find(tree, node => node.type === 'Dialog').props.open, true)
+    listeners.get('beforeinstallprompt')({ preventDefault() {}, prompt: async () => { nativePrompts++ }, userChoice: Promise.resolve({ outcome: 'accepted' }) })
+    tree = await runtime.flush()
+    find(tree, node => node.type === 'Button').props.onClick(); tree = await runtime.flush()
+    assert.equal(nativePrompts, 1); assert.equal(tree, null)
+  }
+  const manifest = load('app/manifest.ts').default()
+  assert.equal(manifest.display, 'standalone'); assert.equal(manifest.scope, '/'); assert.equal(manifest.start_url, '/')
+})
+
 test('invoice categories are reviewed and included in saved expenses', async () => {
   const invoice = invoiceRuntime()
   let tree = await invoice.upload()
