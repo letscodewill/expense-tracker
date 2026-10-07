@@ -1,0 +1,55 @@
+name: Backup diario NoControle
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 06:17 UTC = 03:17 America/Sao_Paulo. GitHub may delay scheduled jobs.
+    - cron: '17 6 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nocontrole-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Instalar dependencias
+        run: npm ci --ignore-scripts
+      - name: Instalar cliente PostgreSQL 17
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+          echo 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main' | sudo tee /etc/apt/sources.list.d/nocontrole-pgdg.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+      - name: Testar criptografia e recuperacao de arquivos
+        run: node --test tests/backup.test.mjs
+      - name: Gerar, verificar e enviar backup privado
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          BACKUP_SUPABASE_URL: ${{ vars.BACKUP_SUPABASE_URL }}
+          BACKUP_SUPABASE_SECRET_KEY: ${{ secrets.BACKUP_SUPABASE_SECRET_KEY }}
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+          GOOGLE_BACKUP_CLIENT_ID: ${{ secrets.GOOGLE_BACKUP_CLIENT_ID }}
+          GOOGLE_BACKUP_CLIENT_SECRET: ${{ secrets.GOOGLE_BACKUP_CLIENT_SECRET }}
+          GOOGLE_BACKUP_REFRESH_TOKEN: ${{ secrets.GOOGLE_BACKUP_REFRESH_TOKEN }}
+          GOOGLE_BACKUP_FOLDER_ID: ${{ vars.GOOGLE_BACKUP_FOLDER_ID }}
+        run: |
+          export PATH="/usr/lib/postgresql/17/bin:$PATH"
+          node scripts/backup.mjs run
+      - name: Registrar resultado
+        if: always()
+        env:
+          RESULT: ${{ job.status }}
+        run: |
+          echo "Backup NoControle: $RESULT. Consulte os logs em caso de falha." >> "$GITHUB_STEP_SUMMARY"

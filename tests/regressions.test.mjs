@@ -575,26 +575,109 @@ test('invoice parsing preserves Brazilian currency, dates and split-line amounts
   assert.equal(JSON.stringify(result), JSON.stringify([{ nome: 'Mercado', valor: 1234.56, data: '2026-10-03' }, { nome: 'Restaurante', valor: 80, data: '2026-10-04' }]))
 })
 
-test('report PDF positions totals after the table and provides a safe fallback', async () => {
-  for (const tableEnd of [100, undefined]) {
-    const runtime = hooks(), db = database({ expenses: [success([expense])] }), calls = []
-    class Pdf {
-      setFontSize() {} setTextColor() {}
-      text(...args) { calls.push(args) }
-      save(name) { calls.push(['save', name]) }
+test('report exports categories, benefits and full-month budgets without mixing filters', async () => {
+  const runtime = hooks()
+  const rows = [
+    { ...expense, id: 1, nome: 'Mercado pendente', category: 'Mercado', data_pagamento: '2026-11-06', valor: 80, status: 'Pendente' },
+    { ...expense, id: 2, nome: 'Mercado VR', category: 'Mercado', data_pagamento: '2026-11-07', valor: 30, status: 'VR/VA' },
+    { ...expense, id: 3, nome: 'Mercado pago', category: 'Mercado', data_pagamento: '2026-11-30', valor: 20, status: 'Pago' },
+    { ...expense, id: 4, category: 'Mercado', data_pagamento: '2026-10-06', valor: 100, status: 'Pago' },
+  ]
+  const db = database({ expenses: [success(rows)], category_budgets: [success([{ month: '2026-11-01', category: 'Mercado', amount: 120 }])] })
+  const tables = [], calls = []
+  class Pdf {
+    internal = { pageSize: { getHeight: () => 210 } }
+    setFontSize() {} text(...args) { calls.push(args) } addPage() {} getNumberOfPages() { return 2 } setPage() {}
+    save(name) { calls.push(['save', name]) }
+  }
+  const { ReportsView } = load('components/reports-view.tsx', {
+    react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client },
+    jspdf: Pdf, 'jspdf-autotable': (_doc, options) => tables.push(options),
+  })
+  let tree = runtime.render(ReportsView, {})
+  find(tree, n => n.props.id === 'report-from').props.onChange({ target: { value: '2026-11-01' } })
+  find(tree, n => n.props.id === 'report-to').props.onChange({ target: { value: '2026-11-10' } })
+  tree = await runtime.flush()
+  await find(tree, n => n.props.children === 'Buscar').props.onClick()
+  tree = await runtime.flush()
+  // Editing dates without searching must not mislabel the loaded export.
+  find(tree, n => n.props.id === 'report-from').props.onChange({ target: { value: '2026-12-01' } })
+  tree = await runtime.flush()
+  find(tree, n => n.props.onClick?.name === 'handleExportPdf').props.onClick()
+  assert.equal(tables[0].body.length, 2)
+  assert.equal(tables[0].body[0][2], 'Mercado')
+  assert.ok(tables[0].foot.find(r => r[0] === 'Total pendente')[3].includes('80,00'))
+  assert.ok(tables[0].foot.find(r => r[0] === 'VR/VA')[3].includes('30,00'))
+  assert.equal(tables[0].showFoot, 'lastPage')
+  const summary = tables[1].body[0]
+  assert.ok(summary[2].includes('130,00'))
+  assert.ok(summary[4].includes('Excedido:') && summary[4].includes('10,00'))
+  assert.ok(summary[5].includes('100,00'))
+  assert.ok(summary[6].includes('30,00'))
+  assert.ok(calls.some(([kind, name]) => kind === 'save' && name === 'relatorio-2026-11-01-a-2026-11-10.pdf'))
+})
+
+test('report paginates large datasets and real PDF keeps content inside every page', async () => {
+  const runtime = hooks()
+  const rows = Array.from({ length: 1001 }, (_, id) => ({ ...expense, id, category: 'Categoria de despesas com nome comprido', data_pagamento: '2026-11-06', nome: `Lançamento ${id} com descrição detalhada`, comentario: 'Comentário longo para verificar quebra de linhas e legibilidade.' }))
+  const db = database({ expenses: [success(rows.slice(0, 1000)), success(rows.slice(1000))] })
+  const { jsPDF } = nodeRequire('jspdf')
+  let document
+  class Pdf {
+    constructor(options) {
+      const doc = new jsPDF(options)
+      doc.save = () => { document = doc }
+      return doc
     }
-    const { ReportsView } = load('components/reports-view.tsx', {
-      react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client },
-      jspdf: Pdf, 'jspdf-autotable': (doc) => { if (tableEnd !== undefined) doc.lastAutoTable = { finalY: tableEnd } },
-    })
+  }
+  const { ReportsView } = load('components/reports-view.tsx', {
+    react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client }, jspdf: Pdf,
+  })
+  let tree = runtime.render(ReportsView, {})
+  for (const [id, value] of [['report-from', '2026-11-01'], ['report-to', '2026-11-30']]) {
+    find(tree, n => n.props.id === id).props.onChange({ target: { value } })
+  }
+  tree = await runtime.flush()
+  await find(tree, n => n.props.children === 'Buscar').props.onClick()
+  tree = await runtime.flush()
+  find(tree, n => n.props.onClick?.name === 'handleExportPdf').props.onClick()
+  const queries = db.requests.filter(q => q.table === 'expenses')
+  assert.equal(queries.length, 2)
+  assert.ok(queries[1].calls.some(c => c[0] === 'range' && c[1] === 1000 && c[2] === 1999))
+  assert.ok(queries.every(q => q.calls.some(c => c[0] === 'eq' && c[1] === 'user_id' && c[2] === 'test-user')))
+  assert.ok(document.getNumberOfPages() > 2)
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  const task = pdfjs.getDocument({ data: new Uint8Array(document.output('arraybuffer')), useSystemFonts: true })
+  const pdf = await task.promise
+  let allText = ''
+  for (let page = 1; page <= pdf.numPages; page++) {
+    const pdfPage = await pdf.getPage(page)
+    const content = await pdfPage.getTextContent()
+    allText += content.items.map(item => item.str).join(' ')
+    for (const item of content.items) {
+      assert.ok(item.transform[5] >= 0 && item.transform[5] <= pdfPage.view[3], `text must fit page ${page}`)
+    }
+  }
+  assert.ok(allText.includes('Lançamento 1000'))
+  assert.ok(allText.includes('Total pendente'))
+  assert.ok(allText.includes('Orçamento e comparação mensal'))
+  if (process.env.REPORT_QA_PDF) {
+    fs.writeFileSync(process.env.REPORT_QA_PDF, Buffer.from(document.output('arraybuffer')))
+  }
+  await task.destroy()
+})
+
+test('report fails closed when budgets fail or the session is missing', async () => {
+  for (const anonymous of [false, true]) {
+    const runtime = hooks(), db = database({ expenses: [success([expense])], category_budgets: [failure] })
+    if (anonymous) db.client.auth.getUser = async () => ({ data: { user: null } })
+    const { ReportsView } = load('components/reports-view.tsx', { react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client } })
     let tree = runtime.render(ReportsView, {})
-    await find(tree, (node) => node.props.children === 'Buscar').props.onClick()
+    await find(tree, n => n.props.children === 'Buscar').props.onClick()
     tree = await runtime.flush()
-    find(tree, (node) => node.props.onClick?.name === 'handleExportPdf').props.onClick()
-    const total = calls.find(([text]) => text.startsWith('Total do período'))
-    assert.equal(total[2], (tableEnd ?? 32) + 10)
-    assert.ok(total[0].includes('80,00'))
-    assert.ok(calls.some(([type]) => type === 'save'))
+    assert.equal(elements(tree, n => n.props.onClick?.name === 'handleExportPdf').length, 0)
+    find(tree, n => typeof n.props.children === 'string' && n.props.children.includes('relatório completo'))
+    if (anonymous) assert.equal(db.requests.length, 0)
   }
 })
 

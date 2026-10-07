@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import jsPDF from 'jspdf'
-import autoTable, { type Table as PdfTable } from 'jspdf-autotable'
+import autoTable from 'jspdf-autotable'
 import { Download } from 'lucide-react'
 
 type CheckboxProps = {
@@ -34,6 +34,7 @@ type Expense = {
     valor: number
     status: 'Pendente' | 'Pago' | 'VR/VA'
     comentario: string | null
+    category: string
     represents_board_id: string | null
 }
 
@@ -48,7 +49,7 @@ const statusColor: Record<ExpenseStatus, string> = {
 
 function parseISODate(iso: string): Date {
     const [y, m, d] = iso.split('-').map(Number)
-    return new Date(y, m - 1, d)
+    return new Date(Date.UTC(y, m - 1, d))
 }
 
 function todayISO(): string {
@@ -72,9 +73,13 @@ export function ReportsView() {
     const [maxValue, setMaxValue] = useState('')
 
     const [expenses, setExpenses] = useState<Expense[]>([])
+    const [monthlyExpenses, setMonthlyExpenses] = useState<Expense[]>([])
+    const [budgets, setBudgets] = useState<{ month: string; category: string; amount: number }[]>([])
+    const [period, setPeriod] = useState({ from: '', to: '' })
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
     const [hasSearched, setHasSearched] = useState(false)
+    const searching = useRef(false)
 
     function toggleStatus(status: ExpenseStatus) {
         setStatuses((prev) =>
@@ -83,6 +88,7 @@ export function ReportsView() {
     }
 
     const handleSearch = useCallback(async () => {
+        if (searching.current) return
         if (!from || !to) {
             setError('Selecione as duas datas do período.')
             return
@@ -92,27 +98,50 @@ export function ReportsView() {
             return
         }
 
+        searching.current = true
         setLoading(true)
         setError('')
-        setHasSearched(true)
-
-        const { data, error: fetchError } = await supabase
-            .from('expenses')
-            .select('*')
-            .is('represents_board_id', null)
-            .gte('data_pagamento', from)
-            .lte('data_pagamento', to)
-            .order('data_pagamento', { ascending: true })
-
-        setLoading(false)
-
-        if (fetchError) {
-            console.error('Erro ao buscar relatório:', fetchError)
-            setError('Não foi possível carregar os dados. Tente novamente.')
-            return
+        setHasSearched(false)
+        try {
+            const start = parseISODate(`${from.slice(0, 7)}-01`)
+            start.setUTCMonth(start.getUTCMonth() - 1)
+            const end = parseISODate(`${to.slice(0, 7)}-01`)
+            end.setUTCMonth(end.getUTCMonth() + 1)
+            const { data: auth, error: authError } = await supabase.auth.getUser()
+            if (authError || !auth.user) throw new Error('Sessão indisponível')
+            const rows: Expense[] = []
+            const limits: { month: string; category: string; amount: number }[] = []
+            for (let offset = 0; ; offset += 1000) {
+                const { data, error } = await supabase.from('expenses').select('*')
+                    .eq('user_id', auth.user.id).is('represents_board_id', null)
+                    .gte('data_pagamento', start.toISOString().slice(0, 10))
+                    .lt('data_pagamento', end.toISOString().slice(0, 10))
+                    .order('data_pagamento', { ascending: true }).order('id', { ascending: true })
+                    .range(offset, offset + 999)
+                if (error) throw error
+                rows.push(...(data ?? []))
+                if (!data || data.length < 1000) break
+            }
+            for (let offset = 0; ; offset += 1000) {
+                const { data, error } = await supabase.from('category_budgets').select('month,category,amount')
+                    .eq('user_id', auth.user.id).gte('month', `${from.slice(0, 7)}-01`)
+                    .lte('month', `${to.slice(0, 7)}-01`).order('month').order('category')
+                    .range(offset, offset + 999)
+                if (error) throw error
+                limits.push(...(data ?? []))
+                if (!data || data.length < 1000) break
+            }
+            setExpenses(rows.filter(row => row.data_pagamento >= from && row.data_pagamento <= to))
+            setMonthlyExpenses(rows)
+            setBudgets(limits)
+            setPeriod({ from, to })
+            setHasSearched(true)
+        } catch {
+            setError('Não foi possível carregar o relatório completo. Tente novamente.')
+        } finally {
+            searching.current = false
+            setLoading(false)
         }
-
-        setExpenses(data ?? [])
     }, [supabase, from, to])
 
     const filtered = expenses.filter((e) => {
@@ -129,58 +158,76 @@ export function ReportsView() {
         return true
     })
 
-    const total = filtered.reduce((sum, e) => sum + e.valor, 0)
-    const totalPago = filtered.reduce((sum, e) => sum + (e.status === 'Pago' ? e.valor : 0), 0)
-    const totalPendente = filtered.reduce((sum, e) => sum + (e.status !== 'Pago' ? e.valor : 0), 0)
+    const sumFiltered = (status?: ExpenseStatus) => filtered.reduce((sum, e) => sum + (!status || e.status === status ? Math.round(e.valor * 100) : 0), 0) / 100
+    const total = sumFiltered()
+    const totalPago = sumFiltered('Pago')
+    const totalPendente = sumFiltered('Pendente')
+    const totalBenefits = sumFiltered('VR/VA')
+    const money = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+    const summary: string[][] = []
+    if (period.from) {
+        const cursor = parseISODate(`${period.from.slice(0, 7)}-01`)
+        while (cursor.toISOString().slice(0, 7) <= period.to.slice(0, 7)) {
+            const month = cursor.toISOString().slice(0, 7)
+            const previous = new Date(cursor)
+            previous.setUTCMonth(previous.getUTCMonth() - 1)
+            const previousMonth = previous.toISOString().slice(0, 7)
+            const categories = new Set([
+                ...monthlyExpenses.filter(row => row.data_pagamento.startsWith(month) || row.data_pagamento.startsWith(previousMonth)).map(row => row.category || 'Sem categoria'),
+                ...budgets.filter(budget => budget.month.startsWith(month)).map(budget => budget.category),
+            ])
+            for (const category of [...categories].sort()) {
+                const sum = (key: string) => monthlyExpenses.filter(row => !row.represents_board_id && row.data_pagamento.startsWith(key) && (row.category || 'Sem categoria') === category)
+                    .reduce((total, row) => total + Math.round(row.valor * 100), 0) / 100
+                const spent = sum(month), before = sum(previousMonth)
+                const budget = budgets.find(item => item.month.startsWith(month) && item.category === category)
+                const remaining = budget ? Number(budget.amount) - spent : null
+                summary.push([`${month.slice(5)}/${month.slice(0, 4)}`, category, money(spent), budget ? money(Number(budget.amount)) : 'Não definido',
+                    remaining === null ? '—' : `${remaining < 0 ? 'Excedido: ' : 'Disponível: '}${money(Math.abs(remaining))}`, money(before), money(spent - before)])
+            }
+            cursor.setUTCMonth(cursor.getUTCMonth() + 1)
+        }
+    }
 
     function handleExportPdf() {
-        const doc = new jsPDF()
-
+        const doc = new jsPDF({ orientation: 'landscape' })
         doc.setFontSize(16)
         doc.text('Relatório de Despesas', 14, 18)
-
         doc.setFontSize(10)
-        doc.setTextColor(100)
-        const fromLabel = parseISODate(from).toLocaleDateString('pt-BR', { timeZone: 'UTC' })
-        const toLabel = parseISODate(to).toLocaleDateString('pt-BR', { timeZone: 'UTC' })
-        doc.text(`Período: ${fromLabel} até ${toLabel}`, 14, 25)
-
+        doc.text(`Período: ${parseISODate(period.from).toLocaleDateString('pt-BR', { timeZone: 'UTC' })} até ${parseISODate(period.to).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}`, 14, 25)
         autoTable(doc, {
             startY: 32,
-            head: [['Nome', 'Data', 'Valor', 'Status', 'Comentário']],
-            body: filtered.map((e) => [
-                e.nome,
-                parseISODate(e.data_pagamento).toLocaleDateString('pt-BR', { timeZone: 'UTC' }),
-                e.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-                e.status,
-                e.comentario ?? '',
-            ]),
-            styles: { fontSize: 9 },
-            headStyles: { fillColor: [40, 40, 40] },
+            head: [['Nome', 'Data', 'Categoria', 'Valor', 'Status', 'Comentário']],
+            body: filtered.map(e => [e.nome, parseISODate(e.data_pagamento).toLocaleDateString('pt-BR', { timeZone: 'UTC' }), e.category || 'Sem categoria', money(e.valor), e.status, e.comentario ?? '']),
+            foot: [['Total do período', '', '', money(total), '', ''], ['Total pago', '', '', money(totalPago), '', ''], ['VR/VA', '', '', money(totalBenefits), '', ''], ['Total pendente', '', '', money(totalPendente), '', '']],
+            showFoot: 'lastPage',
+            rowPageBreak: 'avoid',
+            styles: { fontSize: 9, overflow: 'linebreak' },
+            headStyles: { fillColor: [103, 80, 164] },
+            footStyles: { fillColor: [240, 236, 248], textColor: [30, 30, 30] },
+            margin: { top: 14, bottom: 18 },
         })
-
-        const lastTable = (doc as jsPDF & { lastAutoTable?: PdfTable }).lastAutoTable
-        const finalY = (lastTable?.finalY ?? 32) + 10
-
-        doc.setFontSize(11)
-        doc.setTextColor(0)
-        doc.text(
-            `Total do período: ${total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`,
-            14,
-            finalY
-        )
-        doc.text(
-            `Total pago: ${totalPago.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`,
-            14,
-            finalY + 6
-        )
-        doc.text(
-            `Total pendente: ${totalPendente.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`,
-            14,
-            finalY + 12
-        )
-
-        doc.save(`relatorio-${from}-a-${to}.pdf`)
+        doc.addPage()
+        doc.setFontSize(16)
+        doc.text('Orçamento e comparação mensal', 14, 18)
+        doc.setFontSize(9)
+        doc.text('Meses completos; inclui Pago, Pendente e VR/VA. Independente dos filtros da lista. Variação em relação ao mês anterior.', 14, 25)
+        autoTable(doc, {
+            startY: 32,
+            head: [['Mês', 'Categoria', 'Despesas', 'Limite', 'Saldo do orçamento', 'Mês anterior', 'Variação']],
+            body: summary.length ? summary : [['', 'Nenhum dado mensal encontrado', '', '', '', '', '']],
+            rowPageBreak: 'avoid',
+            styles: { fontSize: 9, overflow: 'linebreak' },
+            headStyles: { fillColor: [103, 80, 164] },
+            margin: { top: 14, bottom: 18 },
+        })
+        const pages = doc.getNumberOfPages()
+        for (let page = 1; page <= pages; page++) {
+            doc.setPage(page)
+            doc.setFontSize(8)
+            doc.text(`NoControle | Página ${page} de ${pages}`, 14, doc.internal.pageSize.getHeight() - 8)
+        }
+        doc.save(`relatorio-${period.from}-a-${period.to}.pdf`)
     }
 
     return (
@@ -260,8 +307,9 @@ export function ReportsView() {
                 </Button>
             </div>
 
-            {hasSearched && !loading && filtered.length > 0 && (
-                <div className="flex justify-end">
+            {hasSearched && !loading && (
+                <div className="flex flex-wrap items-center justify-end gap-3">
+                    <p className="mr-auto text-sm text-muted-foreground">Período carregado: {parseISODate(period.from).toLocaleDateString('pt-BR', { timeZone: 'UTC' })} até {parseISODate(period.to).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</p>
                     <Button variant="outline" size="sm" onClick={handleExportPdf}>
                         <Download className="h-4 w-4 mr-1" />
                         Exportar PDF
@@ -269,6 +317,18 @@ export function ReportsView() {
                 </div>
             )}
 
+            {hasSearched && !loading && (
+                <section className="rounded-xl border p-4 space-y-3">
+                    <h2 className="font-semibold">Orçamento e comparação mensal</h2>
+                    <p className="text-sm text-muted-foreground">Meses completos, incluindo Pago, Pendente e VR/VA. Este resumo independe dos filtros da lista. A variação compara com o mês anterior.</p>
+                    <div className="overflow-x-auto">
+                        <Table>
+                            <TableHeader><TableRow>{['Mês', 'Categoria', 'Despesas', 'Limite', 'Saldo do orçamento', 'Mês anterior', 'Variação'].map(label => <TableHead key={label}>{label}</TableHead>)}</TableRow></TableHeader>
+                            <TableBody>{summary.map((row, index) => <TableRow key={index}>{row.map((value, column) => <TableCell key={column}>{value}</TableCell>)}</TableRow>)}</TableBody>
+                        </Table>
+                    </div>
+                </section>
+            )}
             {hasSearched && !loading && (
                 <div className="rounded-xl border">
                     {filtered.length === 0 ? (
@@ -282,6 +342,7 @@ export function ReportsView() {
                                     <TableRow>
                                         <TableHead>Nome</TableHead>
                                         <TableHead>Data</TableHead>
+                                        <TableHead>Categoria</TableHead>
                                         <TableHead>Valor</TableHead>
                                         <TableHead>Status</TableHead>
                                         <TableHead>Comentário</TableHead>
@@ -296,6 +357,7 @@ export function ReportsView() {
                                                     timeZone: 'UTC',
                                                 })}
                                             </TableCell>
+                                            <TableCell>{expense.category || 'Sem categoria'}</TableCell>
                                             <TableCell>
                                                 {expense.valor.toLocaleString('pt-BR', {
                                                     style: 'currency',
@@ -310,22 +372,23 @@ export function ReportsView() {
                                     ))}
                                 </TableBody>
                                 <TableFooter>
+                                    <TableRow><TableCell colSpan={3}>VR/VA</TableCell><TableCell>{money(totalBenefits)}</TableCell><TableCell colSpan={2}></TableCell></TableRow>
                                     <TableRow>
-                                        <TableCell colSpan={2}>Total do período</TableCell>
+                                        <TableCell colSpan={3}>Total do período</TableCell>
                                         <TableCell>
                                             {total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                         </TableCell>
                                         <TableCell colSpan={2}></TableCell>
                                     </TableRow>
                                     <TableRow>
-                                        <TableCell colSpan={2}>Total pago</TableCell>
+                                        <TableCell colSpan={3}>Total pago</TableCell>
                                         <TableCell>
                                             {totalPago.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                         </TableCell>
                                         <TableCell colSpan={2}></TableCell>
                                     </TableRow>
                                     <TableRow>
-                                        <TableCell colSpan={2}>Total pendente</TableCell>
+                                        <TableCell colSpan={3}>Total pendente</TableCell>
                                         <TableCell>
                                             {totalPendente.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                         </TableCell>
