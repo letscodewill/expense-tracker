@@ -18,11 +18,31 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
+      - name: Conferir configuracao do backup
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          BACKUP_SUPABASE_URL: ${{ vars.BACKUP_SUPABASE_URL }}
+          BACKUP_SUPABASE_SECRET_KEY: ${{ secrets.BACKUP_SUPABASE_SECRET_KEY }}
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+          GOOGLE_BACKUP_CLIENT_ID: ${{ secrets.GOOGLE_BACKUP_CLIENT_ID }}
+          GOOGLE_BACKUP_CLIENT_SECRET: ${{ secrets.GOOGLE_BACKUP_CLIENT_SECRET }}
+          GOOGLE_BACKUP_REFRESH_TOKEN: ${{ secrets.GOOGLE_BACKUP_REFRESH_TOKEN }}
+          GOOGLE_BACKUP_FOLDER_ID: ${{ vars.GOOGLE_BACKUP_FOLDER_ID }}
+        run: |
+          node --input-type=module <<'NODE'
+          const names = ['BACKUP_DATABASE_URL', 'BACKUP_SUPABASE_URL', 'BACKUP_SUPABASE_SECRET_KEY', 'BACKUP_ENCRYPTION_KEY', 'GOOGLE_BACKUP_CLIENT_ID', 'GOOGLE_BACKUP_CLIENT_SECRET', 'GOOGLE_BACKUP_REFRESH_TOKEN', 'GOOGLE_BACKUP_FOLDER_ID'];
+          const missing = names.filter(name => !process.env[name]?.trim());
+          for (const name of missing) console.error(`::error::Configure ${name} em Settings > Secrets and variables > Actions.`);
+          if (missing.length) process.exit(1);
+          console.log('Todos os campos obrigatorios estao configurados. Valores omitidos.');
+          NODE
       - name: Instalar dependencias
         run: npm ci --ignore-scripts
       - name: Instalar cliente PostgreSQL 17
