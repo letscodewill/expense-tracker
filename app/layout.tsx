@@ -5,6 +5,7 @@ import { VisibilityProvider } from '@/context/visibility-context'
 import "./globals.css";
 import Script from 'next/script'
 import { THEME_INIT_SCRIPT } from '@/lib/themes'
+import { ActivityTracker } from '@/components/activity-tracker'
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,7 +33,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col font-sans"><Script id="dashboard-theme" strategy="beforeInteractive">{THEME_INIT_SCRIPT}</Script><PwaSupport /><VisibilityProvider>{children}</VisibilityProvider></body>
+      <body className="min-h-full flex flex-col font-sans"><Script id="dashboard-theme" strategy="beforeInteractive">{THEME_INIT_SCRIPT}</Script><PwaSupport /><ActivityTracker /><VisibilityProvider>{children}</VisibilityProvider></body>
     </html>
   );
 }

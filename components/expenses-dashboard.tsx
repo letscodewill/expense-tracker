@@ -35,7 +35,7 @@ function isCurrentMonth(selected: MonthYear): boolean {
 
 
 
-export function ExpensesDashboard({ navigationActions }: { navigationActions?: ReactNode } = {}) {
+export function ExpensesDashboard({ navigationActions, notificationActions }: { navigationActions?: ReactNode; notificationActions?: ReactNode } = {}) {
   const supabase = createClient()
   const [boards, setBoards] = useState<Board[]>([])
   const [loadingBoards, setLoadingBoards] = useState(true)
@@ -152,6 +152,7 @@ export function ExpensesDashboard({ navigationActions }: { navigationActions?: R
           <SlidersHorizontal className="size-4 shrink-0" aria-hidden="true" />
           <span className="sm:hidden">Planejamento</span><span className="hidden sm:inline">Orçamento e lembretes</span>
         </Link>
+        <div className="ml-auto">{notificationActions}</div>
         <Dialog open={navigationOpen} onOpenChange={setNavigationOpen}>
           <DialogTrigger render={<Button variant="ghost" size="sm" aria-label="Abrir menu de navegação" aria-expanded={navigationOpen} className="shrink-0 gap-2"><Menu className="size-5" aria-hidden="true" />Menu</Button>} />
           <DialogContent className="dashboard-navigation-drawer top-0 right-0 left-auto h-dvh w-[min(22rem,90vw)] max-w-none translate-x-0 translate-y-0 content-start gap-6 overflow-y-auto rounded-l-3xl rounded-r-none p-6 sm:max-w-none">

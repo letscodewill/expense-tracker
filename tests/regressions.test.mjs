@@ -1204,6 +1204,107 @@ test('password-protected invoices use the payment date and clear the password on
 })
 
 const testAuthEnv = { NEXT_PUBLIC_SUPABASE_URL: 'https://testproject.supabase.co', NEXT_PUBLIC_SUPABASE_ANON_KEY: 'test-public-key' }
+
+test('admin overview rejects anonymous users, delegated admins and missing owner membership before returning data', async () => {
+  for (const [user, owner, expected] of [
+    [null, true, 401], [{ email: 'helper@example.com', email_confirmed_at: '2026-01-01' }, true, 403],
+    [{ email: 'williansantos38@gmail.com', email_confirmed_at: '2026-01-01' }, false, 403],
+  ]) {
+    const calls = []
+    const { GET } = load('app/api/admin/overview/route.ts', {
+      '@/lib/tickets-server': { getTicketAccess: async () => ({ user, master: true, supabase: { rpc: async name => { calls.push(name); return success(owner) } } }) },
+      '@/lib/tickets': load('lib/tickets.ts'),
+    }, { Response })
+    const response = await GET(new Request('https://test/api/admin/overview'))
+    assert.equal(response.status, expected)
+    assert.ok(response.headers.get('cache-control').includes('no-store'))
+    assert.ok(!calls.includes('get_admin_overview'))
+  }
+})
+
+test('master overview validates search and pagination', async () => {
+  const calls = [], user = { email: 'williansantos38@gmail.com', email_confirmed_at: '2026-01-01' }
+  const { GET } = load('app/api/admin/overview/route.ts', {
+    '@/lib/tickets-server': { getTicketAccess: async () => ({ user, supabase: { rpc: async (name, args) => { calls.push([name, args]); return name === 'is_support_owner' ? success(true) : success({ summary: { registered: 3 }, users: [], matching: 0 }) } } }) },
+    '@/lib/tickets': load('lib/tickets.ts'),
+  }, { Response })
+  assert.equal((await GET(new Request('https://test/api/admin/overview?offset=-1'))).status, 400)
+  assert.equal((await GET(new Request('https://test/api/admin/overview?search=' + 'a'.repeat(101)))).status, 400)
+  const response = await GET(new Request('https://test/api/admin/overview?offset=50&search=Jo%C3%A3o'))
+  assert.equal(response.status, 200)
+  assert.equal((await response.json()).summary.registered, 3)
+  assert.equal(calls.at(-1)[1].page_offset, 50); assert.equal(calls.at(-1)[1].search_value, 'João')
+})
+
+test('overview UI preserves the last valid data on failure and safely retries a user search', async () => {
+  const runtime = hooks(), urls = [], initialData = { summary: { registered: 6, confirmed: 6, active7: 2, active30: 3, used30: 1, new30: 0 }, users: [], matching: 0 }
+  const responses = [{ ok: false, json: async () => ({ error: 'offline' }) }, { ok: true, json: async () => ({ ...initialData, matching: 1, users: [{ id: 'u', email: 'test@example.com', name: 'Test', created_at: '2026-01-01', confirmed: true, last_access: null, last_action: null }] }) }]
+  const { AdminOverviewPanel } = load('components/admin-overview-panel.tsx', { react: runtime.react }, { fetch: async url => { urls.push(url); return responses.shift() } })
+  let tree = runtime.render(AdminOverviewPanel, { initialData })
+  find(tree, node => node.props['aria-label'] === 'Buscar usuário por nome ou e-mail').props.onChange({ target: { value: 'test@example.com' } }); tree = runtime.render()
+  find(tree, node => node.type === 'form').props.onSubmit({ preventDefault() {} }); tree = await runtime.flush()
+  find(tree, node => node.props.role === 'alert')
+  assert.equal(elements(tree, node => node.type === 'tr').length, 1)
+  find(tree, node => node.type === 'form').props.onSubmit({ preventDefault() {} }); tree = await runtime.flush()
+  assert.equal(elements(tree, node => node.props.role === 'alert').length, 0)
+  assert.equal(elements(tree, node => node.type === 'tr').length, 2)
+  assert.ok(urls.every(url => url.includes('search=test%40example.com&offset=0')))
+})
+
+test('ticket notifications require database administrator access and count all pending tickets', async () => {
+  for (const [user, master, expected] of [[null, false, 401], [{ id: 'user' }, false, 403], [{ id: 'admin' }, true, 200]]) {
+    const db = database({ reports: [{ count: 132, error: null }, { count: 12, error: null }, success({ protocol_number: 200, subject: 'Novo chamado' })] })
+    const { GET } = load('app/api/admin/notifications/route.ts', {
+      '@/lib/tickets-server': { getTicketAccess: async () => ({ user, master, supabase: db.client }) },
+    }, { Response })
+    const response = await GET()
+    assert.equal(response.status, expected)
+    if (expected === 200) { const result = await response.json(); assert.equal(result.open, 132); assert.equal(result.inProgress, 12) }
+    else assert.equal(db.requests.length, 0)
+  }
+})
+
+test('administrator bell detects new tickets once, keeps counts and removes data after access revocation', async () => {
+  const runtime = hooks(), document = Object.assign(new EventTarget(), { visibilityState: 'visible' })
+  let timer, calls = 0
+  const window = Object.assign(new EventTarget(), { setInterval: callback => { timer = callback; return 1 }, clearInterval() {} })
+  const snapshots = [
+    { open: 2, inProgress: 1, latest: { protocol_number: 3, subject: 'Primeiro' } },
+    { open: 3, inProgress: 1, latest: { protocol_number: 4, subject: 'Ajuda' } },
+    { open: 3, inProgress: 1, latest: { protocol_number: 4, subject: 'Ajuda' } },
+    null,
+  ]
+  const { AdminTicketNotifications } = load('components/admin-ticket-notifications.tsx', { react: runtime.react }, {
+    document, window, AbortController,
+    fetch: async () => { calls++; const data = snapshots.shift(); return data ? { ok: true, status: 200, json: async () => data } : { status: 403 } },
+  })
+  runtime.render(AdminTicketNotifications)
+  let tree = await runtime.flush()
+  find(tree, node => node.props['aria-label'] === '3 chamados pendentes. Abrir painel de tickets')
+  assert.equal(elements(tree, node => node.props.role === 'status').length, 0)
+  timer(); tree = await runtime.flush()
+  find(tree, node => node.props.role === 'status')
+  find(tree, node => node.props['aria-label'] === 'Dispensar aviso').props.onClick(); tree = await runtime.flush()
+  timer(); tree = await runtime.flush()
+  assert.equal(elements(tree, node => node.props.role === 'status').length, 0)
+  timer(); tree = await runtime.flush()
+  find(tree, node => node.props['aria-label'] === '0 chamados pendentes. Abrir painel de tickets')
+  timer(); await runtime.flush(); assert.equal(calls, 4)
+})
+
+test('visit tracking throttles foreground visits and never blocks use after a database failure', async () => {
+  const runtime = hooks(), document = Object.assign(new EventTarget(), { visibilityState: 'visible' })
+  let timer, clock = 1000000, calls = 0
+  const window = Object.assign(new EventTarget(), { setInterval: callback => { timer = callback; return 1 }, clearInterval() {} })
+  const { ActivityTracker } = load('components/activity-tracker.tsx', {
+    react: runtime.react, '@/lib/supabase/client': { createClient: () => ({ rpc: async () => { calls++; throw new Error('offline') } }) },
+  }, { document, window, Date: { now: () => clock } })
+  runtime.render(ActivityTracker); await runtime.flush(); assert.equal(calls, 1)
+  timer(); await runtime.flush(); assert.equal(calls, 1)
+  document.visibilityState = 'hidden'; clock += 300000; timer(); await runtime.flush(); assert.equal(calls, 1)
+  document.visibilityState = 'visible'; document.dispatchEvent(new Event('visibilitychange')); await runtime.flush(); assert.equal(calls, 2)
+})
+
 const sessionConfig = () => load('lib/supabase/session-config.ts', {}, { URL })
 
 test('session policy enforces 45 days while preserving deletions and cookie attributes', () => {

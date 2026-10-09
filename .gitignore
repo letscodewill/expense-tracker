@@ -50,3 +50,5 @@ dados.md
 # local dev server logs
 .dev-out.log
 .dev-err.log
+# Supabase CLI local cache
+supabase/.temp/

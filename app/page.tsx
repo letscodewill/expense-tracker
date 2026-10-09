@@ -10,6 +10,7 @@ import { isMasterIdentity } from '@/lib/tickets'
 import { avatarPath, AVATAR_BUCKET, googlePhoto } from '@/lib/profile-photo'
 import { ProfilePhoto } from '@/components/profile-photo'
 import { ThemeSelector } from '@/components/theme-selector'
+import { AdminTicketNotifications } from '@/components/admin-ticket-notifications'
 
 export default async function HomePage() {
   const supabase = await createClient()
@@ -50,13 +51,14 @@ export default async function HomePage() {
         </div>
       </header>
       <main>
-        <ExpensesDashboard navigationActions={<>
+        <ExpensesDashboard notificationActions={ticketAdmin ? <AdminTicketNotifications /> : undefined} navigationActions={<>
           <ThemeSelector />
           <ChangePasswordButton />
           <ReportDialog />
           <Link href="/tickets" className="rounded-full border border-border px-4 py-2 text-sm font-medium text-primary hover:bg-accent">Meus tickets</Link>
           {ticketAdmin && <Link href="/admin/tickets" className="rounded-full bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-accent">Painel de tickets</Link>}
           {isMasterIdentity(user) && <Link href="/admin/administrators" className="rounded-full border border-border px-4 py-2 text-sm font-medium text-primary hover:bg-accent">Administradores</Link>}
+          {isMasterIdentity(user) && <Link href="/admin" className="rounded-full border border-border px-4 py-2 text-sm font-medium text-primary hover:bg-accent">Painel administrativo</Link>}
           <form>
             <Button formAction={signOut} type="submit" variant="outline" size="sm">
               Sair
