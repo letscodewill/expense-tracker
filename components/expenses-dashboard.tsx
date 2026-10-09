@@ -12,7 +12,8 @@ import { FloatingActionMenu } from '@/components/floating-action-menu'
 import { AddExpenseDialog } from '@/components/add-expense-dialog'
 import { SalaryCard } from '@/components/salary-card'
 import Footer from './Footer'
-import { BarChart3 } from 'lucide-react'
+import { BarChart3, Menu, SlidersHorizontal } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog'
 import Link from 'next/link'
 import { PwaInstallButton } from '@/components/pwa-install-button'
 
@@ -43,6 +44,7 @@ export function ExpensesDashboard({ navigationActions }: { navigationActions?: R
   const [fabNewExpenseOpen, setFabNewExpenseOpen] = useState(false)
   const [fabNewBoardOpen, setFabNewBoardOpen] = useState(false)
   const [fabImportOpen, setFabImportOpen] = useState(false)
+  const [navigationOpen, setNavigationOpen] = useState(false)
 
 
   const [selected, setSelected] = useState<MonthYear>(() => {
@@ -145,10 +147,26 @@ export function ExpensesDashboard({ navigationActions }: { navigationActions?: R
 
   return (
     <div className="space-y-6">
-      <nav aria-label="Navegação do Dashboard" className="material-toolbar flex flex-wrap items-center gap-2 sm:gap-3">
-        {navigationActions}
-        <PwaInstallButton />
-        <Link href={`/planning?month=${selected.year}-${String(selected.month + 1).padStart(2, '0')}`} className="inline-flex items-center rounded-full border border-border px-4 py-2 text-sm font-medium hover:bg-accent">Orçamento e lembretes</Link>
+      <nav aria-label="Navegação do Dashboard" className="flex min-w-0 items-center justify-between gap-2 rounded-2xl border border-border bg-card px-3 py-2 sm:px-4">
+        <Link href={`/planning?month=${selected.year}-${String(selected.month + 1).padStart(2, '0')}`} className="inline-flex min-h-10 min-w-0 items-center gap-2 rounded-xl px-2 text-sm font-medium hover:bg-accent">
+          <SlidersHorizontal className="size-4 shrink-0" aria-hidden="true" />
+          <span className="sm:hidden">Planejamento</span><span className="hidden sm:inline">Orçamento e lembretes</span>
+        </Link>
+        <Dialog open={navigationOpen} onOpenChange={setNavigationOpen}>
+          <DialogTrigger render={<Button variant="ghost" size="sm" aria-label="Abrir menu de navegação" aria-expanded={navigationOpen} className="shrink-0 gap-2"><Menu className="size-5" aria-hidden="true" />Menu</Button>} />
+          <DialogContent className="dashboard-navigation-drawer top-0 right-0 left-auto h-dvh w-[min(22rem,90vw)] max-w-none translate-x-0 translate-y-0 content-start gap-6 overflow-y-auto rounded-l-3xl rounded-r-none p-6 sm:max-w-none">
+            <DialogHeader className="pr-6">
+              <DialogTitle>Menu</DialogTitle>
+              <DialogDescription>Aparência, suporte e sua conta.</DialogDescription>
+            </DialogHeader>
+            <nav aria-label="Opções da conta" className="flex flex-col items-stretch gap-3 [&>a]:flex [&>a]:min-h-11 [&>a]:items-center [&>a]:rounded-xl [&>button]:min-h-11 [&>button]:justify-start [&>form>button]:w-full [&>form>button]:justify-start" onClick={event => {
+              if ((event.target as HTMLElement).closest('a[href]')) setNavigationOpen(false)
+            }}>
+              {navigationActions}
+              <PwaInstallButton />
+            </nav>
+          </DialogContent>
+        </Dialog>
       </nav>
 
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -170,13 +188,6 @@ export function ExpensesDashboard({ navigationActions }: { navigationActions?: R
           boards={boardsForMonth}
           onImported={(paymentPeriod) => {
             setSelected(paymentPeriod)
-            fetchBoards()
-            setMainPanelRefreshKey((k) => k + 1)
-          }}
-        />
-        <BoardDialog
-          selected={selected}
-          onCreated={() => {
             fetchBoards()
             setMainPanelRefreshKey((k) => k + 1)
           }}
@@ -225,8 +236,12 @@ export function ExpensesDashboard({ navigationActions }: { navigationActions?: R
         <AddExpenseDialog
           selected={selected}
           boardId={null}
+          boards={boards}
+          chooseDestination
           forceOpen
-          onAdded={() => {
+          onAdded={(period) => {
+            if (period) setSelected(period)
+            fetchBoards()
             setFabNewExpenseOpen(false)
             setMainPanelRefreshKey((k) => k + 1)
           }}

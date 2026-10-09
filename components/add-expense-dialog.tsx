@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Plus } from 'lucide-react'
-import type { MonthYear } from '@/components/month-year-picker'
+import { MonthYearPicker, type MonthYear } from '@/components/month-year-picker'
 import { useCategories } from '@/lib/use-categories'
 
 type Expense = {
@@ -130,13 +130,16 @@ function formReducer(state: State, action: Action): State {
 }
 
 type AddExpenseDialogProps = {
-  onAdded: () => void
+  onAdded: (period?: MonthYear) => void
   expenseToEdit?: Expense | null
   onOpenChange?: (open: boolean) => void
   boardId?: string | null
   boardName?: string | null
   selected?: MonthYear
   forceOpen?: boolean
+  hideTrigger?: boolean
+  chooseDestination?: boolean
+  boards?: { id: string; name: string; month: number; year: number }[]
 } & React.ComponentProps<typeof Dialog>
 
 function addMonthsISO(iso: string, months: number): string {
@@ -162,13 +165,15 @@ async function getOrCreateBoardForMonth(
   const { data: existing, error: findError } = await supabase
     .from('boards')
     .select('id')
-    .eq('name', name)
+    .eq('user_id', userId)
+    .ilike('name', name.replace(/[\\%_]/g, '\\$&'))
     .eq('month', month)
     .eq('year', year)
+    .limit(1)
     .maybeSingle()
 
   if (findError) {
-    console.error('Erro ao buscar quadro existente:', findError)
+    throw new Error('Não foi possível verificar o quadro. Tente novamente antes de salvar.')
   }
 
   if (existing) return existing.id
@@ -190,12 +195,37 @@ export function AddExpenseDialog({
   onAdded,
   expenseToEdit,
   onOpenChange,
-  boardId = null,
-  boardName = null,
-  selected,
+  boardId: initialBoardId = null,
+  boardName: initialBoardName = null,
+  selected: initialSelected,
   forceOpen,
+  hideTrigger = false,
+  chooseDestination = false,
+  boards = [],
   ...props
 }: AddExpenseDialogProps) {
+  const [destinationPeriod, setDestinationPeriod] = useState<MonthYear>(initialSelected ?? { month: new Date().getMonth(), year: new Date().getFullYear() })
+  const [destinationBoard, setDestinationBoard] = useState('')
+  const [newBoardName, setNewBoardName] = useState('')
+  const selected = chooseDestination && !expenseToEdit ? destinationPeriod : initialSelected
+  const boardId = initialBoardId
+  const boardName = chooseDestination && !expenseToEdit
+    ? (destinationBoard === '__new__' ? newBoardName.trim() : destinationBoard) || null
+    : initialBoardName
+  const boardNames = [...new Map(boards
+    .filter(board => board.month === destinationPeriod.month && board.year === destinationPeriod.year)
+    .map(board => [board.name.trim().toLocaleLowerCase('pt-BR'), board.name.trim()])).values()].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+
+  function changeDestinationPeriod(period: MonthYear) {
+    setDestinationPeriod(period)
+    if (destinationBoard && destinationBoard !== '__new__') {
+      const matchingBoard = boards.find(board =>
+        board.month === period.month && board.year === period.year &&
+        board.name.trim().toLocaleLowerCase('pt-BR') === destinationBoard.toLocaleLowerCase('pt-BR')
+      )
+      setDestinationBoard(matchingBoard?.name.trim() ?? '')
+    }
+  }
   const [formState, dispatch] = useReducer(formReducer, initialState)
   const {
     nome, dataPagamento, valor, status, comentario, category,
@@ -211,7 +241,7 @@ export function AddExpenseDialog({
   const inFlight = useRef(false)
   const [duplicateReview, setDuplicateReview] = useState<{ key: string; draft: string; warnings: DuplicateWarning[] } | null>(null)
   const [acceptedDuplicates, setAcceptedDuplicates] = useState('')
-  const draftKey = JSON.stringify([nome, dataPagamento, valor, status, comentario, category, isInstallment, installments, isRecurring, recurringMonths, boardId, selected, expenseToEdit?.id])
+  const draftKey = JSON.stringify([nome, dataPagamento, valor, status, comentario, category, isInstallment, installments, isRecurring, recurringMonths, boardId, boardName, destinationBoard, selected, expenseToEdit?.id])
   const [previousExpense, setPreviousExpense] = useState<Expense | null | undefined>(undefined)
   const [previousForceOpen, setPreviousForceOpen] = useState(forceOpen)
 
@@ -261,6 +291,10 @@ export function AddExpenseDialog({
       dispatch({ type: 'SET_ERROR', error: categoriesError || 'Escolha uma categoria disponível antes de salvar.' })
       return
     }
+    if (chooseDestination && destinationBoard === '__new__' && !boardName) {
+      dispatch({ type: 'SET_ERROR', error: 'Informe o nome do quadro.' })
+      return
+    }
     const result = expenseSchema.safeParse(formState)
 
     if (!result.success) {
@@ -303,6 +337,15 @@ export function AddExpenseDialog({
       setAcceptedDuplicates('')
       return
     }
+
+    // Resolve the destination only after duplicate review has been accepted.
+    const firstPaymentDate = !expenseToEdit && isRecurring ? recurringStart : dataPagamento
+    const [paymentYear, paymentMonth] = firstPaymentDate.split('-').map(Number)
+    const paymentPeriod = { year: paymentYear, month: paymentMonth - 1 }
+    const boardPeriodMatches = initialSelected?.month === paymentPeriod.month && initialSelected?.year === paymentPeriod.year
+    const boardId = !expenseToEdit && boardName && (chooseDestination || (!isRecurring && initialBoardId && !boardPeriodMatches))
+      ? await getOrCreateBoardForMonth(supabase, user.id, boardName, paymentPeriod.month, paymentPeriod.year)
+      : initialBoardId
 
     if (expenseToEdit) {
       const { error: updateError } = await supabase
@@ -456,7 +499,7 @@ export function AddExpenseDialog({
     dispatch({ type: 'RESET' })
     setOpen(false)
     onOpenChange?.(false)
-    onAdded()
+    onAdded(paymentPeriod)
     setDuplicateReview(null)
     setAcceptedDuplicates('')
     } catch (err) {
@@ -469,14 +512,14 @@ export function AddExpenseDialog({
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => { if (inFlight.current) return; setOpen(isOpen); onOpenChange?.(isOpen); if (!isOpen) { dispatch({ type: 'RESET' }); setDuplicateReview(null); setAcceptedDuplicates('') } }} {...props}>
-      <DialogTrigger
+      {!hideTrigger && !forceOpen && !expenseToEdit && <DialogTrigger
         render={
           <Button variant="outline" size="sm">
             <Plus className="h-4 w-4 mr-1" />
             Novo lançamento
           </Button>
         }
-      />
+      />}
       <DialogContent className="max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{expenseToEdit ? 'Editar despesa' : 'Nova despesa'}</DialogTitle>
@@ -484,6 +527,32 @@ export function AddExpenseDialog({
 
         <fieldset disabled={loading} className="space-y-4 py-2">
           {duplicateReview?.draft === draftKey && <DuplicateExpenseNotice warnings={duplicateReview.warnings} confirmed={acceptedDuplicates === duplicateReview.key} onConfirm={value => setAcceptedDuplicates(value ? duplicateReview.key : '')} />}
+          {chooseDestination && !expenseToEdit && (
+            <div className="space-y-4 rounded-2xl bg-secondary/50 p-4">
+              <div className="space-y-2">
+                <p id="expense-period-label" className="text-sm font-medium">Em qual mês adicionar?</p>
+                <div role="group" aria-labelledby="expense-period-label">
+                  <MonthYearPicker value={destinationPeriod} onChange={period => {
+                    changeDestinationPeriod(period)
+                    if (dataPagamento) {
+                      const [year, month] = dataPagamento.split('-').map(Number)
+                      dispatch({ type: 'SET_FIELD', field: 'dataPagamento', value: addMonthsISO(dataPagamento, (period.year - year) * 12 + period.month - (month - 1)) })
+                    }
+                  }} />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="expense-board">Quadro de destino</Label>
+                <select id="expense-board" className="h-10 w-full min-w-0 rounded-xl border border-input bg-background px-3 text-sm" value={destinationBoard} onChange={event => setDestinationBoard(event.target.value)}>
+                  <option value="">Painel principal</option>
+                  {boardNames.map(name => <option key={name} value={name}>{name}</option>)}
+                  <option value="__new__">Outro quadro…</option>
+                </select>
+                {destinationBoard === '__new__' && <Input id="expense-new-board-name" aria-label="Nome do quadro" placeholder="Ex: Itaú" value={newBoardName} onChange={event => setNewBoardName(event.target.value)} />}
+                <p className="text-xs text-muted-foreground">Se o quadro não existir no mês escolhido, ele será criado ao salvar.</p>
+              </div>
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="nome">Nome</Label>
             <Input
@@ -500,9 +569,16 @@ export function AddExpenseDialog({
             <Input
               id="data"
               type="date"
-              min={!expenseToEdit && isRecurring && selected ? new Date(Date.UTC(selected.year, selected.month, 1)).toISOString().slice(0, 10) : undefined}
+              min={!expenseToEdit && isRecurring && !chooseDestination && selected ? new Date(Date.UTC(selected.year, selected.month, 1)).toISOString().slice(0, 10) : undefined}
               value={dataPagamento}
-              onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'dataPagamento', value: e.target.value })}
+              onChange={(e) => {
+                const date = e.target.value
+                if (chooseDestination && /^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) {
+                  const [year, month] = e.target.value.split('-').map(Number)
+                  changeDestinationPeriod({ year, month: month - 1 })
+                }
+                dispatch({ type: 'SET_FIELD', field: 'dataPagamento', value: date })
+              }}
             />
             {fieldErrors.dataPagamento && <p className="text-sm text-red-600">{fieldErrors.dataPagamento}</p>}
             {!expenseToEdit && isRecurring && selected && (

@@ -321,6 +321,22 @@ test('main panel changes invalidate secondary board tables too', async () => {
   assert.equal(find(tree, node => node.type === 'ExpenseTable' && node.props.boardId === board.id).props.refreshKey, before + 1)
 })
 
+test('compact navigation opens the account drawer, preserves account actions and closes on navigation', async () => {
+  const runtime = hooks(), db = database({})
+  const actions = { type: 'AccountActions', props: {} }
+  const { ExpensesDashboard } = load('components/expenses-dashboard.tsx', { react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client } })
+  runtime.render(ExpensesDashboard, { navigationActions: actions })
+  let tree = await runtime.flush()
+  assert.equal(find(tree, node => node.type === 'Dialog').props.open, false)
+  find(tree, node => node.type === 'Dialog').props.onOpenChange(true)
+  tree = runtime.render()
+  assert.equal(find(tree, node => node.type === 'Dialog').props.open, true)
+  find(tree, node => node.type === 'AccountActions')
+  find(tree, node => node.props['aria-label'] === 'Opções da conta').props.onClick({ target: { closest: () => ({ href: '/tickets' }) } })
+  tree = runtime.render()
+  assert.equal(find(tree, node => node.type === 'Dialog').props.open, false)
+})
+
 test('collapsing expense rows keeps title, total and unpaid balance visible', async () => {
   for (const boardId of [null, 'board-1']) {
     const runtime = hooks(), db = database({ expenses: [success([expense, { ...expense, id: 2, valor: 20, status: 'Pago' }])] })
@@ -793,6 +809,149 @@ test('manual entries warn before writing and recover safely from duplicate looku
   const submit = find(tree, node => node.props.children === 'Salvar').props.onClick
   await Promise.all([submit(), submit()])
   assert.equal(db.requests.filter(request => request.calls.some(([method]) => method === 'insert')).length, 1)
+})
+
+function floatingExpenseRuntime(responses = {}, props = {}) {
+  const runtime = hooks(), db = database(responses), added = []
+  const { AddExpenseDialog } = load('components/add-expense-dialog.tsx', {
+    react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client },
+    '@/lib/supabase/safe-get-user': { safeGetUser: async () => ({ id: 'test-user' }) },
+  }, { crypto: { randomUUID: () => 'test-group' } })
+  let tree = runtime.render(AddExpenseDialog, {
+    selected, forceOpen: true, chooseDestination: true,
+    boards: [{ id: 'october-itau', name: 'Itaú', month: 9, year: 2026 }],
+    onAdded: period => added.push(period),
+    ...props,
+  })
+  return {
+    db, added,
+    tree: () => tree,
+    change(id, value) {
+      find(tree, node => node.props.id === id).props.onChange({ target: { value, checked: value } })
+      tree = runtime.render()
+    },
+    period(period) { find(tree, node => node.type === 'MonthYearPicker').props.onChange(period); tree = runtime.render() },
+    async submit() { await find(tree, node => node.props.children === 'Salvar').props.onClick(); tree = await runtime.flush() },
+    async accept() { find(tree, node => node.type === 'DuplicateExpenseNotice').props.onConfirm(true); tree = await runtime.flush() },
+  }
+}
+const writtenExpenses = db => db.requests.filter(request => request.table === 'expenses').flatMap(request => request.calls.filter(([method]) => method === 'insert').map(([, payload]) => payload))
+
+test('floating expense creates the named board only in the chosen month and refreshes that period', async () => {
+  const entry = floatingExpenseRuntime({ boards: [success(null), success({ id: 'november-itau' })] })
+  entry.change('nome', 'Mercado'); entry.change('valor', '80'); entry.change('data', '2026-10-31')
+  entry.period({ month: 10, year: 2026 }); entry.change('expense-board', 'Itaú')
+  assert.equal(find(entry.tree(), node => node.props.id === 'data').props.value, '2026-11-30')
+  assert.equal(elements(entry.tree(), node => node.type === 'DialogTrigger').length, 0)
+  await entry.submit()
+  const board = entry.db.requests.find(request => request.table === 'boards' && request.calls.some(([method]) => method === 'insert')).calls.find(([method]) => method === 'insert')[1]
+  assert.equal(board.month, 10); assert.equal(board.year, 2026); assert.equal(board.name, 'Itaú'); assert.equal(board.user_id, 'test-user')
+  assert.equal(writtenExpenses(entry.db)[0].board_id, 'november-itau')
+  assert.equal(writtenExpenses(entry.db)[0].data_pagamento, '2026-11-30')
+  assert.equal(entry.added[0].month, 10)
+})
+
+test('adding a November payment from an October board never hides it under the October board', async () => {
+  const entry = floatingExpenseRuntime({ boards: [success({ id: 'november-itau' })] }, {
+    chooseDestination: false, boardId: 'october-itau', boardName: 'Itaú',
+  })
+  entry.change('nome', 'Vendperto'); entry.change('valor', '4,86'); entry.change('data', '2026-11-06')
+  await entry.submit()
+  const row = writtenExpenses(entry.db)[0]
+  assert.equal(row.board_id, 'november-itau'); assert.equal(row.data_pagamento, '2026-11-06'); assert.equal(row.valor, 4.86)
+  assert.equal(entry.added[0].month, 10); assert.equal(entry.added[0].year, 2026)
+})
+
+test('floating expense reuses an existing board, scopes the lookup and accepts a new name', async () => {
+  const entry = floatingExpenseRuntime({ boards: [success({ id: 'existing-itau' })] })
+  entry.period({ month: 0, year: 2027 }); entry.change('nome', 'Mercado'); entry.change('valor', '80'); entry.change('data', '2027-01-05')
+  entry.change('expense-board', '__new__'); entry.change('expense-new-board-name', '  itaú  ')
+  await entry.submit()
+  assert.equal(writtenExpenses(entry.db)[0].board_id, 'existing-itau')
+  const lookup = entry.db.requests.find(request => request.table === 'boards')
+  assert.ok(lookup.calls.some(([method, column, value]) => method === 'eq' && column === 'user_id' && value === 'test-user'))
+  assert.ok(lookup.calls.some(([method, column, value]) => method === 'eq' && column === 'month' && value === 0))
+  assert.ok(lookup.calls.some(([method, column, value]) => method === 'ilike' && column === 'name' && value === 'itaú'))
+  assert.equal(entry.db.requests.filter(request => request.calls.some(([method]) => method === 'insert')).length, 1)
+})
+
+test('floating expense saves in the principal without creating a board and rejects blank board names', async () => {
+  const entry = floatingExpenseRuntime()
+  entry.period({ month: 10, year: 2026 }); entry.change('nome', 'Mercado'); entry.change('valor', '80'); entry.change('data', '2026-11-05')
+  entry.change('expense-board', '__new__'); await entry.submit()
+  assert.equal(entry.db.requests.length, 0)
+  entry.change('expense-board', ''); await entry.submit()
+  assert.equal(writtenExpenses(entry.db)[0].board_id, null)
+  assert.equal(entry.db.requests.filter(request => request.table === 'boards').length, 0)
+})
+
+test('board lookup failure never creates a duplicate board or saves an expense', async () => {
+  const entry = floatingExpenseRuntime({ boards: [failure] })
+  entry.period({ month: 10, year: 2026 }); entry.change('nome', 'Mercado'); entry.change('valor', '80'); entry.change('data', '2026-11-05'); entry.change('expense-board', 'Itaú')
+  await entry.submit()
+  assert.equal(entry.db.requests.filter(request => request.calls.some(([method]) => method === 'insert')).length, 0)
+  assert.equal(entry.added.length, 0)
+})
+
+test('duplicate review runs before creating the destination board', async () => {
+  const entry = floatingExpenseRuntime({ expenses: [success([expense]), success([expense])], boards: [success(null), success({ id: 'itau' })] })
+  entry.change('nome', 'Mercado'); entry.change('valor', '80'); entry.change('data', expense.data_pagamento); entry.change('expense-board', 'Itaú')
+  await entry.submit()
+  assert.equal(entry.db.requests.filter(request => request.table === 'boards').length, 0)
+  await entry.accept(); await entry.submit()
+  assert.equal(writtenExpenses(entry.db)[0].board_id, 'itau')
+})
+
+test('floating recurring expense routes each month from December across the year boundary', async () => {
+  const entry = floatingExpenseRuntime({ boards: [success({ id: 'december' }), success(null), success({ id: 'january' }), success({ id: 'february' })] })
+  entry.period({ month: 11, year: 2026 }); entry.change('nome', 'Assinatura'); entry.change('valor', '80'); entry.change('data', '2026-12-05'); entry.change('expense-board', 'Itaú'); entry.change('is-recurring', true)
+  await entry.submit()
+  const rows = writtenExpenses(entry.db)[0]
+  assert.deepEqual(Array.from(rows, row => row.data_pagamento), ['2026-12-05', '2027-01-05', '2027-02-05'])
+  assert.deepEqual(Array.from(rows, row => row.board_id), ['december', 'january', 'february'])
+})
+
+test('floating installments use the entered payment month regardless of the dashboard month and divide cents without loss', async () => {
+  const entry = floatingExpenseRuntime({ boards: [success({ id: 'february' }), success({ id: 'march' })] })
+  entry.period({ month: 1, year: 2027 })
+  entry.change('nome', 'Compra'); entry.change('valor', '10,01'); entry.change('data', '2027-02-28'); entry.change('expense-board', 'Itaú'); entry.change('is-installment', true)
+  assert.equal(find(entry.tree(), node => node.props.id === 'data').props.value, '2027-02-28')
+  await entry.submit()
+  const rows = writtenExpenses(entry.db)[0]
+  assert.deepEqual(Array.from(rows, row => row.data_pagamento), ['2027-02-28', '2027-03-28'])
+  assert.deepEqual(Array.from(rows, row => row.board_id), ['february', 'march'])
+  assert.deepEqual(Array.from(rows, row => row.valor), [5.01, 5])
+})
+
+test('payment date changes the floating destination month without inheriting the dashboard filter', async () => {
+  const entry = floatingExpenseRuntime({ boards: [success({ id: 'november-itau' })] })
+  entry.change('nome', 'Vendperto'); entry.change('valor', '4,86'); entry.change('data', '2026-11-06'); entry.change('expense-board', 'Itaú')
+  const period = find(entry.tree(), node => node.type === 'MonthYearPicker').props.value
+  assert.equal(period.month, 10); assert.equal(period.year, 2026)
+  await entry.submit()
+  assert.equal(writtenExpenses(entry.db)[0].data_pagamento, '2026-11-06')
+  assert.equal(writtenExpenses(entry.db)[0].board_id, 'november-itau')
+  assert.equal(entry.added[0].month, 10)
+})
+
+test('expense board options follow the selected month and year and clear unavailable selections', () => {
+  const entry = floatingExpenseRuntime({}, { boards: [
+    { id: 'october', name: 'Itaú', month: 9, year: 2026 },
+    { id: 'november', name: 'Mercado', month: 10, year: 2026 },
+    { id: 'next-year', name: 'Viagem', month: 10, year: 2027 },
+  ] })
+  const options = () => elements(find(entry.tree(), node => node.props.id === 'expense-board'), node => node.type === 'option').map(node => node.props.value)
+  assert.deepEqual(options(), ['', 'Itaú', '__new__'])
+  entry.change('expense-board', 'Itaú')
+  entry.period({ month: 10, year: 2026 })
+  assert.deepEqual(options(), ['', 'Mercado', '__new__'])
+  assert.equal(find(entry.tree(), node => node.props.id === 'expense-board').props.value, '')
+  entry.change('expense-board', 'Mercado')
+  entry.change('data', '2027-11-06')
+  assert.deepEqual(options(), ['', 'Viagem', '__new__'])
+  assert.equal(find(entry.tree(), node => node.props.id === 'expense-board').props.value, '')
+  entry.period({ month: 0, year: 2028 })
+  assert.deepEqual(options(), ['', '__new__'])
 })
 
 test('category budgets sum actual expenses by payment month without counting summaries twice', () => {

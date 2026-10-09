@@ -179,6 +179,12 @@
   box-shadow: 0 12px 40px rgb(21 18 27 / 20%);
 }
 [data-slot="dialog-title"] { font-size: 1.375rem; line-height: 1.4; }
+[data-slot="dialog-content"].dashboard-navigation-drawer {
+  max-height: 100dvh;
+  border-radius: 1.5rem 0 0 1.5rem;
+  padding-top: max(1.5rem, env(safe-area-inset-top));
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+}
 [data-slot="dialog-footer"] {
   margin: 0;
   padding: 1rem 0 0;

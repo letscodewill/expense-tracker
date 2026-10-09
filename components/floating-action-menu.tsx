@@ -35,6 +35,7 @@ export function FloatingActionMenu({
               variant="secondary"
               className="rounded-full shadow-md"
               onClick={() => handleAction(onNewExpense)}
+              aria-label="Novo lançamento"
             >
               <Receipt className="h-4 w-4" />
             </Button>
@@ -48,6 +49,7 @@ export function FloatingActionMenu({
               variant="secondary"
               className="rounded-full shadow-md"
               onClick={() => handleAction(onNewBoard)}
+              aria-label="Novo quadro"
             >
               <LayoutGrid className="h-4 w-4" />
             </Button>
@@ -61,6 +63,7 @@ export function FloatingActionMenu({
               variant="secondary"
               className="rounded-full shadow-md"
               onClick={() => handleAction(onImportInvoice)}
+              aria-label="Importar fatura"
             >
               <Upload className="h-4 w-4" />
             </Button>
@@ -73,6 +76,7 @@ export function FloatingActionMenu({
         className="material-fab rounded-2xl h-16 w-16 shadow-lg"
         onClick={() => setOpen((v) => !v)}
         aria-label={open ? 'Fechar menu' : 'Abrir menu de ações'}
+        aria-expanded={open}
       >
         {open ? <X className="h-6 w-6" /> : <Plus className="h-6 w-6" />}
       </Button>
