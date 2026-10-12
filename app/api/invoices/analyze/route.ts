@@ -14,14 +14,12 @@ export async function POST(request: Request) {
   if (error || !data.user) return Response.json({ error: 'Entre novamente para analisar a fatura.' }, { status: 401, headers })
   const key = process.env.OPENAI_API_KEY
   if (!key) return Response.json({ error: 'Leitura por IA ainda não configurada. Use a leitura padrão ou uma planilha.' }, { status: 503, headers })
-  // Explicit allowlist: opt-in rollout prevents an unrestricted paid endpoint.
-  const allowed = (process.env.INVOICE_AI_ALLOWED_EMAILS ?? '').split(',').map((email) => email.trim().toLowerCase()).filter(Boolean)
-  if (!data.user.email || !allowed.includes(data.user.email.toLowerCase()))
-    return Response.json({ error: 'Leitura por IA ainda não liberada para sua conta.' }, { status: 403, headers })
   if (Number(request.headers.get('content-length')) > 4500000)
     return Response.json({ error: 'O arquivo deve ter no máximo 3 MB.' }, { status: 413, headers })
   const release = reserveInvoiceAnalysis(data.user.id)
   if (!release) return Response.json({ error: 'Muitas análises. Aguarde antes de tentar novamente.' }, { status: 429, headers })
+  let reservationToken: string | null = null
+  let completed = false
   try {
     const form = await request.formData()
     const file = form.get('file')
@@ -29,6 +27,11 @@ export async function POST(request: Request) {
       return Response.json({ error: 'Envie um PDF de até 3 MB.' }, { status: 400, headers })
     const bytes = Buffer.from(await file.arrayBuffer())
     if (bytes.subarray(0, 5).toString() !== '%PDF-') return Response.json({ error: 'PDF inválido.' }, { status: 400, headers })
+    const reservation = await supabase.rpc('reserve_invoice_ai')
+    if (reservation.error || !reservation.data) return Response.json({ error: 'Não foi possível verificar seu limite mensal. Tente novamente.' }, { status: 503, headers })
+    if (!reservation.data.allowed) return Response.json({ error: reservation.data.reason === 'rate' ? 'Muitas tentativas. Aguarde antes de analisar outra fatura.' : 'Seu limite é de 4 faturas com IA por mês. Aguarde o próximo mês ou utilize a leitura padrão ou uma planilha.' }, { status: 429, headers })
+    if (typeof reservation.data.token !== 'string') throw new Error('Reserva inválida.')
+    reservationToken = reservation.data.token
     const response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       signal: AbortSignal.timeout(50000),
@@ -45,10 +48,19 @@ export async function POST(request: Request) {
     const text = result.output?.flatMap((item: { content?: { type: string; text?: string }[] }) => item.content ?? [])
       .filter((item: { type: string }) => item.type === 'output_text').map((item: { text: string }) => item.text).join('')
     const invoice = validateAIInvoice(JSON.parse(text ?? ''))
+    // Empty/unreadable documents do not consume a monthly invoice slot.
+    if (invoice.rows.length) {
+      const finish = await supabase.rpc('finish_invoice_ai', { reservation_token: reservationToken, succeeded: true })
+      if (finish.error || finish.data !== true) throw new Error('Não foi possível concluir a reserva.')
+      completed = true
+    }
     return Response.json(invoice, { headers })
   } catch {
     return Response.json({ error: 'Não foi possível concluir a leitura por IA. Tente novamente ou use a leitura padrão.' }, { status: 502, headers })
   } finally {
+    if (reservationToken && !completed) {
+      try { await supabase.rpc('finish_invoice_ai', { reservation_token: reservationToken, succeeded: false }) } catch { /* Expired reservations are ignored after five minutes. */ }
+    }
     release()
   }
 }

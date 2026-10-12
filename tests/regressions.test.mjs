@@ -1643,7 +1643,7 @@ test('AI output rejects malformed expenses and preserves safe review warnings', 
   assert.throws(() => validateAIInvoice({ rows: [], warnings: [42] }))
 })
 
-test('AI analysis rejects bad origin, anonymous users, missing setup and unauthorized accounts without calling OpenAI', async () => {
+test('AI analysis rejects bad origin, anonymous users and missing setup without calling OpenAI', async () => {
   let calls = 0
   const run = async (origin, user, env = {}) => {
     const { POST } = load('app/api/invoices/analyze/route.ts', {
@@ -1656,14 +1656,13 @@ test('AI analysis rejects bad origin, anonymous users, missing setup and unautho
   assert.equal((await run('https://evil.test', null)).status, 403)
   assert.equal((await run('https://example.com', null)).status, 401)
   assert.equal((await run('https://example.com', { id: 'u', email: 'owner@example.com' })).status, 503)
-  assert.equal((await run('https://example.com', { id: 'u', email: 'other@example.com' }, { OPENAI_API_KEY: 'test', INVOICE_AI_ALLOWED_EMAILS: 'owner@example.com' })).status, 403)
   assert.equal(calls, 0)
 })
 
-test('AI analysis validates structured results, keeps API key server-side and handles incomplete provider responses', async () => {
+test('AI analysis accepts any authenticated account despite an old allowlist, keeps API key server-side and handles incomplete responses', async () => {
   let requestBody, fail = false
   const { POST } = load('app/api/invoices/analyze/route.ts', {
-    '@/lib/supabase/server': { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: 'owner', email: 'owner@example.com' } }, error: null }) } }) },
+    '@/lib/supabase/server': { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: 'regular-user', email: 'other@example.com' } }, error: null }) }, rpc: async name => success(name === 'reserve_invoice_ai' ? { allowed: true, token: 'server-only-token' } : true) }) },
     '@/lib/invoice-ai': load('lib/invoice-ai.ts'),
     '@/lib/invoice-ai-limit': load('lib/invoice-ai-limit.ts'),
   }, { Response, Request, File, Buffer, AbortSignal, process: { env: { OPENAI_API_KEY: 'secret-test', INVOICE_AI_ALLOWED_EMAILS: 'owner@example.com' } },
@@ -1696,6 +1695,47 @@ test('AI local limiter prevents overlapping analyses and expires hourly attempts
   for (let index = 0; index < 9; index++) { release = reserveInvoiceAnalysis('u', 1002); release() }
   assert.equal(reserveInvoiceAnalysis('u', 1003), null)
   assert.equal(typeof reserveInvoiceAnalysis('u', 3601000), 'function')
+})
+
+test('AI monthly quota stops the fifth invoice before OpenAI and never exposes reservation tokens', async () => {
+  let used = 0, calls = 0, reserved = false
+  const { POST } = load('app/api/invoices/analyze/route.ts', {
+    '@/lib/supabase/server': { createClient: async () => ({
+      auth: { getUser: async () => ({ data: { user: { id: 'monthly-user' } }, error: null }) },
+      rpc: async (name, args) => {
+        if (name === 'reserve_invoice_ai') { if (used >= 4) return success({ allowed: false }); reserved = true; return success({ allowed: true, token: 'secret-reservation' }) }
+        assert.equal(args.reservation_token, 'secret-reservation')
+        assert.equal(reserved, true); reserved = false
+        if (args.succeeded) used++
+        return success(true)
+      },
+    }) },
+    '@/lib/invoice-ai': load('lib/invoice-ai.ts'), '@/lib/invoice-ai-limit': load('lib/invoice-ai-limit.ts'),
+  }, { Response, Request, File, Buffer, AbortSignal, process: { env: { OPENAI_API_KEY: 'test' } }, fetch: async () => { calls++; return Response.json({ status: 'completed', output: [{ content: [{ type: 'output_text', text: JSON.stringify({ rows: [{ nome: 'Mercado', valor: 10 }], warnings: [] }) }] }] }) } })
+  const request = () => { const form = new FormData(); form.append('file', new File(['%PDF-1.7 test'], 'fatura.pdf', { type: 'application/pdf' })); return new Request('https://test/api/invoices/analyze', { method: 'POST', headers: { origin: 'https://test' }, body: form }) }
+  for (let index = 0; index < 4; index++) {
+    const response = await POST(request()); assert.equal(response.status, 200); assert.ok(!(await response.text()).includes('secret-reservation'))
+  }
+  const response = await POST(request()); assert.equal(response.status, 429)
+  assert.equal(used, 4); assert.equal(calls, 4); assert.equal(reserved, false)
+})
+
+test('AI failures and empty invoices release the reserved slot; quota outages fail closed', async () => {
+  for (const outcome of ['provider-failure', 'empty', 'quota-failure']) {
+    const finishes = []; let calls = 0
+    const { POST } = load('app/api/invoices/analyze/route.ts', {
+      '@/lib/supabase/server': { createClient: async () => ({
+        auth: { getUser: async () => ({ data: { user: { id: 'quota-user' } }, error: null }) },
+        rpc: async (name, args) => { if (name === 'reserve_invoice_ai') return outcome === 'quota-failure' ? failure : success({ allowed: true, token: 'private-slot' }); finishes.push(args); return success(true) },
+      }) },
+      '@/lib/invoice-ai': load('lib/invoice-ai.ts'), '@/lib/invoice-ai-limit': load('lib/invoice-ai-limit.ts'),
+    }, { Response, Request, File, Buffer, AbortSignal, process: { env: { OPENAI_API_KEY: 'test' } }, fetch: async () => { calls++; return outcome === 'provider-failure' ? new Response('', { status: 502 }) : Response.json({ status: 'completed', output: [{ content: [{ type: 'output_text', text: JSON.stringify({ rows: [], warnings: ['Sem despesas'] }) }] }] }) } })
+    const form = new FormData(); form.append('file', new File(['%PDF-1.7 test'], 'fatura.pdf', { type: 'application/pdf' }))
+    const response = await POST(new Request('https://test/api/invoices/analyze', { method: 'POST', headers: { origin: 'https://test' }, body: form }))
+    assert.equal(response.status, outcome === 'quota-failure' ? 503 : outcome === 'empty' ? 200 : 502)
+    assert.equal(calls, outcome === 'quota-failure' ? 0 : 1)
+    if (outcome !== 'quota-failure') { assert.equal(finishes.length, 1); assert.equal(finishes[0].succeeded, false) }
+  }
 })
 
 test('spreadsheet mapping flows into invoice review and saves only on confirmation with fifth business day', async () => {

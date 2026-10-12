@@ -13,12 +13,13 @@ Configure **no servidor**, em .env.local para desenvolvimento ou Environment Var
 ```dotenv
 OPENAI_API_KEY=chave-secreta-da-api
 OPENAI_INVOICE_MODEL=gpt-6-luna
-INVOICE_AI_ALLOWED_EMAILS=williansantos38@gmail.com
 ```
 
 A chave não deve ter prefixo NEXT_PUBLIC_, ser enviada ao navegador ou publicada no Git. Crie uma chave de projeto com acesso à Responses API e habilite cobrança na plataforma OpenAI. Configure um limite de gastos e alertas para esse projeto na plataforma antes de ativar a função. Reinicie o servidor ou faça um novo deploy após mudar as variáveis.
 
-INVOICE_AI_ALLOWED_EMAILS é uma lista de e-mails separados por vírgula. Sem chave ou lista autorizada, a IA permanece indisponível; a leitura padrão e as planilhas continuam funcionando. A lista é uma liberação inicial controlada para testes, independente da administração de tickets.
+A leitura por IA está disponível para todos os usuários autenticados. Não é necessário cadastrar e-mails autorizados; a variável antiga INVOICE_AI_ALLOWED_EMAILS não é mais utilizada e pode ser removida. Sem OPENAI_API_KEY, a IA permanece indisponível; a leitura padrão e as planilhas continuam funcionando. Os limites de arquivo e de análises por usuário permanecem ativos.
+
+Cada conta pode analisar **4 faturas por mês** com IA. O mês é o mês de uso do serviço no horário de São Paulo, e não o mês de pagamento da fatura. Uma análise concluída com despesas conta mesmo se o usuário desistir antes de importar; repetir a análise do mesmo PDF conta novamente. Falhas, arquivos inválidos e resultados sem despesas não consomem a cota. A leitura padrão e as planilhas permanecem disponíveis. O banco reserva vagas de forma atômica para impedir ultrapassar o limite entre dispositivos; reservas interrompidas expiram em 5 minutos. Os identificadores de reserva ficam apenas no servidor e não podem ser retornados ou registrados em logs. A migração `20261012193214_invoice_ai_monthly_quota.sql` deve estar aplicada antes da publicação do novo código.
 
 Há proteção local de dez tentativas por hora por usuário e uma análise simultânea por usuário. **Esse contador não é compartilhado entre instâncias serverless e reinicia junto com o processo. Não é um limite financeiro.** Para liberação ampla, implementar cotas persistentes por usuário e monitoramento de consumo, além do limite do projeto OpenAI.
 

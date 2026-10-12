@@ -363,7 +363,7 @@ export function ImportInvoiceDialog({
               onChange={handleFileChange}
               disabled={parsing}
             />
-            <p className="text-sm text-muted-foreground">Até 3 MB e 500 despesas por importação. No Google Planilhas, use Arquivo → Fazer download → Microsoft Excel ou CSV.</p>
+            <p className="text-sm text-muted-foreground">Até 3 MB e 500 despesas por importação. Leitura com IA: até 4 faturas por usuário por mês. A leitura padrão e as planilhas não usam essa cota. No Google Planilhas, use Arquivo → Fazer download → Microsoft Excel ou CSV.</p>
             <label className="flex items-start gap-3 rounded-2xl border p-4 text-sm">
               <input type="checkbox" checked={useAI} disabled={parsing || needsPassword} onChange={(event) => setUseAI(event.target.checked)} className="mt-1" />
               <span><span className="font-medium">Ler PDF com inteligência artificial</span><span className="mt-1 block text-muted-foreground">Ao selecionar esta opção e enviar um PDF, o conteúdo será enviado à OpenAI para análise. PDFs com senha são abertos no navegador antes do envio; a senha não é enviada. Até 20 páginas. A disponibilidade depende da configuração do sistema. Planilhas são lidas sem IA.</span></span>
