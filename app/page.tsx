@@ -43,11 +43,14 @@ export default async function HomePage() {
 
   return (
     <div className="material-dashboard container mx-auto max-w-7xl px-3 py-4 sm:px-4 md:px-8 md:py-6">
-      <header className="material-app-bar mb-4 flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-xl sm:text-2xl font-medium tracking-tight">Painel de Despesas</h1>
-        <div className="ml-auto flex min-w-0 max-w-full items-center gap-3">
+      <header className="mb-4 flex min-w-0 items-center justify-between gap-3 border-b border-border/70 pb-4">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold tracking-wide text-primary">NoControle</p>
+          <h1 className="mt-1 text-xl font-medium tracking-tight sm:text-2xl">Despesas</h1>
+        </div>
+        <div className="ml-auto flex min-w-0 items-center gap-3">
           <ProfilePhoto name={displayName} photo={profilePhoto} custom={!!customPhoto} hasGooglePhoto={!!providerPhoto} />
-          <p className="text-sm text-muted-foreground truncate max-w-[160px] sm:max-w-none">Bem-vindo, {displayName}</p>
+          <p className="hidden max-w-[240px] truncate text-sm font-medium text-foreground sm:block">{displayName}</p>
         </div>
       </header>
       <main>

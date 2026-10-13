@@ -33,7 +33,7 @@ export function ProfilePhoto({ name, photo, custom, hasGooglePhoto }: { name: st
   }
 
   return <Dialog open={open} onOpenChange={value => { if (!busy) { setOpen(value); setFile(null); setError('') } }}>
-    <DialogTrigger render={<button type="button" aria-label="Alterar foto de perfil" title="Alterar foto de perfil" className="flex size-11 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-primary/10 text-sm font-medium text-primary ring-2 ring-primary/20 transition-shadow hover:ring-primary/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />}>
+    <DialogTrigger render={<button type="button" aria-label="Alterar foto de perfil" title="Alterar foto de perfil" className="flex size-11 sm:size-10 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-primary/10 text-sm font-medium text-primary ring-1 ring-border transition-shadow hover:ring-primary/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />}>
       {photo && failedPhoto !== photo ? <Image src={photo} alt={`Foto de ${name}`} width={44} height={44} unoptimized referrerPolicy="no-referrer" className="size-full object-cover" onError={() => setFailedPhoto(photo)} /> : <span>{initials}</span>}
     </DialogTrigger>
     <DialogContent className="sm:max-w-md">
