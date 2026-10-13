@@ -98,9 +98,7 @@ export default function Footer() {
             <Link href="https://instagram.com/i.m.willian" target="_blank" rel="noreferrer" className="hover:text-zinc-900 dark:hover:text-white">
               Instagram
             </Link>
-            <Link href="https://github.com/letscodewill" target="_blank" rel="noreferrer" className="hover:text-zinc-900 dark:hover:text-white">
-              GitHub
-            </Link>
+           
             {/* <Link href="https://discord.com" target="_blank" rel="noreferrer" className="hover:text-zinc-900 dark:hover:text-white">
               Discord
             </Link> */}

@@ -90,7 +90,7 @@ export function SalaryCard({ selected, totalExpenses }: SalaryCardProps) {
   const remaining = salary !== null ? salary - totalExpenses : null
 
   return (
-    <div className="material-salary rounded-3xl border p-6 sm:p-8 space-y-4">
+    <div className="material-salary rounded-2xl border p-4 sm:p-5 space-y-4">
       {editing ? (
         <div className="space-y-2">
           <Label htmlFor="salary-input">Salário do mês</Label>
@@ -119,32 +119,27 @@ export function SalaryCard({ selected, totalExpenses }: SalaryCardProps) {
         </div>
       ) : (
         <>
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">Salário do mês <VisibilityToggleButton /></span>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-medium">Resumo do mês</h2>
             <Button variant="ghost" size="sm" onClick={startEditing} aria-label="Editar salário">
-              <Pencil className="h-4 w-4" />
+              <Pencil className="h-4 w-4" /><span className="ml-2 hidden sm:inline">Editar salário</span>
             </Button>
           </div>
-
-          {loading ? (
-            <p className="text-sm text-muted-foreground">Carregando...</p>
-          ) : salary === null ? (
-            <p className="text-sm text-muted-foreground">Nenhum salário cadastrado para este mês.</p>
-          ) : (
-            <div className="space-y-1">
-              <p className="text-3xl sm:text-4xl font-medium tracking-tight">
-                <MaskedValue value={salary} mask />
-              </p>
-              <div className="flex items-center justify-between pt-4 border-t">
-                <span className="text-sm text-muted-foreground">Vai sobrar</span>
-                <span
-                  className={`font-semibold ${(remaining ?? 0) < 0 ? 'text-red-600' : 'text-green-600'
-                    }`}
-                >
-                  <MaskedValue value={remaining ?? 0} />                </span>
-              </div>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-[1fr_1fr_1.4fr]">
+            <div className="rounded-xl border border-border/70 bg-card p-4 text-card-foreground">
+              <div className="flex items-center justify-between gap-1"><span className="text-xs text-muted-foreground">Salário do mês</span><VisibilityToggleButton /></div>
+              <p className="mt-3 text-xl font-medium tabular-nums sm:text-2xl">{loading ? 'Carregando...' : salary === null ? 'Não informado' : <MaskedValue value={salary} mask />}</p>
             </div>
-          )}
+            <div className="rounded-xl border border-border/70 bg-card p-4 text-card-foreground">
+              <p className="text-xs text-muted-foreground">Total de despesas</p>
+              <p className="mt-3 text-xl font-medium tabular-nums sm:text-2xl"><MaskedValue value={totalExpenses} /></p>
+            </div>
+            <div className="col-span-2 rounded-xl bg-secondary p-4 text-secondary-foreground lg:col-span-1">
+              <p className="text-xs font-medium">Vai sobrar</p>
+              <p className={`mt-3 text-3xl font-semibold tracking-tight tabular-nums sm:text-4xl ${remaining !== null && remaining < 0 ? 'text-red-700 dark:text-red-300' : ''}`}>{loading ? '—' : remaining === null ? '—' : <MaskedValue value={remaining} />}</p>
+              <p className="mt-2 text-xs opacity-80">{salary === null ? 'Informe o salário para ver o saldo previsto.' : 'Salário menos o total de despesas do mês.'}</p>
+            </div>
+          </div>
         </>
       )}
     </div>

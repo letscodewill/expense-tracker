@@ -138,8 +138,8 @@ test('light and dark themes persist, synchronize tabs and survive blocked storag
       dispatchEvent: event => listeners.get(event.type)?.(event),
     }
     const themes = load('lib/themes.ts', {}, { window, document: { documentElement: html }, Event: class { constructor(type) { this.type = type } } })
-    assert.equal(themes.THEMES.filter(theme => theme.mode === 'light').length, 1)
-    assert.equal(themes.THEMES.filter(theme => theme.mode === 'dark').length, 1)
+    assert.equal(themes.THEMES.filter(theme => theme.mode === 'light').length, 4)
+    assert.equal(themes.THEMES.filter(theme => theme.mode === 'dark').length, 4)
     let changes = 0
     const unsubscribe = themes.subscribeTheme(() => changes++)
     for (const theme of themes.THEMES) {
@@ -148,12 +148,12 @@ test('light and dark themes persist, synchronize tabs and survive blocked storag
       assert.equal(html.dark, theme.mode === 'dark')
       if (!blocked) assert.equal(values.get(themes.THEME_STORAGE_KEY), theme.id)
     }
-    assert.equal(changes, 2)
+    assert.equal(changes, 8)
     themes.selectTheme('invalid')
-    assert.equal(changes, 2)
+    assert.equal(changes, 8)
     values.set(themes.THEME_STORAGE_KEY, 'mint-light')
     window.dispatchEvent({ type: 'storage', key: themes.THEME_STORAGE_KEY })
-    assert.equal(themes.getThemeSnapshot(), 'lavender-light')
+    assert.equal(themes.getThemeSnapshot(), blocked ? 'lavender-light' : 'mint-light')
     unsubscribe()
     assert.equal(listeners.size, 0)
   }
@@ -161,12 +161,33 @@ test('light and dark themes persist, synchronize tabs and survive blocked storag
 
 test('theme bootstrap restores preferences before hydration and rejects unknown stored values', () => {
   const { THEME_INIT_SCRIPT } = load('lib/themes.ts')
-  for (const [stored, darkSystem, expected] of [['lavender-dark', false, 'lavender-dark'], ['peach-dark', false, 'lavender-dark'], ['mint-light', true, 'lavender-light'], ['invalid', true, 'lavender-dark'], [null, false, 'lavender-light']]) {
+  for (const [stored, darkSystem, expected] of [['blue-light', true, 'blue-light'], ['blue-dark', false, 'blue-dark'], ['lavender-dark', false, 'lavender-dark'], ['peach-dark', false, 'peach-dark'], ['mint-light', true, 'mint-light'], ['invalid', true, 'lavender-dark'], [null, false, 'lavender-light']]) {
     const html = { dataset: {}, classList: { toggle: (_, value) => { html.dark = value } } }
     vm.runInNewContext(THEME_INIT_SCRIPT, { localStorage: { getItem: () => stored }, window: { matchMedia: () => ({ matches: darkSystem }) }, document: { documentElement: html } })
     assert.equal(html.dataset.theme, expected)
     assert.equal(html.dark, expected.endsWith('-dark'))
   }
+})
+
+test('theme selector shows four palettes and preserves the chosen family when switching mode', () => {
+  let current = 'lavender-light'
+  const themes = load('lib/themes.ts')
+  const { ThemeSelector } = load('components/theme-selector.tsx', {
+    react: { useSyncExternalStore: () => current },
+    '@/lib/themes': { ...themes, selectTheme: id => { current = id } },
+  })
+  let tree = ThemeSelector()
+  assert.equal(elements(find(tree, node => node.props['aria-label'] === 'Paleta de cores'), node => node.type === 'button').length, 4)
+  find(tree, node => node.props['aria-label'] === 'Menta claro').props.onClick()
+  tree = ThemeSelector()
+  find(tree, node => node.type === 'button' && node.key === 'dark').props.onClick()
+  assert.equal(current, 'mint-dark')
+  tree = ThemeSelector()
+  find(tree, node => node.props['aria-label'] === 'Menta escuro' && node.props['aria-pressed'])
+  find(tree, node => node.props['aria-label'] === 'Pêssego escuro').props.onClick()
+  tree = ThemeSelector()
+  find(tree, node => node.type === 'button' && node.key === 'light').props.onClick()
+  assert.equal(current, 'peach-light')
 })
 
 test('light and dark palettes keep normal text at WCAG AA contrast', () => {
@@ -1204,6 +1225,55 @@ test('password-protected invoices use the payment date and clear the password on
 })
 
 const testAuthEnv = { NEXT_PUBLIC_SUPABASE_URL: 'https://testproject.supabase.co', NEXT_PUBLIC_SUPABASE_ANON_KEY: 'test-public-key' }
+
+test('quick search accepts Brazilian amounts and treats wildcard characters literally', () => {
+  const { searchAmount, searchNamePattern } = load('lib/expense-search.ts')
+  for (const [input, value] of [['4,86', 4.86], ['R$ 1.234,56', 1234.56], ['125.50', 125.5], ['1.234', 1234], ['50', 50]]) assert.equal(searchAmount(input), value)
+  for (const input of ['mercado', '4,86 reais', '-10', '1,2,3', '10000001']) assert.equal(searchAmount(input), null)
+  assert.equal(searchNamePattern('100%_'), '%100\\%\\_%')
+})
+
+test('quick search combines names and amounts, returns board location and restricts both queries to the account', async () => {
+  const row = { id: 'found', nome: 'Vendperto', valor: 4.86, data_pagamento: '2026-11-06', status: 'Pendente', board_id: 'itau' }
+  const db = database({ expenses: [success([row]), success([row])], boards: [success([{ id: 'itau', name: 'Itaú', month: 10, year: 2026 }])] })
+  const { GET } = load('app/api/expenses/search/route.ts', {
+    '@/lib/supabase/server': { createClient: async () => db.client }, '@/lib/expense-search': load('lib/expense-search.ts'),
+  }, { Response })
+  const response = await GET(new Request('https://test/api/expenses/search?q=4%2C86'))
+  assert.equal(response.status, 200)
+  const result = await response.json()
+  assert.equal(result.results.length, 1); assert.equal(result.results[0].board_name, 'Itaú'); assert.equal(result.results[0].board_month, 10)
+  assert.equal(result.hasMore, false)
+  assert.ok(response.headers.get('cache-control').includes('no-store'))
+  for (const request of db.requests) assert.ok(request.calls.some(([method, column, value]) => method === 'eq' && column === 'user_id' && value === 'test-user'))
+  assert.ok(db.requests.filter(request => request.table === 'expenses').every(request => request.calls.some(([method, column]) => method === 'is' && column === 'represents_board_id')))
+})
+
+test('quick search rejects anonymous access and invalid terms before reading financial data', async () => {
+  for (const [user, term, status] of [[null, 'mercado', 401], [{ id: 'u' }, '', 400], [{ id: 'u' }, 'a'.repeat(101), 400]]) {
+    const db = database({}); db.client.auth.getUser = async () => ({ data: { user }, error: null })
+    const { GET } = load('app/api/expenses/search/route.ts', {
+      '@/lib/supabase/server': { createClient: async () => db.client }, '@/lib/expense-search': load('lib/expense-search.ts'),
+    }, { Response })
+    assert.equal((await GET(new Request(`https://test/api/expenses/search?q=${term}`))).status, status)
+    assert.equal(db.requests.length, 0)
+  }
+})
+
+test('quick search dialog displays the debt location and navigates to its payment month', async () => {
+  const runtime = hooks(), navigated = []
+  const { QuickExpenseSearch } = load('components/quick-expense-search.tsx', { react: runtime.react }, {
+    AbortController, clearTimeout() {}, fetch: async () => ({ ok: true, json: async () => ({ hasMore: false, results: [{ id: 'debt', nome: 'Vendperto', valor: 4.86, data_pagamento: '2026-11-06', status: 'Pendente', board_id: 'itau', board_name: 'Itaú', board_month: 10, board_year: 2026 }] }) }),
+  })
+  let tree = runtime.render(QuickExpenseSearch, { onNavigate: period => navigated.push(period) })
+  find(tree, node => node.type === 'Dialog').props.onOpenChange(true); tree = runtime.render()
+  find(tree, node => node.props['aria-label'] === 'Nome ou valor da dívida').props.onChange({ target: { value: '4,86' } }); tree = runtime.render(); tree = await runtime.flush()
+  find(tree, node => node.type === 'p' && node.props.children === 'Vendperto')
+  find(tree, node => node.props.children === 'Ver mês no painel').props.onClick(); tree = runtime.render()
+  assert.equal(navigated[0].month, 10); assert.equal(navigated[0].year, 2026)
+  assert.equal(find(tree, node => node.type === 'Dialog').props.open, false)
+  assert.equal(find(tree, node => node.props['aria-label'] === 'Nome ou valor da dívida').props.value, '')
+})
 
 test('admin overview rejects anonymous users, delegated admins and missing owner membership before returning data', async () => {
   for (const [user, owner, expected] of [

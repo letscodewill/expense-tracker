@@ -42,9 +42,9 @@ export default async function HomePage() {
   const displayName = String(user.user_metadata?.full_name || user.email || 'Usuário')
 
   return (
-    <div className="material-dashboard container mx-auto max-w-7xl px-4 py-6 md:px-8 md:py-10">
+    <div className="material-dashboard container mx-auto max-w-7xl px-3 py-4 sm:px-4 md:px-8 md:py-6">
       <header className="material-app-bar mb-4 flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-2xl sm:text-3xl font-medium tracking-tight">Painel de Despesas</h1>
+        <h1 className="text-xl sm:text-2xl font-medium tracking-tight">Painel de Despesas</h1>
         <div className="ml-auto flex min-w-0 max-w-full items-center gap-3">
           <ProfilePhoto name={displayName} photo={profilePhoto} custom={!!customPhoto} hasGooglePhoto={!!providerPhoto} />
           <p className="text-sm text-muted-foreground truncate max-w-[160px] sm:max-w-none">Bem-vindo, {displayName}</p>

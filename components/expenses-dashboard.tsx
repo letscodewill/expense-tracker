@@ -16,6 +16,7 @@ import { BarChart3, Menu, SlidersHorizontal } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog'
 import Link from 'next/link'
 import { PwaInstallButton } from '@/components/pwa-install-button'
+import { QuickExpenseSearch } from '@/components/quick-expense-search'
 
 type Board = {
   id: string
@@ -146,7 +147,7 @@ export function ExpensesDashboard({ navigationActions, notificationActions }: { 
   )
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-5">
       <nav aria-label="Navegação do Dashboard" className="flex min-w-0 items-center justify-between gap-2 rounded-2xl border border-border bg-card px-3 py-2 sm:px-4">
         <Link href={`/planning?month=${selected.year}-${String(selected.month + 1).padStart(2, '0')}`} className="inline-flex min-h-10 min-w-0 items-center gap-2 rounded-xl px-2 text-sm font-medium hover:bg-accent">
           <SlidersHorizontal className="size-4 shrink-0" aria-hidden="true" />
@@ -178,6 +179,7 @@ export function ExpensesDashboard({ navigationActions, notificationActions }: { 
               Mês atual
             </Button>
           )}
+          <QuickExpenseSearch onNavigate={setSelected} />
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3 lg:justify-end">
           <Link href="/reports" className="inline-flex items-center rounded-full border border-border px-4 py-2 text-sm font-medium hover:bg-accent">

@@ -1,6 +1,12 @@
 export const THEMES = [
-  { id: 'lavender-light', name: 'Claro', mode: 'light', description: 'Superfícies claras e detalhes suaves', colors: ['#faf8ff', '#eaddff', '#6750a4'] },
-  { id: 'lavender-dark', name: 'Escuro', mode: 'dark', description: 'Superfícies escuras e detalhes suaves', colors: ['#15121b', '#4a3866', '#d0bcff'] },
+  { id: 'lavender-light', name: 'Lavanda', mode: 'light', description: 'Lilás suave', colors: ['#faf8ff', '#eaddff', '#6750a4'] },
+  { id: 'mint-light', name: 'Menta', mode: 'light', description: 'Verde água suave', colors: ['#f5fbf8', '#d5eee4', '#286658'] },
+  { id: 'peach-light', name: 'Pêssego', mode: 'light', description: 'Pêssego e creme', colors: ['#fff8f4', '#ffdfcf', '#934b32'] },
+  { id: 'blue-light', name: 'Azul', mode: 'light', description: 'Azul céu suave', colors: ['#f5f9ff', '#dbeafe', '#285c94'] },
+  { id: 'lavender-dark', name: 'Lavanda', mode: 'dark', description: 'Acentos lilás em superfícies escuras', colors: ['#15121b', '#4a3866', '#d0bcff'] },
+  { id: 'mint-dark', name: 'Menta', mode: 'dark', description: 'Acentos verde água em superfícies escuras', colors: ['#101a17', '#28483e', '#a1dbc5'] },
+  { id: 'peach-dark', name: 'Pêssego', mode: 'dark', description: 'Acentos pêssego em superfícies escuras', colors: ['#201512', '#593a2e', '#ffc3a6'] },
+  { id: 'blue-dark', name: 'Azul', mode: 'dark', description: 'Acentos azul céu em superfícies escuras', colors: ['#111923', '#2b405c', '#b3d4ff'] },
 ] as const
 export type ThemeId = typeof THEMES[number]['id']
 export const THEME_STORAGE_KEY = 'expense-tracker:theme'
@@ -13,8 +19,6 @@ function defaultTheme(): ThemeId {
 }
 export function normalizeTheme(value: unknown): ThemeId | null {
   if (isThemeId(value)) return value
-  if (value === 'mint-light' || value === 'peach-light') return 'lavender-light'
-  if (value === 'mint-dark' || value === 'peach-dark') return 'lavender-dark'
   return null
 }
 export function getThemeSnapshot(): ThemeId {
@@ -45,4 +49,4 @@ export function subscribeTheme(onChange: () => void) {
   return () => { window.removeEventListener(CHANGE_EVENT, onChange); window.removeEventListener('storage', storage) }
 }
 // Only fixed theme identifiers are serialized into this bootstrap script.
-export const THEME_INIT_SCRIPT = `(()=>{let t;try{t=localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)})}catch{}const legacy={'mint-light':'lavender-light','peach-light':'lavender-light','mint-dark':'lavender-dark','peach-dark':'lavender-dark'};if(Object.hasOwn(legacy,t))t=legacy[t];const ids=${JSON.stringify(THEMES.map(theme => theme.id))};if(!ids.includes(t))t=window.matchMedia('(prefers-color-scheme: dark)').matches?'lavender-dark':'lavender-light';document.documentElement.dataset.theme=t;document.documentElement.classList.toggle('dark',t.endsWith('-dark'))})()`
+export const THEME_INIT_SCRIPT = `(()=>{let t;try{t=localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)})}catch{}const ids=${JSON.stringify(THEMES.map(theme => theme.id))};if(!ids.includes(t))t=window.matchMedia('(prefers-color-scheme: dark)').matches?'lavender-dark':'lavender-light';document.documentElement.dataset.theme=t;document.documentElement.classList.toggle('dark',t.endsWith('-dark'))})()`

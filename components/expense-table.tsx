@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { AddExpenseDialog } from '@/components/add-expense-dialog'
 import { MONTH_NAMES_PT, type MonthYear } from '@/components/month-year-picker'
-import { Pencil, Check, X, ChevronsUpDown } from 'lucide-react'
+import { Pencil, Check, X, ChevronsUpDown, Clock, CreditCard } from 'lucide-react'
 import { MaskedValue } from '@/components/masked-value'
 
 type Expense = {
@@ -261,7 +261,7 @@ export function ExpenseTable({
   const selectedLabel = MONTH_NAMES_PT[selected.month] + ' de ' + selected.year
 
   return (
-    <div className="material-board space-y-5 rounded-3xl border p-4 sm:p-6 shadow-sm">
+    <div className="material-board space-y-3 rounded-2xl border p-3 sm:p-4">
       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <Button
@@ -319,7 +319,7 @@ export function ExpenseTable({
             </div>
           ) : (
             <>
-              <h2 className="text-xl font-medium tracking-tight truncate">{title}</h2>
+              <h2 className="text-lg font-medium tracking-tight truncate">{title}</h2>
               {boardId && (
                 <Button
                   variant="ghost"
@@ -350,7 +350,7 @@ export function ExpenseTable({
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-x-8 gap-y-3 rounded-2xl bg-secondary/50 px-4 py-3" aria-label="Resumo das despesas">
+      <div className="flex flex-wrap justify-between gap-x-8 gap-y-2 rounded-xl bg-muted/50 px-3 py-3" aria-label="Resumo das despesas">
         {loading || isPending ? <p className="text-sm text-muted-foreground">Carregando totais...</p>
           : fetchError ? <p className="text-sm text-destructive">Totais indisponíveis. Expanda o quadro para tentar novamente.</p>
           : <>
@@ -361,7 +361,7 @@ export function ExpenseTable({
 
       {paymentError && <p role="alert" className="text-sm text-destructive">{paymentError}</p>}
       {isOpen && <div className="space-y-4">
-        <div className="material-table rounded-2xl border">
+        <div className="material-table expense-list rounded-xl border">
           {loading || isPending ? (
             <p className="text-sm text-muted-foreground p-4">Carregando...</p>
           ) : fetchError ? (
@@ -397,9 +397,9 @@ export function ExpenseTable({
                   {expenses.map((expense) => {
                     const instLabel = installmentLabel(expense)
                     return (
-                      <TableRow key={expense.id} className="group flex flex-wrap sm:table-row items-center py-2 sm:py-0">
-                        <TableCell className="sm:table-cell">
-                          <span className="flex items-center gap-2">
+                      <TableRow key={expense.id} className="group expense-row grid grid-cols-2 items-start gap-x-2 py-3 sm:table-row sm:py-0">
+                        <TableCell className="expense-name col-span-2 min-w-0 sm:table-cell">
+                          <span className="flex flex-wrap items-center gap-2 break-words">
                             <span>{expense.nome}</span>
                             {instLabel && (
                               <Badge variant="secondary" className="font-normal">
@@ -413,23 +413,23 @@ export function ExpenseTable({
                             )}
                           </span>
                         </TableCell>
-                        <TableCell className="sm:table-cell">
-                          {parseISODate(expense.data_pagamento).toLocaleDateString('pt-BR', {
+                        <TableCell className="expense-date text-xs text-muted-foreground sm:table-cell">
+                          <span className="sr-only sm:hidden">Pagamento: </span>{parseISODate(expense.data_pagamento).toLocaleDateString('pt-BR', {
                             timeZone: 'UTC',
                           })}
                         </TableCell>
-                        <TableCell className="sm:table-cell">
+                        <TableCell className="expense-value text-right font-medium tabular-nums sm:table-cell sm:text-left">
                           <MaskedValue value={expense.valor} />
                         </TableCell>
                         {/* <div className="basis-full h-0 sm:hidden" /> */}
-                        <TableCell className="sm:table-cell">
-                          <Badge className={statusColor[expense.status]}>{expense.status}</Badge>
+                        <TableCell className="expense-status sm:table-cell">
+                          <Badge className={statusColor[expense.status]}>{expense.status === 'Pago' ? <Check className="mr-1 size-3" aria-hidden="true" /> : expense.status === 'VR/VA' ? <CreditCard className="mr-1 size-3" aria-hidden="true" /> : <Clock className="mr-1 size-3" aria-hidden="true" />}{expense.status}</Badge>
                         </TableCell>
-                        <TableCell className="sm:table-cell">{expense.comentario}</TableCell>
-                        <TableCell>{expense.category ?? 'Sem categoria'}</TableCell>
-                        <TableCell className="sm:table-cell">
+                        <TableCell className="expense-comment col-span-2 break-words text-xs text-muted-foreground sm:table-cell">{expense.comentario}</TableCell>
+                        <TableCell className="expense-category text-right text-xs text-muted-foreground sm:text-left">{expense.category ?? 'Sem categoria'}</TableCell>
+                        <TableCell className="expense-actions col-span-2 sm:table-cell">
                           <div className="flex flex-col gap-1 md:opacity-70 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity">
-                            <div className="flex gap-1">
+                            <div className="flex flex-wrap gap-1">
                               <Button
                                 variant="ghost"
                                 size="sm"

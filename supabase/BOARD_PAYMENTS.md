@@ -1,5 +1,21 @@
 # Pagamento dos quadros pelo painel principal
 
+## Sincronização nos dois sentidos
+
+A migração `20261013214630_bidirectional_board_payment_status.sql` acrescenta a atualização automática do resumo do principal quando uma despesa do quadro muda:
+
+- Todas as despesas do mês em `Pago` ou `VR/VA`: resumo `Pago`.
+- Pelo menos uma despesa pendente: resumo `Pendente`.
+- Nova despesa pendente ou pagamento desfeito: resumo volta a `Pendente`.
+- Quadro sem despesas no mês: resumo `Pendente`, valor zero.
+- Mudança de quadro: os dois resumos são recalculados.
+
+O total considera apenas despesas reais do mesmo usuário e mês de pagamento do resumo. O nome não é alterado. A sincronização automática preserva VR/VA; clicar manualmente em Pago no principal mantém a regra anterior de pagar as despesas relacionadas. Atualizações aninhadas não disparam pagamentos em sequência.
+
+Não há recálculo retroativo em massa. Os resumos existentes passam a refletir a nova regra quando suas despesas forem inseridas, alteradas ou excluídas.
+
+O teste `tests/board-summary-status-integration.sql` utiliza quadros temporários de teste e encerra a transação com `ROLLBACK`, preservando as despesas existentes.
+
 A migração `pay_board_expenses_from_summary` foi aplicada ao projeto da aplicação. O vínculo é `expenses.represents_board_id`, sem comparação por nome.
 
 Ao mudar um resumo do principal para `Pago`, o banco marca as despesas do quadro relacionado e do mês de `data_pagamento` como `Pago`, na mesma transação. Respeita RLS e exige que resumo e quadro pertençam ao usuário autenticado. Outros quadros, outros usuários e meses futuros não são alterados. Despesas em `VR/VA` daquele mês também ficam `Pago`.

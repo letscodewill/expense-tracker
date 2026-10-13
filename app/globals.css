@@ -275,3 +275,124 @@
     border-radius: 1.25rem;
   }
 }
+
+/* Pastel Material palettes. Shared roles also style dialogs and navigation. */
+:root[data-theme="mint-light"] {
+  --background: #f5fbf8;
+  --foreground: #182b25;
+  --card: #ffffff;
+  --popover: #f0f8f3;
+  --primary: #286658;
+  --primary-foreground: #ffffff;
+  --secondary: #d5eee4;
+  --secondary-foreground: #214f41;
+  --muted: #e8f3ed;
+  --muted-foreground: #52675d;
+  --accent: #ddf0e8;
+  --accent-foreground: #245446;
+  --border: #d3e3da;
+  --input: #859e90;
+}
+:root[data-theme="peach-light"] {
+  --background: #fff8f4;
+  --foreground: #35241d;
+  --card: #fffdfb;
+  --popover: #fff2e9;
+  --primary: #934b32;
+  --primary-foreground: #ffffff;
+  --secondary: #ffdfcf;
+  --secondary-foreground: #663d2c;
+  --muted: #f7eae1;
+  --muted-foreground: #765d50;
+  --accent: #fce5d6;
+  --accent-foreground: #713f2a;
+  --border: #ecdace;
+  --input: #ae9181;
+}
+:root[data-theme="mint-dark"] {
+  --background: #101a17;
+  --foreground: #e0f0e7;
+  --card: #1b2a23;
+  --popover: #25362d;
+  --primary: #a1dbc5;
+  --primary-foreground: #123c2e;
+  --secondary: #28483e;
+  --secondary-foreground: #cdeee0;
+  --muted: #25362d;
+  --muted-foreground: #bbd0c3;
+  --accent: #304b40;
+  --accent-foreground: #d5f0e2;
+  --border: #3b5145;
+  --input: #81998b;
+}
+:root[data-theme="peach-dark"] {
+  --background: #201512;
+  --foreground: #f7e6dc;
+  --card: #30221c;
+  --popover: #3b2b23;
+  --primary: #ffc3a6;
+  --primary-foreground: #522c1c;
+  --secondary: #593a2e;
+  --secondary-foreground: #ffdecb;
+  --muted: #3b2b23;
+  --muted-foreground: #dcc4b5;
+  --accent: #50372b;
+  --accent-foreground: #ffe1cd;
+  --border: #594238;
+  --input: #ac8f7c;
+}
+
+:root[data-theme="blue-light"] {
+  --background: #f5f9ff;
+  --foreground: #1c2c40;
+  --card: #ffffff;
+  --popover: #edf4ff;
+  --primary: #285c94;
+  --primary-foreground: #ffffff;
+  --secondary: #dbeafe;
+  --secondary-foreground: #24476d;
+  --muted: #e8eff8;
+  --muted-foreground: #51657e;
+  --accent: #e0edfc;
+  --accent-foreground: #284e79;
+  --border: #d4e0ef;
+  --input: #879fbd;
+}
+
+:root[data-theme="blue-dark"] {
+  --background: #111923;
+  --foreground: #e0ecfc;
+  --card: #1c2939;
+  --popover: #26364b;
+  --primary: #b3d4ff;
+  --primary-foreground: #183c65;
+  --secondary: #2b405c;
+  --secondary-foreground: #d7e8ff;
+  --muted: #26364b;
+  --muted-foreground: #becde1;
+  --accent: #304762;
+  --accent-foreground: #e0edff;
+  --border: #3d506b;
+  --input: #849abb;
+}
+
+/* Compact dashboard surfaces and mobile expense rows. */
+.material-dashboard .material-app-bar { padding: 1rem 1.25rem; border-radius: 1rem; }
+.material-dashboard .material-salary { background: var(--card); color: var(--foreground); border-color: var(--border); }
+.material-dashboard .material-salary .text-muted-foreground { color: var(--muted-foreground); }
+.material-dashboard .material-board { box-shadow: none; }
+.material-dashboard .material-table [data-slot="table-cell"] { padding: 0.75rem; }
+@media (max-width: 639px) {
+  .expense-list [data-slot="table"], .expense-list [data-slot="table-body"] { display: block; width: 100%; }
+  .expense-list [data-slot="table-container"] { overflow-x: visible; }
+  .expense-list [data-slot="table-cell"] { display: block; white-space: normal; min-width: 0; padding: 0.375rem 0.75rem; }
+  .expense-list .expense-name { order: 0; font-weight: 500; }
+  .expense-list .expense-date { order: 1; }
+  .expense-list .expense-value { order: 2; }
+  .expense-list .expense-status { order: 3; }
+  .expense-list .expense-category { order: 4; }
+  .expense-list .expense-comment { order: 5; }
+  .expense-list .expense-comment:empty { display: none; }
+  .expense-list .expense-actions { order: 6; border-top: 1px solid var(--border); margin-top: 0.5rem; padding-top: 0.625rem; }
+  .expense-list .expense-actions [data-slot="button"] { min-height: 2.75rem; }
+}
