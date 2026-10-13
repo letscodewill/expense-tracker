@@ -1,5 +1,6 @@
 'use client'
 
+import { useLanguage } from '@/components/language-provider'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Plus, X, Receipt, LayoutGrid, Upload } from 'lucide-react'
@@ -15,6 +16,8 @@ export function FloatingActionMenu({
   onNewBoard,
   onImportInvoice,
 }: FloatingActionMenuProps) {
+  const { t } = useLanguage()
+
   const [open, setOpen] = useState(false)
 
   function handleAction(action: () => void) {
@@ -27,43 +30,37 @@ export function FloatingActionMenu({
       {open && (
         <div className="flex flex-col items-end gap-2 mb-2">
           <div className="flex items-center gap-2">
-            <span className="text-sm bg-background border rounded-md px-2 py-1 shadow-sm">
-              Novo lançamento
-            </span>
+            <span className="text-sm bg-background border rounded-md px-2 py-1 shadow-sm">{t("Novo lançamento")}</span>
             <Button
               size="icon"
               variant="secondary"
               className="rounded-full shadow-md"
               onClick={() => handleAction(onNewExpense)}
-              aria-label="Novo lançamento"
+              aria-label={t("Novo lançamento")}
             >
               <Receipt className="h-4 w-4" />
             </Button>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-sm bg-background border rounded-md px-2 py-1 shadow-sm">
-              Novo quadro
-            </span>
+            <span className="text-sm bg-background border rounded-md px-2 py-1 shadow-sm">{t("Novo quadro")}</span>
             <Button
               size="icon"
               variant="secondary"
               className="rounded-full shadow-md"
               onClick={() => handleAction(onNewBoard)}
-              aria-label="Novo quadro"
+              aria-label={t("Novo quadro")}
             >
               <LayoutGrid className="h-4 w-4" />
             </Button>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-sm bg-background border rounded-md px-2 py-1 shadow-sm">
-              Importar fatura
-            </span>
+            <span className="text-sm bg-background border rounded-md px-2 py-1 shadow-sm">{t("Importar fatura")}</span>
             <Button
               size="icon"
               variant="secondary"
               className="rounded-full shadow-md"
               onClick={() => handleAction(onImportInvoice)}
-              aria-label="Importar fatura"
+              aria-label={t("Importar fatura")}
             >
               <Upload className="h-4 w-4" />
             </Button>
@@ -75,7 +72,7 @@ export function FloatingActionMenu({
         size="icon"
         className="material-fab rounded-2xl h-16 w-16 shadow-lg"
         onClick={() => setOpen((v) => !v)}
-        aria-label={open ? 'Fechar menu' : 'Abrir menu de ações'}
+        aria-label={open ? t("Fechar menu") : t("Abrir menu de ações")}
         aria-expanded={open}
       >
         {open ? <X className="h-6 w-6" /> : <Plus className="h-6 w-6" />}

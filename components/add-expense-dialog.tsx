@@ -1,5 +1,6 @@
 'use client'
 
+import { useLanguage } from '@/components/language-provider'
 import { z } from 'zod'
 import { useReducer, useState, useMemo, useRef } from 'react'
 import { checkExpenseDuplicates, type DuplicateWarning } from '@/lib/expense-duplicates'
@@ -47,11 +48,6 @@ type Expense = {
 const MIN_INSTALLMENTS = 2
 const MAX_INSTALLMENTS = 48
 const RECURRING_OPTIONS = ['3', '6', '9', '12']
-
-const MONTH_NAMES_PT = [
-  'jan', 'fev', 'mar', 'abr', 'mai', 'jun',
-  'jul', 'ago', 'set', 'out', 'nov', 'dez',
-]
 
 const expenseSchema = z
   .object({
@@ -151,9 +147,6 @@ function addMonthsISO(iso: string, months: number): string {
   return out.toISOString().slice(0, 10)
 }
 
-function formatBRL(n: number): string {
-  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-}
 
 async function getOrCreateBoardForMonth(
   supabase: ReturnType<typeof createClient>,
@@ -173,7 +166,7 @@ async function getOrCreateBoardForMonth(
     .maybeSingle()
 
   if (findError) {
-    throw new Error('Não foi possível verificar o quadro. Tente novamente antes de salvar.')
+    throw new Error("Não foi possível verificar o quadro. Tente novamente antes de salvar.")
   }
 
   if (existing) return existing.id
@@ -185,7 +178,7 @@ async function getOrCreateBoardForMonth(
     .single()
 
   if (createError || !created) {
-    throw createError ?? new Error('Falha ao criar quadro para o mês.')
+    throw createError ?? new Error("Falha ao criar quadro para o mês.")
   }
 
   return created.id
@@ -204,6 +197,9 @@ export function AddExpenseDialog({
   boards = [],
   ...props
 }: AddExpenseDialogProps) {
+  const { t, locale } = useLanguage()
+  const formatBRL = (n: number) => n.toLocaleString(locale, { style: 'currency', currency: 'BRL' })
+
   const [destinationPeriod, setDestinationPeriod] = useState<MonthYear>(initialSelected ?? { month: new Date().getMonth(), year: new Date().getFullYear() })
   const [destinationBoard, setDestinationBoard] = useState('')
   const [newBoardName, setNewBoardName] = useState('')
@@ -276,14 +272,14 @@ export function AddExpenseDialog({
     const lastDate = addMonthsISO(dataPagamento, n - 1)
     const lastDateLabel = (() => {
       const [y, m, d] = lastDate.split('-').map(Number)
-      return d.toString().padStart(2, '0') + ' ' + MONTH_NAMES_PT[m - 1] + ' ' + y
+      return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(locale, { timeZone: 'UTC', day: '2-digit', month: 'short', year: 'numeric' })
     })()
     const firstDateLabel = (() => {
       const [y, m, d] = dataPagamento.split('-').map(Number)
-      return d.toString().padStart(2, '0') + ' ' + MONTH_NAMES_PT[m - 1] + ' ' + y
+      return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(locale, { timeZone: 'UTC', day: '2-digit', month: 'short', year: 'numeric' })
     })()
     return { perInstallment: first, firstDateLabel, lastDateLabel, total, n }
-  }, [isInstallment, dataPagamento, installments, valor])
+  }, [isInstallment, dataPagamento, installments, valor, locale])
 
   async function handleSubmit() {
     if (inFlight.current) return
@@ -515,14 +511,12 @@ export function AddExpenseDialog({
       {!hideTrigger && !forceOpen && !expenseToEdit && <DialogTrigger
         render={
           <Button variant="outline" size="sm">
-            <Plus className="h-4 w-4 mr-1" />
-            Novo lançamento
-          </Button>
+            <Plus className="h-4 w-4 mr-1" />{t("Novo lançamento ")}</Button>
         }
       />}
       <DialogContent className="max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{expenseToEdit ? 'Editar despesa' : 'Nova despesa'}</DialogTitle>
+          <DialogTitle>{expenseToEdit ? t("Editar despesa") : t("Nova despesa")}</DialogTitle>
         </DialogHeader>
 
         <fieldset disabled={loading} className="space-y-4 py-2">
@@ -530,7 +524,7 @@ export function AddExpenseDialog({
           {chooseDestination && !expenseToEdit && (
             <div className="space-y-4 rounded-2xl bg-secondary/50 p-4">
               <div className="space-y-2">
-                <p id="expense-period-label" className="text-sm font-medium">Em qual mês adicionar?</p>
+                <p id="expense-period-label" className="text-sm font-medium">{t("Em qual mês adicionar?")}</p>
                 <div role="group" aria-labelledby="expense-period-label">
                   <MonthYearPicker value={destinationPeriod} onChange={period => {
                     changeDestinationPeriod(period)
@@ -542,30 +536,30 @@ export function AddExpenseDialog({
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="expense-board">Quadro de destino</Label>
+                <Label htmlFor="expense-board">{t("Quadro de destino")}</Label>
                 <select id="expense-board" className="h-10 w-full min-w-0 rounded-xl border border-input bg-background px-3 text-sm" value={destinationBoard} onChange={event => setDestinationBoard(event.target.value)}>
-                  <option value="">Painel principal</option>
+                  <option value="">{t("Painel principal")}</option>
                   {boardNames.map(name => <option key={name} value={name}>{name}</option>)}
-                  <option value="__new__">Outro quadro…</option>
+                  <option value="__new__">{t("Outro quadro…")}</option>
                 </select>
-                {destinationBoard === '__new__' && <Input id="expense-new-board-name" aria-label="Nome do quadro" placeholder="Ex: Itaú" value={newBoardName} onChange={event => setNewBoardName(event.target.value)} />}
-                <p className="text-xs text-muted-foreground">Se o quadro não existir no mês escolhido, ele será criado ao salvar.</p>
+                {destinationBoard === '__new__' && <Input id="expense-new-board-name" aria-label={t("Nome do quadro")} placeholder={t("Ex: Itaú")} value={newBoardName} onChange={event => setNewBoardName(event.target.value)} />}
+                <p className="text-xs text-muted-foreground">{t("Se o quadro não existir no mês escolhido, ele será criado ao salvar.")}</p>
               </div>
             </div>
           )}
           <div className="space-y-2">
-            <Label htmlFor="nome">Nome</Label>
+            <Label htmlFor="nome">{t("Nome")}</Label>
             <Input
               id="nome"
               value={nome}
               onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'nome', value: e.target.value })}
-              placeholder="Ex: Cartão Itaú"
+              placeholder={t("Ex: Cartão Itaú")}
             />
-            {fieldErrors.nome && <p className="text-sm text-red-600">{fieldErrors.nome}</p>}
+            {fieldErrors.nome && <p className="text-sm text-red-600">{t(fieldErrors.nome)}</p>}
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="data">Data de pagamento</Label>
+            <Label htmlFor="data">{t("Data de pagamento")}</Label>
             <Input
               id="data"
               type="date"
@@ -580,14 +574,14 @@ export function AddExpenseDialog({
                 dispatch({ type: 'SET_FIELD', field: 'dataPagamento', value: date })
               }}
             />
-            {fieldErrors.dataPagamento && <p className="text-sm text-red-600">{fieldErrors.dataPagamento}</p>}
+            {fieldErrors.dataPagamento && <p className="text-sm text-red-600">{t(fieldErrors.dataPagamento)}</p>}
             {!expenseToEdit && isRecurring && selected && (
-              <p className="text-sm text-muted-foreground">A recorrência começa no mês selecionado ou depois. Uma data anterior será ajustada para o mês selecionado, mantendo o dia quando possível.</p>
+              <p className="text-sm text-muted-foreground">{t("A recorrência começa no mês selecionado ou depois. Uma data anterior será ajustada para o mês selecionado, mantendo o dia quando possível.")}</p>
             )}
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="valor">{isInstallment ? 'Valor total' : 'Valor'}</Label>
+            <Label htmlFor="valor">{isInstallment ? t("Valor total") : t("Valor")}</Label>
             <Input
               id="valor"
               type="number"
@@ -596,7 +590,7 @@ export function AddExpenseDialog({
               onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'valor', value: e.target.value })}
               placeholder="0,00"
             />
-            {fieldErrors.valor && <p className="text-sm text-red-600">{fieldErrors.valor}</p>}
+            {fieldErrors.valor && <p className="text-sm text-red-600">{t(fieldErrors.valor)}</p>}
           </div>
 
           {!expenseToEdit && (
@@ -611,15 +605,13 @@ export function AddExpenseDialog({
                   if (e.target.checked) dispatch({ type: 'SET_FIELD', field: 'isRecurring', value: false })
                 }}
               />
-              <Label htmlFor="is-installment" className="cursor-pointer">
-                Esta dívida é parcelada
-              </Label>
+              <Label htmlFor="is-installment" className="cursor-pointer">{t("Esta dívida é parcelada")}</Label>
             </div>
           )}
 
           {!expenseToEdit && isInstallment && (
             <div className="space-y-2">
-              <Label htmlFor="installments">Número de parcelas</Label>
+              <Label htmlFor="installments">{t("Número de parcelas")}</Label>
               <Input
                 id="installments"
                 type="number"
@@ -629,15 +621,15 @@ export function AddExpenseDialog({
                 value={installments}
                 onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'installments', value: e.target.value })}
               />
-              {fieldErrors.installments && <p className="text-sm text-red-600">{fieldErrors.installments}</p>}
+              {fieldErrors.installments && <p className="text-sm text-red-600">{t(fieldErrors.installments)}</p>}
               {preview && (
                 <div className="rounded-md border bg-muted/40 p-3 text-sm space-y-1">
                   <p>
-                    <span className="text-muted-foreground">Valor por parcela:</span>{' '}
+                    <span className="text-muted-foreground">{t("Valor por parcela:")}</span>{' '}
                     <span className="font-medium">{formatBRL(preview.perInstallment)}</span>
                   </p>
                   <p className="text-muted-foreground">
-                    {preview.n}× de {formatBRL(preview.perInstallment)} — de {preview.firstDateLabel} até {preview.lastDateLabel} (total {formatBRL(preview.total)})
+                    {preview.n}{t("× de")} {formatBRL(preview.perInstallment)}{t(" — de ")}{preview.firstDateLabel}{t(" até ")}{preview.lastDateLabel} {t("(total")} {formatBRL(preview.total)})
                   </p>
                 </div>
               )}
@@ -656,15 +648,13 @@ export function AddExpenseDialog({
                   if (e.target.checked) dispatch({ type: 'SET_FIELD', field: 'isInstallment', value: false })
                 }}
               />
-              <Label htmlFor="is-recurring" className="cursor-pointer">
-                Esta despesa é recorrente (mesmo valor todo mês)
-              </Label>
+              <Label htmlFor="is-recurring" className="cursor-pointer">{t("Esta despesa é recorrente (mesmo valor todo mês)")}</Label>
             </div>
           )}
 
           {!expenseToEdit && isRecurring && (
             <div className="space-y-2">
-              <Label>Repetir por quantos meses</Label>
+              <Label>{t("Repetir por quantos meses")}</Label>
               <Select
                 value={recurringMonths}
                 onValueChange={(v) => dispatch({ type: 'SET_FIELD', field: 'recurringMonths', value: v ?? '3' })}
@@ -675,51 +665,50 @@ export function AddExpenseDialog({
                 <SelectContent>
                   {RECURRING_OPTIONS.map((opt) => (
                     <SelectItem key={opt} value={opt}>
-                      {opt} meses
-                    </SelectItem>
+                      {opt}{t(" meses ")}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               {fieldErrors.recurringMonths && (
-                <p className="text-sm text-red-600">{fieldErrors.recurringMonths}</p>
+                <p className="text-sm text-red-600">{t(fieldErrors.recurringMonths)}</p>
               )}
             </div>
           )}
 
           <div className="space-y-2">
-            <Label>Status</Label>
+            <Label>{t("Status")}</Label>
             <Select
               value={status}
-              onValueChange={(v) => dispatch({ type: 'SET_FIELD', field: 'status', value: v ?? 'Pendente' })}
+              onValueChange={(v) => dispatch({ type: 'SET_FIELD', field: 'status', value: v ?? "Pendente" })}
             >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="Pendente">Pendente</SelectItem>
-                <SelectItem value="Pago">Pago</SelectItem>
-                <SelectItem value="VR/VA">VR/VA</SelectItem>
+                <SelectItem value="Pendente">{t("Pendente")}</SelectItem>
+                <SelectItem value="Pago">{t("Pago")}</SelectItem>
+                <SelectItem value="VR/VA">{t("VR/VA")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="comentario">Comentário</Label>
+            <Label htmlFor="comentario">{t("Comentário")}</Label>
             <Input
               id="comentario"
               value={comentario}
               onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'comentario', value: e.target.value })}
-              placeholder="Opcional"
+              placeholder={t("Opcional")}
             />
           </div>
 
-          <div className="space-y-2"><Label htmlFor="expense-category">Categoria</Label><select id="expense-category" disabled={categoriesLoading || !!categoriesError} className="w-full rounded-xl border bg-background p-3" value={category} onChange={event => dispatch({ type: 'SET_FIELD', field: 'category', value: event.target.value })}>{categories.map(value => <option key={value} value={value}>{value}</option>)}</select>{categoriesError && <p role="alert" className="text-sm text-destructive">{categoriesError}</p>}<p className="text-xs text-muted-foreground">Crie ou remova categorias na página Orçamento e lembretes.</p></div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          <div className="space-y-2"><Label htmlFor="expense-category">{t("Categoria")}</Label><select id="expense-category" disabled={categoriesLoading || !!categoriesError} className="w-full rounded-xl border bg-background p-3" value={category} onChange={event => dispatch({ type: 'SET_FIELD', field: 'category', value: event.target.value })}>{categories.map(value => <option key={value} value={value}>{value === 'Sem categoria' ? t(value) : value}</option>)}</select>{categoriesError && <p role="alert" className="text-sm text-destructive">{t(categoriesError)}</p>}<p className="text-xs text-muted-foreground">{t("Crie ou remova categorias na página Orçamento e lembretes.")}</p></div>
+          {error && <p className="text-sm text-red-600">{t(error)}</p>}
         </fieldset>
 
         <DialogFooter>
           <Button onClick={handleSubmit} disabled={loading}>
-            {loading ? 'Salvando...' : 'Salvar'}
+            {loading ? t("Salvando...") : t("Salvar")}
           </Button>
         </DialogFooter>
       </DialogContent>

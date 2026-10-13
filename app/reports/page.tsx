@@ -1,3 +1,4 @@
+import { getServerTranslation } from '@/lib/i18n/server'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { ReportsView } from '@/components/reports-view'
@@ -6,6 +7,8 @@ import { Button } from '@/components/ui/button'
 import { ArrowLeft } from 'lucide-react'
 
 export default async function ReportsPage() {
+  const { t } = await getServerTranslation()
+
   const supabase = await createClient()
 
   let user = null
@@ -26,11 +29,9 @@ export default async function ReportsPage() {
       <header className="flex items-center gap-4 mb-8">
         <Link href="/">
           <Button variant="ghost" size="sm">
-            <ArrowLeft className="h-4 w-4 mr-1" />
-            Voltar
-          </Button>
+            <ArrowLeft className="h-4 w-4 mr-1" />{t("Voltar ")}</Button>
         </Link>
-        <h1 className="text-2xl sm:text-3xl font-bold">Relatórios</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold">{t("Relatórios")}</h1>
       </header>
       <main>
         <ReportsView />

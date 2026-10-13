@@ -1,5 +1,6 @@
 'use client'
 
+import { useLanguage } from '@/components/language-provider'
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -19,6 +20,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
 export function ReportDialog() {
+  const { t } = useLanguage()
+
     const router = useRouter()
     const supabase = createClient()
     const [open, setOpen] = useState(false)
@@ -38,11 +41,11 @@ export function ReportDialog() {
 
     async function handleSubmit() {
         if (!subject.trim() || !message.trim()) {
-            setError('Preencha assunto e descrição.')
+            setError("Preencha assunto e descrição.")
             return
         }
         if (subject.trim().length > 200 || message.trim().length > 10000) {
-            setError('Use até 200 caracteres no assunto e 10.000 na descrição.')
+            setError("Use até 200 caracteres no assunto e 10.000 na descrição.")
             return
         }
 
@@ -51,7 +54,7 @@ export function ReportDialog() {
 
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) {
-            setError('Sua sessão expirou. Entre novamente para enviar o ticket.')
+            setError("Sua sessão expirou. Entre novamente para enviar o ticket.")
             setLoading(false)
             return
         }
@@ -72,7 +75,7 @@ export function ReportDialog() {
 
         if (insertError || !data) {
             console.error('Erro ao enviar report:', insertError)
-            setError('Não foi possível enviar. Tente novamente.')
+            setError("Não foi possível enviar. Tente novamente.")
             return
         }
 
@@ -91,60 +94,54 @@ export function ReportDialog() {
             <DialogTrigger
                 render={
                     <Button variant="outline" size="sm">
-                        <Flag className="h-4 w-4 mr-1" />
-                        Reportar problema
-                    </Button>
+                        <Flag className="h-4 w-4 mr-1" />{t("Reportar problema ")}</Button>
                 }
             />
             <DialogContent>
                 <DialogHeader>
-                    <DialogTitle>Reportar um problema</DialogTitle>
+                    <DialogTitle>{t("Reportar um problema")}</DialogTitle>
                 </DialogHeader>
 
                 {protocol !== null ? (
                     <div className="space-y-4 py-4 text-center">
-                        <p className="text-sm">Seu ticket foi registrado com sucesso.</p>
-                        <p className="text-2xl font-bold">Protocolo #{protocol}</p>
-                        <p className="text-sm text-muted-foreground">
-                            Guarde esse número caso precise fazer referência a este problema depois.
-                        </p>
-                        <Link href="/tickets" className="inline-block text-sm text-primary underline" onClick={() => setOpen(false)}>Acompanhar meus tickets e respostas</Link>
+                        <p className="text-sm">{t("Seu ticket foi registrado com sucesso.")}</p>
+                        <p className="text-2xl font-bold">{t("Protocolo #")}{protocol}</p>
+                        <p className="text-sm text-muted-foreground">{t("Guarde esse número caso precise fazer referência a este problema depois.")}</p>
+                        <Link href="/tickets" className="inline-block text-sm text-primary underline" onClick={() => setOpen(false)}>{t("Acompanhar meus tickets e respostas")}</Link>
                     </div>
                 ) : (
                     <div className="space-y-4 py-2">
                         <div className="space-y-2">
-                            <Label htmlFor="report-subject">Assunto</Label>
+                            <Label htmlFor="report-subject">{t("Assunto")}</Label>
                             <Input
                                 id="report-subject"
                                 maxLength={200}
                                 value={subject}
                                 onChange={(e) => setSubject(e.target.value)}
-                                placeholder="Ex: Erro ao salvar despesa"
+                                placeholder={t("Ex: Erro ao salvar despesa")}
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="report-message">Descreva o problema</Label>
+                            <Label htmlFor="report-message">{t("Descreva o problema")}</Label>
                             <Textarea
                                 id="report-message"
                                 maxLength={10000}
-                                value={message}
+                                value={t(message)}
                                 onChange={(e) => setMessage(e.target.value)}
-                                placeholder="Conte o que aconteceu, com o máximo de detalhes possível..."
+                                placeholder={t("Conte o que aconteceu, com o máximo de detalhes possível...")}
                                 rows={5}
                             />
                         </div>
-                        {error && <p className="text-sm text-red-600">{error}</p>}
+                        {error && <p className="text-sm text-red-600">{t(error)}</p>}
                     </div>
                 )}
 
                 <DialogFooter>
                     {protocol !== null ? (
-                        <Button onClick={() => setOpen(false)} className="w-full">
-                            Fechar
-                        </Button>
+                        <Button onClick={() => setOpen(false)} className="w-full">{t("Fechar")}</Button>
                     ) : (
                         <Button onClick={handleSubmit} disabled={loading} className="w-full">
-                            {loading ? 'Enviando...' : 'Enviar ticket'}
+                            {loading ? 'Enviando...' : t("Enviar ticket")}
                         </Button>
                     )}
                 </DialogFooter>

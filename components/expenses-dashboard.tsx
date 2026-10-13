@@ -1,5 +1,6 @@
 'use client'
 
+import { useLanguage } from '@/components/language-provider'
 import { startTransition, useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -37,6 +38,8 @@ function isCurrentMonth(selected: MonthYear): boolean {
 
 
 export function ExpensesDashboard({ navigationActions, notificationActions }: { navigationActions?: ReactNode; notificationActions?: ReactNode } = {}) {
+  const { t } = useLanguage()
+
   const supabase = createClient()
   const [boards, setBoards] = useState<Board[]>([])
   const [loadingBoards, setLoadingBoards] = useState(true)
@@ -114,7 +117,7 @@ export function ExpensesDashboard({ navigationActions, notificationActions }: { 
 
  async function handleDeleteBoard(boardId: string) {
   const confirmed = window.confirm(
-    'Excluir este quadro? Todas as despesas serão apagadas (parcelas futuras também), exceto despesas recorrentes, que serão movidas para o painel principal.'
+    t("Excluir este quadro? Todas as despesas serão apagadas (parcelas futuras também), exceto despesas recorrentes, que serão movidas para o painel principal.")
   )
   if (!confirmed) return
 
@@ -148,20 +151,20 @@ export function ExpensesDashboard({ navigationActions, notificationActions }: { 
 
   return (
     <div className="space-y-4 sm:space-y-5">
-      <nav aria-label="Navegação do Dashboard" className="flex min-w-0 items-center justify-between gap-2 rounded-2xl border border-border bg-card px-3 py-2 sm:px-4">
+      <nav aria-label={t("Navegação do Dashboard")} className="flex min-w-0 items-center justify-between gap-2 rounded-2xl border border-border bg-card px-3 py-2 sm:px-4">
         <Link href={`/planning?month=${selected.year}-${String(selected.month + 1).padStart(2, '0')}`} className="inline-flex min-h-10 min-w-0 items-center gap-2 rounded-xl px-2 text-sm font-medium hover:bg-accent">
           <SlidersHorizontal className="size-4 shrink-0" aria-hidden="true" />
-          <span className="sm:hidden">Planejamento</span><span className="hidden sm:inline">Orçamento e lembretes</span>
+          <span className="sm:hidden">{t("Planejamento")}</span><span className="hidden sm:inline">{t("Orçamento e lembretes")}</span>
         </Link>
         <div className="ml-auto">{notificationActions}</div>
         <Dialog open={navigationOpen} onOpenChange={setNavigationOpen}>
-          <DialogTrigger render={<Button variant="ghost" size="sm" aria-label="Abrir menu de navegação" aria-expanded={navigationOpen} className="shrink-0 gap-2"><Menu className="size-5" aria-hidden="true" />Menu</Button>} />
+          <DialogTrigger render={<Button variant="ghost" size="sm" aria-label={t("Abrir menu de navegação")} aria-expanded={navigationOpen} className="shrink-0 gap-2"><Menu className="size-5" aria-hidden="true" />{t("Menu")}</Button>} />
           <DialogContent className="dashboard-navigation-drawer top-0 right-0 left-auto h-dvh w-[min(22rem,90vw)] max-w-none translate-x-0 translate-y-0 content-start gap-6 overflow-y-auto rounded-l-3xl rounded-r-none p-6 sm:max-w-none">
             <DialogHeader className="pr-6">
-              <DialogTitle>Menu</DialogTitle>
-              <DialogDescription>Aparência, suporte e sua conta.</DialogDescription>
+              <DialogTitle>{t("Menu")}</DialogTitle>
+              <DialogDescription>{t("Aparência, suporte e sua conta.")}</DialogDescription>
             </DialogHeader>
-            <nav aria-label="Opções da conta" className="flex flex-col items-stretch gap-3 [&>a]:flex [&>a]:min-h-11 [&>a]:items-center [&>a]:rounded-xl [&>button]:min-h-11 [&>button]:justify-start [&>form>button]:w-full [&>form>button]:justify-start" onClick={event => {
+            <nav aria-label={t("Opções da conta")} className="flex flex-col items-stretch gap-3 [&>a]:flex [&>a]:min-h-11 [&>a]:items-center [&>a]:rounded-xl [&>button]:min-h-11 [&>button]:justify-start [&>form>button]:w-full [&>form>button]:justify-start" onClick={event => {
               if ((event.target as HTMLElement).closest('a[href]')) setNavigationOpen(false)
             }}>
               {navigationActions}
@@ -175,17 +178,13 @@ export function ExpensesDashboard({ navigationActions, notificationActions }: { 
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           <MonthYearPicker value={selected} onChange={setSelected} />
           {!isCurrentMonth(selected) && (
-            <Button variant="outline" size="sm" onClick={handleGoToCurrentMonth}>
-              Mês atual
-            </Button>
+            <Button variant="outline" size="sm" onClick={handleGoToCurrentMonth}>{t("Mês atual")}</Button>
           )}
           <QuickExpenseSearch onNavigate={setSelected} />
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3 lg:justify-end">
           <Link href="/reports" className="inline-flex items-center rounded-full border border-border px-4 py-2 text-sm font-medium hover:bg-accent">
-            <BarChart3 className="mr-1 h-4 w-4" />
-            Relatórios
-          </Link>
+            <BarChart3 className="mr-1 h-4 w-4" />{t("Relatórios ")}</Link>
         <ImportInvoiceDialog
           selected={selected}
           boards={boardsForMonth}
@@ -202,7 +201,7 @@ export function ExpensesDashboard({ navigationActions, notificationActions }: { 
 
       <ExpenseTable
         boardId={null}
-        title="Painel principal"
+        title={t("Painel principal")}
         selected={selected}
         refreshKey={mainPanelRefreshKey}
         onChanged={bumpMainPanel}
@@ -210,10 +209,8 @@ export function ExpensesDashboard({ navigationActions, notificationActions }: { 
 
       {boardsError && (
         <div className="text-center space-y-2">
-          <p className="text-sm text-red-600">Não foi possível carregar os quadros.</p>
-          <Button variant="outline" size="sm" onClick={() => fetchBoards()}>
-            Tentar novamente
-          </Button>
+          <p className="text-sm text-red-600">{t("Não foi possível carregar os quadros.")}</p>
+          <Button variant="outline" size="sm" onClick={() => fetchBoards()}>{t("Tentar novamente")}</Button>
         </div>
       )}
 

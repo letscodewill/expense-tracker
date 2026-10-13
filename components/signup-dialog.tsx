@@ -1,5 +1,6 @@
 'use client'
 
+import { useLanguage } from '@/components/language-provider'
 import { useState, useTransition } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -15,6 +16,8 @@ import {
 import { signup } from '@/app/login/actions'
 
 export function SignupDialog() {
+  const { t } = useLanguage()
+
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -27,17 +30,17 @@ export function SignupDialog() {
     setError('')
 
     if (!name.trim()) {
-      setError('Informe seu nome.')
+      setError("Informe seu nome.")
       return
     }
 
     if (password !== confirmPassword) {
-      setError('As senhas não coincidem.')
+      setError("As senhas não coincidem.")
       return
     }
 
     if (password.length < 6) {
-      setError('A senha precisa ter pelo menos 6 caracteres.')
+      setError("A senha precisa ter pelo menos 6 caracteres.")
       return
     }
 
@@ -65,19 +68,17 @@ export function SignupDialog() {
     >
       <DialogTrigger
         render={
-          <Button variant="outline" className="w-full">
-            Criar conta
-          </Button>
+          <Button variant="outline" className="w-full">{t("Criar conta")}</Button>
         }
       />
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Criar conta</DialogTitle>
+          <DialogTitle>{t("Criar conta")}</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col space-y-4">
           <div className="flex flex-col gap-1">
-            <Label htmlFor="signup-name">Nome:</Label>
+            <Label htmlFor="signup-name">{t("Nome:")}</Label>
             <Input
               id="signup-name"
               type="text"
@@ -87,7 +88,7 @@ export function SignupDialog() {
             />
           </div>
           <div className="flex flex-col gap-1">
-            <Label htmlFor="signup-email">E-mail:</Label>
+            <Label htmlFor="signup-email">{t("E-mail:")}</Label>
             <Input
               id="signup-email"
               type="email"
@@ -97,7 +98,7 @@ export function SignupDialog() {
             />
           </div>
           <div className="flex flex-col gap-1">
-            <Label htmlFor="signup-password">Senha:</Label>
+            <Label htmlFor="signup-password">{t("Senha:")}</Label>
             <Input
               id="signup-password"
               type="password"
@@ -107,7 +108,7 @@ export function SignupDialog() {
             />
           </div>
           <div className="flex flex-col gap-1">
-            <Label htmlFor="signup-confirm-password">Confirmar senha:</Label>
+            <Label htmlFor="signup-confirm-password">{t("Confirmar senha:")}</Label>
             <Input
               id="signup-confirm-password"
               type="password"
@@ -117,11 +118,11 @@ export function SignupDialog() {
             />
           </div>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-600">{t(error)}</p>}
 
           <DialogFooter>
             <Button type="submit" className="w-full" disabled={isPending}>
-              {isPending ? 'Criando...' : 'Criar conta'}
+              {isPending ? 'Criando...' : t("Criar conta")}
             </Button>
           </DialogFooter>
         </form>

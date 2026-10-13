@@ -1,3 +1,4 @@
+import { getServerTranslation } from '@/lib/i18n/server'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { getTicketAccess } from '@/lib/tickets-server'
@@ -6,6 +7,8 @@ import { ReportDialog } from '@/components/report-dialog'
 import type { Ticket } from '@/lib/tickets'
 
 export default async function MyTicketsPage() {
+  const { t } = await getServerTranslation()
+
   const { supabase, user } = await getTicketAccess()
   if (!user) redirect('/login')
   const { data, error } = await supabase.from('reports')
@@ -14,10 +17,10 @@ export default async function MyTicketsPage() {
   return (
     <div className="container mx-auto max-w-7xl p-4 md:p-8">
       <header className="material-app-bar mb-6 flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-3xl font-medium">Meus tickets</h1>
-        <div className="flex items-center gap-4"><ReportDialog /><Link href="/" className="text-sm text-primary hover:underline">Voltar ao Dashboard</Link></div>
+        <h1 className="text-3xl font-medium">{t("Meus tickets")}</h1>
+        <div className="flex items-center gap-4"><ReportDialog /><Link href="/" className="text-sm text-primary hover:underline">{t("Voltar ao Dashboard")}</Link></div>
       </header>
-      {error ? <p role="alert" className="text-destructive">Não foi possível carregar seus tickets. Tente novamente.</p>
+      {error ? <p role="alert" className="text-destructive">{t("Não foi possível carregar seus tickets. Tente novamente.")}</p>
         : <TicketsPanel initialTickets={(data ?? []) as Ticket[]} />}
     </div>
   )

@@ -13,6 +13,11 @@ const nodeRequire = createRequire(import.meta.url)
 // Supabase or changing real financial data. UI primitives remain opaque elements.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const primitives = new Proxy({}, { get: (_, name) => String(name) })
+const portugueseTranslation = (text, values) => values ? text.replace(/\{(\w+)\}/g, (token, key) => values[key] === undefined ? token : String(values[key])) : text
+const englishDictionary = JSON.parse(fs.readFileSync(path.join(root, 'lib/i18n/en.json'), 'utf8'))
+const languageModule = () => load('lib/i18n/index.ts', { './en.json': englishDictionary })
+const englishTranslate = (text, values) => languageModule().translate(text, 'en', values)
+const englishLanguage = { useLanguage: () => ({ language: 'en', locale: 'en-US', t: englishTranslate }) }
 function load(file, mocks = {}, globals = {}) {
   const filename = path.join(root, file)
   const output = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
@@ -22,6 +27,9 @@ function load(file, mocks = {}, globals = {}) {
   const loadedModule = { exports: {} }
   const localRequire = (name) => {
     if (Object.hasOwn(mocks, name)) return mocks[name]
+    if (name === '@/lib/i18n') return load('lib/i18n/index.ts', { './en.json': JSON.parse(fs.readFileSync(path.join(root, 'lib/i18n/en.json'), 'utf8')) })
+    if (name === '@/components/language-provider') return { useLanguage: () => ({ language: 'pt-BR', locale: 'pt-BR', t: portugueseTranslation }) }
+    if (name === '@/lib/i18n/server') return { getServerTranslation: async () => ({ language: 'pt-BR', locale: 'pt-BR', t: portugueseTranslation }) }
     if (name === '@/lib/expense-duplicates') return load('lib/expense-duplicates.ts')
     if (name === '@/lib/budgeting') return load('lib/budgeting.ts')
     if (name === '@/lib/use-categories') return { CATEGORY_CHANGE_EVENT: 'expense-categories-changed', useCategories: () => ({ categories: [...load('lib/budgeting.ts').CATEGORIES], loading: false, error: '' }) }
@@ -1888,4 +1896,87 @@ test('real encrypted PDFs are opened locally, rendered without encryption and re
   plain.text('Compra', 20, 20)
   const plainFile = new File([plain.output('arraybuffer')], 'normal.pdf', { type: 'application/pdf' })
   assert.equal(await preparePdfForAI(plainFile), plainFile)
+})
+
+test('language selection persists, synchronizes tabs and works when storage is blocked', () => {
+  const target = new EventTarget(), data = new Map(), document = { documentElement: { lang: 'pt-BR' }, cookie: '' }
+  const localStorage = { getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value) }
+  const store = load('lib/i18n/index.ts', { './en.json': englishDictionary }, { window: target, document, localStorage, location: { protocol: 'https:' }, Event })
+  let calls = 0
+  const unsubscribe = store.subscribeLanguage(() => calls++)
+  store.selectLanguage('en')
+  assert.equal(store.getLanguageSnapshot(), 'en')
+  assert.equal(data.get(store.LANGUAGE_STORAGE_KEY), 'en')
+  assert.ok(document.cookie.includes('nocontrole-language=en;'))
+  assert.ok(document.cookie.includes('SameSite=Lax; Secure'))
+  assert.equal(calls, 1)
+  data.set(store.LANGUAGE_STORAGE_KEY, 'invalid')
+  const event = new Event('storage'); event.key = store.LANGUAGE_STORAGE_KEY; target.dispatchEvent(event)
+  assert.equal(store.getLanguageSnapshot(), 'pt-BR')
+  unsubscribe()
+  localStorage.setItem = () => { throw new Error('blocked') }
+  assert.doesNotThrow(() => store.selectLanguage('en'))
+  assert.equal(store.getLanguageSnapshot(), 'en')
+  assert.equal(calls, 2)
+})
+
+test('translation preserves supplied names, safely interpolates values and covers every literal UI key', () => {
+  const { translate } = languageModule()
+  assert.equal(translate(' Pendente ', 'en'), ' Pending ')
+  assert.equal(translate('Pago', 'pt-BR'), 'Pago')
+  assert.equal(translate('Meu quadro pessoal', 'en'), 'Meu quadro pessoal')
+  assert.equal(translate('Foto de {name}', 'en', { name: '<Ana> $& {other}' }), 'Photo of <Ana> $& {other}')
+  for (const [key, value] of Object.entries(englishDictionary)) {
+    assert.deepEqual((key.match(/\{\w+\}/g) ?? []).sort(), (value.match(/\{\w+\}/g) ?? []).sort(), key)
+  }
+  for (const dir of ['app', 'components']) for (const file of fs.readdirSync(path.join(root, dir), { recursive: true }).filter(file => file.endsWith('.tsx'))) {
+    const filename = path.join(root, dir, file), source = ts.createSourceFile(filename, fs.readFileSync(filename, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+    function visit(node) {
+      if (ts.isCallExpression(node) && node.expression.getText(source) === 't' && ts.isStringLiteral(node.arguments[0])) assert.ok(Object.hasOwn(englishDictionary, node.arguments[0].text.trim()) || Object.hasOwn(englishDictionary, node.arguments[0].text), `${file}: ${node.arguments[0].text}`)
+      ts.forEachChild(node, visit)
+    }
+    visit(source)
+  }
+})
+
+test('English expense UI keeps payment statuses and financial amounts unchanged in database writes', async () => {
+  const runtime = hooks(), db = database({ expenses: [success([expense]), success([{ id: expense.id }]), success([{ ...expense, status: 'Pago' }])] })
+  const { ExpenseTable } = load('components/expense-table.tsx', { react: runtime.react, '@/components/language-provider': englishLanguage, '@/lib/supabase/client': { createClient: () => db.client } })
+  runtime.render(ExpenseTable, { boardId: null, title: 'Painel principal', selected })
+  let tree = await runtime.flush()
+  find(tree, node => node.props.children === 'Main board')
+  find(tree, node => node.type === 'Badge' && Array.isArray(node.props.children) && node.props.children.includes('Pending'))
+  await find(tree, node => node.props.title === 'Marcar como pago' || node.props.title === 'Mark as paid').props.onClick()
+  tree = await runtime.flush()
+  const update = db.requests.find(request => request.calls.some(([method]) => method === 'update'))
+  assert.equal(update.calls.find(([method]) => method === 'update')[1].status, 'Pago')
+  find(tree, node => node.type === 'Badge' && Array.isArray(node.props.children) && node.props.children.includes('Paid'))
+})
+
+test('English PDF translates summaries and statuses while preserving user content and BRL', async () => {
+  const runtime = hooks(), tables = [], calls = []
+  const rows = [{ ...expense, nome: 'Mercado escrito pelo usuário', category: 'Minha categoria', comentario: 'Meu comentário', valor: 80, data_pagamento: '2026-11-06', status: 'Pendente' }]
+  const db = database({ expenses: [success(rows)], category_budgets: [success([{ month: '2026-11-01', category: 'Minha categoria', amount: 100 }])] })
+  class Pdf {
+    internal = { pageSize: { getHeight: () => 210 } }
+    setFontSize() {} text(text) { calls.push(text) } addPage() {} getNumberOfPages() { return 2 } setPage() {} save(name) { calls.push(name) }
+  }
+  const { ReportsView } = load('components/reports-view.tsx', { react: runtime.react, '@/components/language-provider': englishLanguage, '@/lib/supabase/client': { createClient: () => db.client }, jspdf: Pdf, 'jspdf-autotable': (_doc, options) => tables.push(options) })
+  let tree = runtime.render(ReportsView)
+  find(tree, node => node.props.id === 'report-from').props.onChange({ target: { value: '2026-11-01' } })
+  find(tree, node => node.props.id === 'report-to').props.onChange({ target: { value: '2026-11-10' } })
+  tree = await runtime.flush()
+  await find(tree, node => node.props.children === 'Search').props.onClick()
+  tree = await runtime.flush()
+  find(tree, node => node.props.onClick?.name === 'handleExportPdf').props.onClick()
+  assert.equal(tables[0].head[0][0], 'Name')
+  assert.equal(tables[0].body[0][0], rows[0].nome)
+  assert.equal(tables[0].body[0][2], rows[0].category)
+  assert.equal(tables[0].body[0][4], 'Pending')
+  assert.equal(tables[0].body[0][5], rows[0].comentario)
+  assert.ok(tables[0].body[0][3].includes('R$') && tables[0].body[0][3].includes('80.00'))
+  assert.ok(tables[1].body[0][4].includes('Available:'))
+  assert.ok(calls.includes('Expense report'))
+  assert.ok(calls.includes('NoControle | Page 1 of 2'))
+  assert.ok(calls.includes('report-2026-11-01-to-2026-11-10.pdf'))
 })

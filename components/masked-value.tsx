@@ -1,5 +1,7 @@
 'use client'
 
+import { useLanguage } from '@/components/language-provider'
+
 import { useValuesVisibility } from '@/context/visibility-context'
 
 export type MaskedValueProps = {
@@ -9,6 +11,7 @@ export type MaskedValueProps = {
 }
 
 export function MaskedValue({ value, className, mask = false }: MaskedValueProps) {
+  const { locale } = useLanguage()
   const { hidden } = useValuesVisibility()
 
   if (mask && hidden) {
@@ -17,7 +20,7 @@ export function MaskedValue({ value, className, mask = false }: MaskedValueProps
 
   return (
     <span className={className}>
-      {value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+      {value.toLocaleString(locale, { style: 'currency', currency: 'BRL' })}
     </span>
   )
 }

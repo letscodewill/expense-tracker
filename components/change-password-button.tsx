@@ -1,5 +1,6 @@
 'use client'
 
+import { useLanguage } from '@/components/language-provider'
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -16,6 +17,8 @@ import {
 import { KeyRound } from 'lucide-react'
 
 export function ChangePasswordButton() {
+  const { t } = useLanguage()
+
   const supabase = createClient()
   const [open, setOpen] = useState(false)
   const [currentPassword, setCurrentPassword] = useState('')
@@ -37,15 +40,15 @@ export function ChangePasswordButton() {
     setError('')
 
     if (!currentPassword) {
-      setError('Informe sua senha atual.')
+      setError("Informe sua senha atual.")
       return
     }
     if (newPassword.length < 6) {
-      setError('A nova senha precisa ter pelo menos 6 caracteres.')
+      setError("A nova senha precisa ter pelo menos 6 caracteres.")
       return
     }
     if (newPassword !== confirmPassword) {
-      setError('As senhas não coincidem.')
+      setError("As senhas não coincidem.")
       return
     }
 
@@ -54,7 +57,7 @@ export function ChangePasswordButton() {
     const { data: { user } } = await supabase.auth.getUser()
 
     if (!user?.email) {
-      setError('Não foi possível identificar seu e-mail.')
+      setError("Não foi possível identificar seu e-mail.")
       setLoading(false)
       return
     }
@@ -66,7 +69,7 @@ export function ChangePasswordButton() {
     })
 
     if (signInError) {
-      setError('Senha atual incorreta.')
+      setError("Senha atual incorreta.")
       setLoading(false)
       return
     }
@@ -79,7 +82,7 @@ export function ChangePasswordButton() {
 
     if (updateError) {
       console.error('Erro ao atualizar senha:', updateError)
-      setError('Não foi possível atualizar a senha. Tente novamente.')
+      setError("Não foi possível atualizar a senha. Tente novamente.")
       return
     }
 
@@ -97,28 +100,24 @@ export function ChangePasswordButton() {
       <DialogTrigger
         render={
           <Button variant="outline" size="sm">
-            <KeyRound className="h-4 w-4 mr-1" />
-            Redefinir senha
-          </Button>
+            <KeyRound className="h-4 w-4 mr-1" />{t("Redefinir senha ")}</Button>
         }
       />
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Redefinir senha</DialogTitle>
+          <DialogTitle>{t("Redefinir senha")}</DialogTitle>
         </DialogHeader>
 
         {success ? (
           <div className="space-y-4 py-4 text-center">
-            <p className="text-sm text-green-600">Senha atualizada com sucesso!</p>
-            <Button onClick={() => setOpen(false)} className="w-full">
-              Fechar
-            </Button>
+            <p className="text-sm text-green-600">{t("Senha atualizada com sucesso!")}</p>
+            <Button onClick={() => setOpen(false)} className="w-full">{t("Fechar")}</Button>
           </div>
         ) : (
           <>
             <div className="space-y-4 py-2">
               <div className="space-y-2">
-                <Label htmlFor="current-password">Senha atual</Label>
+                <Label htmlFor="current-password">{t("Senha atual")}</Label>
                 <Input
                   id="current-password"
                   type="password"
@@ -128,7 +127,7 @@ export function ChangePasswordButton() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="new-password">Nova senha</Label>
+                <Label htmlFor="new-password">{t("Nova senha")}</Label>
                 <Input
                   id="new-password"
                   type="password"
@@ -139,7 +138,7 @@ export function ChangePasswordButton() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="confirm-new-password">Confirmar nova senha</Label>
+                <Label htmlFor="confirm-new-password">{t("Confirmar nova senha")}</Label>
                 <Input
                   id="confirm-new-password"
                   type="password"
@@ -152,12 +151,12 @@ export function ChangePasswordButton() {
                   }}
                 />
               </div>
-              {error && <p className="text-sm text-red-600">{error}</p>}
+              {error && <p className="text-sm text-red-600">{t(error)}</p>}
             </div>
 
             <DialogFooter>
               <Button onClick={handleSubmit} disabled={loading} className="w-full">
-                {loading ? 'Salvando...' : 'Atualizar senha'}
+                {loading ? t("Salvando...") : t("Atualizar senha")}
               </Button>
             </DialogFooter>
           </>

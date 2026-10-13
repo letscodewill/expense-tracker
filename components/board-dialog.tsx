@@ -1,5 +1,6 @@
 'use client'
 
+import { useLanguage } from '@/components/language-provider'
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { safeGetUser } from '@/lib/supabase/safe-get-user'
@@ -31,7 +32,9 @@ export function BoardDialog({
   open: openProp,
   onOpenChange,
   hideTrigger,
-}: BoardDialogProps) {  const supabase = createClient()
+}: BoardDialogProps) {
+  const { t } = useLanguage()
+  const supabase = createClient()
   const [openState, setOpenState] = useState(false)
   const open = openProp ?? openState
   const setOpen = (value: boolean) => {
@@ -46,7 +49,7 @@ export function BoardDialog({
   async function handleCreate() {
     const trimmed = name.trim()
     if (!trimmed) {
-      setError('Informe um nome para o quadro.')
+      setError("Informe um nome para o quadro.")
       return
     }
 
@@ -65,7 +68,7 @@ export function BoardDialog({
     setLoading(false)
 
     if (insertError) {
-      setError('Não foi possível criar o quadro. Tente novamente.')
+      setError("Não foi possível criar o quadro. Tente novamente.")
       return
     }
 
@@ -89,26 +92,24 @@ export function BoardDialog({
   <DialogTrigger
     render={
       <Button variant="outline" size="sm">
-        <Plus className="h-4 w-4 mr-1" />
-        Novo quadro
-      </Button>
+        <Plus className="h-4 w-4 mr-1" />{t("Novo quadro ")}</Button>
     }
   />
 )}
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Novo quadro</DialogTitle>
+          <DialogTitle>{t("Novo quadro")}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-2 py-2">
-          <Label htmlFor="board-name">Nome do quadro</Label>
+          <Label htmlFor="board-name">{t("Nome do quadro")}</Label>
           <Input
             id="board-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Ex: Cartão Nubank"
+            placeholder={t("Ex: Cartão Nubank")}
           />
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-600">{t(error)}</p>}
         </div>
 
         <DialogFooter>

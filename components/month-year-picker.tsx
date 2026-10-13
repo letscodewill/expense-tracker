@@ -1,5 +1,7 @@
 'use client'
 
+import { useLanguage } from '@/components/language-provider'
+
 import {
   Select,
   SelectContent,
@@ -39,6 +41,7 @@ export type MonthYearPickerProps = {
 }
 
 export function MonthYearPicker({ value, onChange, yearRange }: MonthYearPickerProps) {
+  const { t } = useLanguage()
   const now = new Date()
   const fromYear = yearRange?.from ?? now.getFullYear() - 2
   const toYear = yearRange?.to ?? now.getFullYear() + 5
@@ -58,12 +61,12 @@ export function MonthYearPicker({ value, onChange, yearRange }: MonthYearPickerP
       }}
     >
       <SelectTrigger className="w-[7.5rem] sm:w-[9rem]">
-        <SelectValue>{MONTH_NAMES_PT[value.month]}</SelectValue>
+        <SelectValue>{t(MONTH_NAMES_PT[value.month])}</SelectValue>
       </SelectTrigger>
       <SelectContent>
         {MONTH_NAMES_PT.map((name, index) => (
           <SelectItem key={index} value={String(index)}>
-            {name}
+            {t(name)}
           </SelectItem>
         ))}
       </SelectContent>

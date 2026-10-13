@@ -1,5 +1,6 @@
 'use client'
 
+import { useLanguage } from '@/components/language-provider'
 import { useEffect, useState, useCallback, useTransition } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -7,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { AddExpenseDialog } from '@/components/add-expense-dialog'
-import { MONTH_NAMES_PT, type MonthYear } from '@/components/month-year-picker'
+import type { MonthYear } from '@/components/month-year-picker'
 import { Pencil, Check, X, ChevronsUpDown, Clock, CreditCard } from 'lucide-react'
 import { MaskedValue } from '@/components/masked-value'
 
@@ -81,6 +82,8 @@ export function ExpenseTable({
   refreshKey,
   defaultOpen = true,
 }: ExpenseTableProps) {
+  const { t, locale } = useLanguage()
+
   const supabase = createClient()
   const [isOpen, setIsOpen] = useState(defaultOpen)
   const [expenses, setExpenses] = useState<Expense[]>([])
@@ -148,7 +151,7 @@ export function ExpenseTable({
 
   const handleDeleteExpense = useCallback(
     async (expense: Expense) => {
-      const confirmed = window.confirm('Excluir esta despesa? Essa ação não pode ser desfeita.')
+      const confirmed = window.confirm(t("Excluir esta despesa? Essa ação não pode ser desfeita."))
       if (!confirmed) return
 
       const { error } = await supabase.from('expenses').delete().eq('id', expense.id)
@@ -156,14 +159,14 @@ export function ExpenseTable({
         handleChanged()
       }
     },
-    [supabase, handleChanged]
+    [supabase, handleChanged, t]
   )
 
   const handleDeleteRecurringFromHere = useCallback(
     async (expense: Expense) => {
       if (!expense.recurring_group_id || expense.recurring_number == null) return
       const confirmed = window.confirm(
-        'Excluir esta e as próximas ocorrências desta despesa recorrente? Essa ação não pode ser desfeita.'
+        t("Excluir esta e as próximas ocorrências desta despesa recorrente? Essa ação não pode ser desfeita.")
       )
       if (!confirmed) return
 
@@ -177,16 +180,14 @@ export function ExpenseTable({
         handleChanged()
       }
     },
-    [supabase, handleChanged]
+    [supabase, handleChanged, t]
   )
 
   const handleDeleteEntireSeries = useCallback(
     async (expense: Expense) => {
       if (!expense.installment_group_id) return
       const confirmed = window.confirm(
-        'Excluir TODAS as ' +
-        expense.installment_total +
-        ' parcelas desta compra? Essa ação não pode ser desfeita.'
+        t('Excluir TODAS as {count} parcelas desta compra? Essa ação não pode ser desfeita.', { count: expense.installment_total ?? 0 })
       )
       if (!confirmed) return
 
@@ -198,7 +199,7 @@ export function ExpenseTable({
         handleChanged()
       }
     },
-    [supabase, handleChanged]
+    [supabase, handleChanged, t]
   )
 
   const handleTogglePaid = useCallback(
@@ -258,7 +259,7 @@ export function ExpenseTable({
     (sum, e) => sum + (e.status === 'Pendente' ? e.valor : 0),
     0
   )
-  const selectedLabel = MONTH_NAMES_PT[selected.month] + ' de ' + selected.year
+  const selectedLabel = new Date(selected.year, selected.month, 1).toLocaleDateString(locale, { month: 'long', year: 'numeric' })
 
   return (
     <div className="material-board space-y-3 rounded-2xl border p-3 sm:p-4">
@@ -270,10 +271,10 @@ export function ExpenseTable({
             className="size-8 shrink-0"
             onClick={() => setIsOpen((open) => !open)}
             aria-expanded={isOpen}
-            aria-label="Alternar exibição do quadro"
+            aria-label={t("Alternar exibição do quadro")}
           >
             <ChevronsUpDown className="h-4 w-4" />
-            <span className="sr-only">Alternar exibição do quadro</span>
+            <span className="sr-only">{t("Alternar exibição do quadro")}</span>
           </Button>
 
           {boardId && renamingBoard ? (
@@ -294,13 +295,13 @@ export function ExpenseTable({
                 }}
                 autoFocus
                 className="h-9 max-w-xs text-lg font-semibold"
-                placeholder="Nome do quadro"
+                placeholder={t("Nome do quadro")}
               />
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => void handleRenameBoard()}
-                aria-label="Salvar nome"
+                aria-label={t("Salvar nome")}
               >
                 <Check className="h-4 w-4" />
               </Button>
@@ -312,14 +313,14 @@ export function ExpenseTable({
                   setBoardNameDraft(title)
                   setRenamingBoardError('')
                 }}
-                aria-label="Cancelar"
+                aria-label={t("Cancelar")}
               >
                 <X className="h-4 w-4" />
               </Button>
             </div>
           ) : (
             <>
-              <h2 className="text-lg font-medium tracking-tight truncate">{title}</h2>
+              <h2 className="text-lg font-medium tracking-tight truncate">{boardId ? title : t(title)}</h2>
               {boardId && (
                 <Button
                   variant="ghost"
@@ -329,7 +330,7 @@ export function ExpenseTable({
                     setRenamingBoardError('')
                     setRenamingBoard(true)
                   }}
-                  aria-label="Renomear quadro"
+                  aria-label={t("Renomear quadro")}
                 >
                   <Pencil className="h-4 w-4" />
                 </Button>
@@ -340,57 +341,52 @@ export function ExpenseTable({
 
         <div className="flex flex-wrap items-center gap-2">
           {renamingBoardError && (
-            <p className="text-sm text-red-600">{renamingBoardError}</p>
+            <p className="text-sm text-red-600">{t(renamingBoardError)}</p>
           )}
           {onDeleteBoard && (
-            <Button variant="destructive" size="sm" onClick={onDeleteBoard}>
-              Excluir quadro
-            </Button>
+            <Button variant="destructive" size="sm" onClick={onDeleteBoard}>{t("Excluir quadro")}</Button>
           )}
         </div>
       </div>
 
-      <div className="flex flex-wrap justify-between gap-x-8 gap-y-2 rounded-xl bg-muted/50 px-3 py-3" aria-label="Resumo das despesas">
-        {loading || isPending ? <p className="text-sm text-muted-foreground">Carregando totais...</p>
-          : fetchError ? <p className="text-sm text-destructive">Totais indisponíveis. Expanda o quadro para tentar novamente.</p>
+      <div className="flex flex-wrap justify-between gap-x-8 gap-y-2 rounded-xl bg-muted/50 px-3 py-3" aria-label={t("Resumo das despesas")}>
+        {loading || isPending ? <p className="text-sm text-muted-foreground">{t("Carregando totais...")}</p>
+          : fetchError ? <p className="text-sm text-destructive">{t("Totais indisponíveis. Expanda o quadro para tentar novamente.")}</p>
           : <>
-            <div><p className="text-xs text-muted-foreground">Total</p><p className="text-lg font-medium tabular-nums sm:text-xl"><MaskedValue value={total} /></p></div>
-            <div><p className="text-xs text-muted-foreground">Restante a pagar</p><p className="text-lg font-medium tabular-nums text-primary sm:text-xl"><MaskedValue value={pendente} /></p></div>
+            <div><p className="text-xs text-muted-foreground">{t("Total")}</p><p className="text-lg font-medium tabular-nums sm:text-xl"><MaskedValue value={total} /></p></div>
+            <div><p className="text-xs text-muted-foreground">{t("Restante a pagar")}</p><p className="text-lg font-medium tabular-nums text-primary sm:text-xl"><MaskedValue value={pendente} /></p></div>
           </>}
       </div>
 
-      {paymentError && <p role="alert" className="text-sm text-destructive">{paymentError}</p>}
+      {paymentError && <p role="alert" className="text-sm text-destructive">{t(paymentError)}</p>}
       {isOpen && <div className="space-y-4">
         <div className="material-table expense-list rounded-xl border">
           {loading || isPending ? (
-            <p className="text-sm text-muted-foreground p-4">Carregando...</p>
+            <p className="text-sm text-muted-foreground p-4">{t("Carregando...")}</p>
           ) : fetchError ? (
             <div className="p-4 text-center space-y-2">
-              <p className="text-sm text-red-600">Não foi possível carregar as despesas.</p>
+              <p className="text-sm text-red-600">{t("Não foi possível carregar as despesas.")}</p>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => fetchExpenses(selected.month, selected.year)}
-              >
-                Tentar novamente
-              </Button>
+              >{t("Tentar novamente")}</Button>
             </div>
           ) : expenses.length === 0 ? (
-            <p className="text-sm text-muted-foreground p-4">
-              Nenhuma despesa em {selectedLabel}.
+            <p className="text-sm text-muted-foreground p-4">{t("Nenhuma despesa em ")}{selectedLabel}.
             </p>
           ) : (
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader className="hidden sm:table-header-group">
                   <TableRow>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>Data</TableHead>
-                    <TableHead>Valor</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Comentário</TableHead>
-                    <TableHead>Categoria</TableHead>
-                    <TableHead className="w-[180px]">Ações</TableHead>
+                    <TableHead>{t("Nome")}</TableHead>
+                    <TableHead>{t("Data")}</TableHead>
+                    <TableHead>{t("Valor")}</TableHead>
+                    <TableHead>{t("Status")}</TableHead>
+                    <TableHead>{t("Comentário")}</TableHead>
+                    <TableHead>{t("Categoria")}</TableHead>
+                    <TableHead className="w-[180px]">{t("Ações")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -407,14 +403,12 @@ export function ExpenseTable({
                               </Badge>
                             )}
                             {isRecurringRow(expense) && (
-                              <Badge variant="secondary" className="font-normal">
-                                Recorrente
-                              </Badge>
+                              <Badge variant="secondary" className="font-normal">{t("Recorrente")}</Badge>
                             )}
                           </span>
                         </TableCell>
                         <TableCell className="expense-date text-xs text-muted-foreground sm:table-cell">
-                          <span className="sr-only sm:hidden">Pagamento: </span>{parseISODate(expense.data_pagamento).toLocaleDateString('pt-BR', {
+                          <span className="sr-only sm:hidden">{t("Pagamento:")}</span>{parseISODate(expense.data_pagamento).toLocaleDateString(locale, {
                             timeZone: 'UTC',
                           })}
                         </TableCell>
@@ -423,10 +417,10 @@ export function ExpenseTable({
                         </TableCell>
                         {/* <div className="basis-full h-0 sm:hidden" /> */}
                         <TableCell className="expense-status sm:table-cell">
-                          <Badge className={statusColor[expense.status]}>{expense.status === 'Pago' ? <Check className="mr-1 size-3" aria-hidden="true" /> : expense.status === 'VR/VA' ? <CreditCard className="mr-1 size-3" aria-hidden="true" /> : <Clock className="mr-1 size-3" aria-hidden="true" />}{expense.status}</Badge>
+                          <Badge className={statusColor[expense.status]}>{expense.status === 'Pago' ? <Check className="mr-1 size-3" aria-hidden="true" /> : expense.status === 'VR/VA' ? <CreditCard className="mr-1 size-3" aria-hidden="true" /> : <Clock className="mr-1 size-3" aria-hidden="true" />}{t(expense.status)}</Badge>
                         </TableCell>
                         <TableCell className="expense-comment col-span-2 break-words text-xs text-muted-foreground sm:table-cell">{expense.comentario}</TableCell>
-                        <TableCell className="expense-category text-right text-xs text-muted-foreground sm:text-left">{expense.category ?? 'Sem categoria'}</TableCell>
+                        <TableCell className="expense-category text-right text-xs text-muted-foreground sm:text-left">{!expense.category || expense.category === 'Sem categoria' ? t('Sem categoria') : expense.category}</TableCell>
                         <TableCell className="expense-actions col-span-2 sm:table-cell">
                           <div className="flex flex-col gap-1 md:opacity-70 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity">
                             <div className="flex flex-wrap gap-1">
@@ -436,21 +430,17 @@ export function ExpenseTable({
                                 className={expense.status === 'Pago' ? 'text-yellow-600 hover:text-yellow-700' : 'text-green-600 hover:text-green-700'}
                                 onClick={() => handleTogglePaid(expense)}
                                 disabled={payingExpenseId !== null}
-                                title={expense.status === 'Pago' ? 'Marcar como pendente' : 'Marcar como pago'}
+                                title={expense.status === 'Pago' ? t("Marcar como pendente") : t("Marcar como pago")}
                               >
                                 {expense.status === 'Pago' ? 'Desfazer' : 'Pagar'}
                               </Button>
-                              <Button variant="ghost" size="sm" onClick={() => setEditingExpense(expense)}>
-                                Editar
-                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => setEditingExpense(expense)}>{t("Editar")}</Button>
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 className="text-red-600 hover:text-red-700"
                                 onClick={() => handleDeleteExpense(expense)}
-                              >
-                                Excluir
-                              </Button>
+                              >{t("Excluir")}</Button>
                             </div>
                             {isInstallmentRow(expense) && (
                               <Button
@@ -458,9 +448,7 @@ export function ExpenseTable({
                                 size="sm"
                                 className="text-red-600 hover:text-red-700 justify-start px-2"
                                 onClick={() => handleDeleteEntireSeries(expense)}
-                              >
-                                Excluir série completa
-                              </Button>
+                              >{t("Excluir série completa")}</Button>
                             )}
                             {isRecurringRow(expense) && (
                               <Button
@@ -468,9 +456,7 @@ export function ExpenseTable({
                                 size="sm"
                                 className="text-red-600 hover:text-red-700 justify-start px-2"
                                 onClick={() => handleDeleteRecurringFromHere(expense)}
-                              >
-                                Excluir esta e as próximas
-                              </Button>
+                              >{t("Excluir esta e as próximas")}</Button>
                             )}
                           </div>
                         </TableCell>

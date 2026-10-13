@@ -1,10 +1,13 @@
 'use client'
 
+import { useLanguage } from '@/components/language-provider'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 export default function UpdatePasswordPage() {
+  const { t } = useLanguage()
+
   const router = useRouter()
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -32,12 +35,12 @@ export default function UpdatePasswordPage() {
 
     if (password.length < 6) {
       setMessageKind('error')
-      setMessage('A senha deve ter no mínimo 6 caracteres.')
+      setMessage("A senha deve ter no mínimo 6 caracteres.")
       return
     }
     if (password !== confirm) {
       setMessageKind('error')
-      setMessage('As senhas não coincidem.')
+      setMessage("As senhas não coincidem.")
       return
     }
 
@@ -50,12 +53,12 @@ export default function UpdatePasswordPage() {
     setLoading(false)
 
     if (error) {
-      setMessage('Não foi possível atualizar a senha: ' + (error.message || 'erro desconhecido'))
+      setMessage('Não foi possível atualizar a senha: ' + (error.message || "erro desconhecido"))
       return
     }
 
     setMessageKind('success')
-    setMessage('Senha atualizada com sucesso! Redirecionando...')
+    setMessage("Senha atualizada com sucesso! Redirecionando...")
     // Mantém o usuário logado (Supabase já renovou a sessão com a nova senha).
     router.push('/')
     router.refresh()
@@ -64,7 +67,7 @@ export default function UpdatePasswordPage() {
   if (!ready) {
     return (
       <div className="flex justify-center items-center h-screen">
-        <p className="text-sm text-muted-foreground">Carregando...</p>
+        <p className="text-sm text-muted-foreground">{t("Carregando...")}</p>
       </div>
     )
   }
@@ -72,16 +75,12 @@ export default function UpdatePasswordPage() {
   if (!hasSession) {
     return (
 <div className="flex justify-center items-center min-h-screen px-4">
-  <div className="relative p-8 border rounded-lg shadow-md w-full max-w-sm space-y-4 overflow-hidden">          <h2 className="text-2xl font-bold text-center">Link inválido</h2>
-          <p className="text-center text-sm text-muted-foreground">
-            Este link de recuperação é inválido ou expirou. Solicite um novo.
-          </p>
+  <div className="relative p-8 border rounded-lg shadow-md w-full max-w-sm space-y-4 overflow-hidden">          <h2 className="text-2xl font-bold text-center">{t("Link inválido")}</h2>
+          <p className="text-center text-sm text-muted-foreground">{t("Este link de recuperação é inválido ou expirou. Solicite um novo.")}</p>
           <button
             onClick={() => router.push('/login?mode=recover')}
             className="bg-blue-500 text-white p-2 rounded w-full"
-          >
-            Solicitar novo link
-          </button>
+          >{t("Solicitar novo link")}</button>
         </div>
       </div>
     )
@@ -89,9 +88,9 @@ export default function UpdatePasswordPage() {
 
   return (
 <div className="flex justify-center items-center min-h-screen px-4">
-  <div className="relative p-8 border rounded-lg shadow-md w-full max-w-sm space-y-4 overflow-hidden">        <h2 className="text-2xl font-bold text-center">Redefinir sua senha</h2>
+  <div className="relative p-8 border rounded-lg shadow-md w-full max-w-sm space-y-4 overflow-hidden">        <h2 className="text-2xl font-bold text-center">{t("Redefinir sua senha")}</h2>
         <div className="flex flex-col">
-          <label htmlFor="password">Nova senha:</label>
+          <label htmlFor="password">{t("Nova senha:")}</label>
           <input
             id="password"
             type="password"
@@ -104,7 +103,7 @@ export default function UpdatePasswordPage() {
           />
         </div>
         <div className="flex flex-col">
-          <label htmlFor="confirm">Confirmar nova senha:</label>
+          <label htmlFor="confirm">{t("Confirmar nova senha:")}</label>
           <input
             id="confirm"
             type="password"
@@ -123,7 +122,7 @@ export default function UpdatePasswordPage() {
           disabled={loading}
           className="bg-blue-500 text-white p-2 rounded w-full disabled:opacity-50"
         >
-          {loading ? 'Salvando...' : 'Atualizar senha'}
+          {loading ? t("Salvando...") : t("Atualizar senha")}
         </button>
         {message && (
           <p
@@ -132,7 +131,7 @@ export default function UpdatePasswordPage() {
               (messageKind === 'success' ? 'text-green-600' : 'text-red-600')
             }
           >
-            {message}
+            {t(message)}
           </p>
         )}
       </div>

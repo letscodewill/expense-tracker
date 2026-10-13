@@ -1,6 +1,6 @@
 /* Public assets only. Financial pages, API responses and sessions are never cached. */
-const CACHE = 'nocontrole-public-v2'
-const ASSETS = ['/offline.html', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/icon-maskable-512.png', '/icons/apple-touch-icon.png']
+const CACHE = 'nocontrole-public-v3'
+const ASSETS = ['/offline.html', '/offline-language.js', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/icon-maskable-512.png', '/icons/apple-touch-icon.png']
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting()))
 })

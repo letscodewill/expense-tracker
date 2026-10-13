@@ -25,7 +25,7 @@ test('PWA caches only public assets and does not intercept financial APIs, uploa
   const sw = worker()
   await sw.lifecycle('install')
   assert.ok(sw.writes.includes('/offline.html'))
-  assert.ok(sw.writes.every(path => path === '/offline.html' || path.startsWith('/icons/')))
+  assert.ok(sw.writes.every(path => path === '/offline.html' || path === '/offline-language.js' || path.startsWith('/icons/')))
   for (const path of ['/api/invoices/analyze', '/api/tickets', '/auth/callback?code=private', '/planning?_rsc=private', '/_next/static/chunk.js']) {
     assert.equal(await sw.request(path), null)
     assert.equal(await sw.request(path, { method: 'POST' }), null)
@@ -38,7 +38,7 @@ test('PWA offline navigation uses a public fallback and only its own obsolete ca
   const sw = worker({ offline: true })
   assert.equal(await (await sw.request('/planning', { mode: 'navigate' })).text(), 'Sem conexão')
   await sw.lifecycle('activate')
-  assert.deepEqual(sw.deleted, ['nocontrole-public-v1'])
+  assert.deepEqual(sw.deleted, ['nocontrole-public-v1', 'nocontrole-public-v2'])
   assert.equal(sw.claimed(), true)
 })
 test('PWA PNG icons have installation dimensions and favicon uses the app icon', () => {

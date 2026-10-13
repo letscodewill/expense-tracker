@@ -1,5 +1,6 @@
 'use client'
 
+import { useLanguage } from '@/components/language-provider'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 
@@ -27,6 +28,8 @@ function GoogleIcon() {
 }
 
 export function GoogleSignInButton() {
+  const { t } = useLanguage()
+
   const supabase = createClient()
 
   async function handleClick() {
@@ -45,12 +48,10 @@ return (
         variant="outline"
         className="w-full gap-3"
         onClick={handleClick}
-        aria-label="Entrar com Google"
-        title="Entrar com Google"
+        aria-label={t("Entrar com Google")}
+        title={t("Entrar com Google")}
       >
-        <GoogleIcon />
-        Continuar com Google
-      </Button>
+        <GoogleIcon />{t("Continuar com Google ")}</Button>
     </div>
   )
 }

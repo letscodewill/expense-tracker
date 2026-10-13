@@ -1,3 +1,4 @@
+import { getServerTranslation } from '@/lib/i18n/server'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
@@ -5,6 +6,8 @@ import { isMasterIdentity } from '@/lib/tickets'
 import { AdministratorsPanel, type Administrator } from '@/components/administrators-panel'
 
 export default async function AdministratorsPage() {
+  const { t } = await getServerTranslation()
+
   const supabase = await createClient()
   const { data, error } = await supabase.auth.getUser()
   if (error || !data.user) redirect('/login')
@@ -13,10 +16,10 @@ export default async function AdministratorsPage() {
   const result = !owner.error && owner.data === true ? await supabase.rpc('list_ticket_administrators') : null
   return <div className="container mx-auto max-w-4xl p-4 md:p-8">
     <header className="material-app-bar mb-6 flex items-center justify-between gap-4">
-      <h1 className="text-3xl font-medium">Administradores</h1>
-      <Link href="/" className="text-primary hover:underline">Voltar ao Dashboard</Link>
+      <h1 className="text-3xl font-medium">{t("Administradores")}</h1>
+      <Link href="/" className="text-primary hover:underline">{t("Voltar ao Dashboard")}</Link>
     </header>
-    {!result || result.error ? <p role="alert">Não foi possível carregar os administradores. Aplique a migração de administradores no Supabase e tente novamente.</p>
+    {!result || result.error ? <p role="alert">{t("Não foi possível carregar os administradores. Aplique a migração de administradores no Supabase e tente novamente.")}</p>
       : <AdministratorsPanel administrators={(result.data ?? []) as Administrator[]} />}
   </div>
 }

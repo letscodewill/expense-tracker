@@ -1,6 +1,10 @@
+'use client'
+
+import { useLanguage } from '@/components/language-provider'
 import Link from 'next/link';
 
 export default function Footer() {
+  const { t } = useLanguage()
   return (
     <footer className="border-t border-border bg-transparent text-muted-foreground">
       <div className="mx-auto max-w-7xl px-2 py-6 sm:px-4 lg:px-6">
@@ -92,7 +96,7 @@ export default function Footer() {
         {/* Bottom Bar: Copyright & Socials */}
         <div className=" flex flex-col sm:flex-row items-center justify-between gap-4">
           <p className="text-xs">
-            &copy; {new Date().getFullYear()} WSLima. All rights reserved. Building exceptional digital experiences.
+            &copy; {new Date().getFullYear()} {t('WSLima. Todos os direitos reservados. Criando experiências digitais excepcionais.')}
           </p>
           <div className="flex space-x-6 text-sm">
             <Link href="https://instagram.com/i.m.willian" target="_blank" rel="noreferrer" className="hover:text-zinc-900 dark:hover:text-white">

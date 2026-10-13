@@ -1,3 +1,4 @@
+import { getServerTranslation } from '@/lib/i18n/server'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { ExpensesDashboard } from '@/components/expenses-dashboard'
@@ -11,8 +12,11 @@ import { avatarPath, AVATAR_BUCKET, googlePhoto } from '@/lib/profile-photo'
 import { ProfilePhoto } from '@/components/profile-photo'
 import { ThemeSelector } from '@/components/theme-selector'
 import { AdminTicketNotifications } from '@/components/admin-ticket-notifications'
+import { LanguageSelector } from '@/components/language-selector'
 
 export default async function HomePage() {
+  const { t } = await getServerTranslation()
+
   const supabase = await createClient()
 
   let user = null
@@ -46,7 +50,7 @@ export default async function HomePage() {
       <header className="mb-4 flex min-w-0 items-center justify-between gap-3 border-b border-border/70 pb-4">
         <div className="min-w-0">
           <p className="text-xs font-semibold tracking-wide text-primary">NoControle</p>
-          <h1 className="mt-1 text-xl font-medium tracking-tight sm:text-2xl">Despesas</h1>
+          <h1 className="mt-1 text-xl font-medium tracking-tight sm:text-2xl">{t("Despesas")}</h1>
         </div>
         <div className="ml-auto flex min-w-0 items-center gap-3">
           <ProfilePhoto name={displayName} photo={profilePhoto} custom={!!customPhoto} hasGooglePhoto={!!providerPhoto} />
@@ -55,17 +59,16 @@ export default async function HomePage() {
       </header>
       <main>
         <ExpensesDashboard notificationActions={ticketAdmin ? <AdminTicketNotifications /> : undefined} navigationActions={<>
+          <LanguageSelector />
           <ThemeSelector />
           <ChangePasswordButton />
           <ReportDialog />
-          <Link href="/tickets" className="rounded-full border border-border px-4 py-2 text-sm font-medium text-primary hover:bg-accent">Meus tickets</Link>
-          {ticketAdmin && <Link href="/admin/tickets" className="rounded-full bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-accent">Painel de tickets</Link>}
-          {isMasterIdentity(user) && <Link href="/admin/administrators" className="rounded-full border border-border px-4 py-2 text-sm font-medium text-primary hover:bg-accent">Administradores</Link>}
-          {isMasterIdentity(user) && <Link href="/admin" className="rounded-full border border-border px-4 py-2 text-sm font-medium text-primary hover:bg-accent">Painel administrativo</Link>}
+          <Link href="/tickets" className="rounded-full border border-border px-4 py-2 text-sm font-medium text-primary hover:bg-accent">{t("Meus tickets")}</Link>
+          {ticketAdmin && <Link href="/admin/tickets" className="rounded-full bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-accent">{t("Painel de tickets")}</Link>}
+          {isMasterIdentity(user) && <Link href="/admin/administrators" className="rounded-full border border-border px-4 py-2 text-sm font-medium text-primary hover:bg-accent">{t("Administradores")}</Link>}
+          {isMasterIdentity(user) && <Link href="/admin" className="rounded-full border border-border px-4 py-2 text-sm font-medium text-primary hover:bg-accent">{t("Painel administrativo")}</Link>}
           <form>
-            <Button formAction={signOut} type="submit" variant="outline" size="sm">
-              Sair
-            </Button>
+            <Button formAction={signOut} type="submit" variant="outline" size="sm">{t("Sair")}</Button>
           </form>
         </>} />
       </main>

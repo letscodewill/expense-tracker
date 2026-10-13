@@ -1,5 +1,6 @@
 'use client'
 
+import { useLanguage } from '@/components/language-provider'
 import { useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table'
@@ -63,6 +64,8 @@ function firstDayOfMonthISO(): string {
 }
 
 export function ReportsView() {
+  const { t, locale } = useLanguage()
+
     const supabase = createClient()
 
     const [from, setFrom] = useState(firstDayOfMonthISO())
@@ -90,11 +93,11 @@ export function ReportsView() {
     const handleSearch = useCallback(async () => {
         if (searching.current) return
         if (!from || !to) {
-            setError('Selecione as duas datas do período.')
+            setError("Selecione as duas datas do período.")
             return
         }
         if (from > to) {
-            setError('A data inicial precisa ser anterior à data final.')
+            setError("A data inicial precisa ser anterior à data final.")
             return
         }
 
@@ -108,7 +111,7 @@ export function ReportsView() {
             const end = parseISODate(`${to.slice(0, 7)}-01`)
             end.setUTCMonth(end.getUTCMonth() + 1)
             const { data: auth, error: authError } = await supabase.auth.getUser()
-            if (authError || !auth.user) throw new Error('Sessão indisponível')
+            if (authError || !auth.user) throw new Error("Sessão indisponível")
             const rows: Expense[] = []
             const limits: { month: string; category: string; amount: number }[] = []
             for (let offset = 0; ; offset += 1000) {
@@ -137,7 +140,7 @@ export function ReportsView() {
             setPeriod({ from, to })
             setHasSearched(true)
         } catch {
-            setError('Não foi possível carregar o relatório completo. Tente novamente.')
+            setError("Não foi possível carregar o relatório completo. Tente novamente.")
         } finally {
             searching.current = false
             setLoading(false)
@@ -163,7 +166,7 @@ export function ReportsView() {
     const totalPago = sumFiltered('Pago')
     const totalPendente = sumFiltered('Pendente')
     const totalBenefits = sumFiltered('VR/VA')
-    const money = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+    const money = (value: number) => value.toLocaleString(locale, { style: 'currency', currency: 'BRL' })
     const summary: string[][] = []
     if (period.from) {
         const cursor = parseISODate(`${period.from.slice(0, 7)}-01`)
@@ -182,8 +185,8 @@ export function ReportsView() {
                 const spent = sum(month), before = sum(previousMonth)
                 const budget = budgets.find(item => item.month.startsWith(month) && item.category === category)
                 const remaining = budget ? Number(budget.amount) - spent : null
-                summary.push([`${month.slice(5)}/${month.slice(0, 4)}`, category, money(spent), budget ? money(Number(budget.amount)) : 'Não definido',
-                    remaining === null ? '—' : `${remaining < 0 ? 'Excedido: ' : 'Disponível: '}${money(Math.abs(remaining))}`, money(before), money(spent - before)])
+                summary.push([`${month.slice(5)}/${month.slice(0, 4)}`, category === 'Sem categoria' ? t(category) : category, money(spent), budget ? money(Number(budget.amount)) : t('Não definido'),
+                    remaining === null ? '—' : `${remaining < 0 ? t('Excedido: ') : t('Disponível: ')}${money(Math.abs(remaining))}`, money(before), money(spent - before)])
             }
             cursor.setUTCMonth(cursor.getUTCMonth() + 1)
         }
@@ -192,14 +195,14 @@ export function ReportsView() {
     function handleExportPdf() {
         const doc = new jsPDF({ orientation: 'landscape' })
         doc.setFontSize(16)
-        doc.text('Relatório de Despesas', 14, 18)
+        doc.text(t("Relatório de Despesas"), 14, 18)
         doc.setFontSize(10)
-        doc.text(`Período: ${parseISODate(period.from).toLocaleDateString('pt-BR', { timeZone: 'UTC' })} até ${parseISODate(period.to).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}`, 14, 25)
+        doc.text(t('Período: {from} até {to}', { from: parseISODate(period.from).toLocaleDateString(locale, { timeZone: 'UTC' }), to: parseISODate(period.to).toLocaleDateString(locale, { timeZone: 'UTC' }) }), 14, 25)
         autoTable(doc, {
             startY: 32,
-            head: [['Nome', 'Data', 'Categoria', 'Valor', 'Status', 'Comentário']],
-            body: filtered.map(e => [e.nome, parseISODate(e.data_pagamento).toLocaleDateString('pt-BR', { timeZone: 'UTC' }), e.category || 'Sem categoria', money(e.valor), e.status, e.comentario ?? '']),
-            foot: [['Total do período', '', '', money(total), '', ''], ['Total pago', '', '', money(totalPago), '', ''], ['VR/VA', '', '', money(totalBenefits), '', ''], ['Total pendente', '', '', money(totalPendente), '', '']],
+            head: [[t("Nome"), t("Data"), t("Categoria"), t("Valor"), t("Status"), t("Comentário")]],
+            body: filtered.map(e => [e.nome, parseISODate(e.data_pagamento).toLocaleDateString(locale, { timeZone: 'UTC' }), !e.category || e.category === 'Sem categoria' ? t('Sem categoria') : e.category, money(e.valor), t(e.status), e.comentario ?? '']),
+            foot: [[t("Total do período"), '', '', money(total), '', ''], [t("Total pago"), '', '', money(totalPago), '', ''], [t("VR/VA"), '', '', money(totalBenefits), '', ''], [t("Total pendente"), '', '', money(totalPendente), '', '']],
             showFoot: 'lastPage',
             rowPageBreak: 'avoid',
             styles: { fontSize: 9, overflow: 'linebreak' },
@@ -209,13 +212,13 @@ export function ReportsView() {
         })
         doc.addPage()
         doc.setFontSize(16)
-        doc.text('Orçamento e comparação mensal', 14, 18)
+        doc.text(t("Orçamento e comparação mensal"), 14, 18)
         doc.setFontSize(9)
-        doc.text('Meses completos; inclui Pago, Pendente e VR/VA. Independente dos filtros da lista. Variação em relação ao mês anterior.', 14, 25)
+        doc.text(t("Meses completos; inclui Pago, Pendente e VR/VA. Independente dos filtros da lista. Variação em relação ao mês anterior."), 14, 25)
         autoTable(doc, {
             startY: 32,
-            head: [['Mês', 'Categoria', 'Despesas', 'Limite', 'Saldo do orçamento', 'Mês anterior', 'Variação']],
-            body: summary.length ? summary : [['', 'Nenhum dado mensal encontrado', '', '', '', '', '']],
+            head: [[t("Mês"), t("Categoria"), t("Despesas"), t("Limite"), t("Saldo do orçamento"), t("Mês anterior"), t("Variação")]],
+            body: summary.length ? summary : [['', t("Nenhum dado mensal encontrado"), '', '', '', '', '']],
             rowPageBreak: 'avoid',
             styles: { fontSize: 9, overflow: 'linebreak' },
             headStyles: { fillColor: [103, 80, 164] },
@@ -225,9 +228,9 @@ export function ReportsView() {
         for (let page = 1; page <= pages; page++) {
             doc.setPage(page)
             doc.setFontSize(8)
-            doc.text(`NoControle | Página ${page} de ${pages}`, 14, doc.internal.pageSize.getHeight() - 8)
+            doc.text(t('NoControle | Página {page} de {pages}', { page, pages }), 14, doc.internal.pageSize.getHeight() - 8)
         }
-        doc.save(`relatorio-${period.from}-a-${period.to}.pdf`)
+        doc.save(locale === 'en-US' ? `report-${period.from}-to-${period.to}.pdf` : `relatorio-${period.from}-a-${period.to}.pdf`)
     }
 
     return (
@@ -235,7 +238,7 @@ export function ReportsView() {
             <div className="rounded-xl border p-4 space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                        <Label htmlFor="report-from">De</Label>
+                        <Label htmlFor="report-from">{t("De")}</Label>
                         <Input
                             id="report-from"
                             type="date"
@@ -244,7 +247,7 @@ export function ReportsView() {
                         />
                     </div>
                     <div className="space-y-2">
-                        <Label htmlFor="report-to">Até</Label>
+                        <Label htmlFor="report-to">{t("Até")}</Label>
                         <Input
                             id="report-to"
                             type="date"
@@ -255,75 +258,73 @@ export function ReportsView() {
                 </div>
 
                 <div className="space-y-2">
-                    <Label htmlFor="report-search">Buscar por nome</Label>
+                    <Label htmlFor="report-search">{t("Buscar por nome")}</Label>
                     <Input
                         id="report-search"
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
-                        placeholder="Ex: Netflix"
+                        placeholder={t("Ex: Netflix")}
                     />
                 </div>
 
                 <div className="space-y-2">
-                    <Label>Status</Label>
+                    <Label>{t("Status")}</Label>
                     <div className="flex flex-wrap gap-4">
                         {ALL_STATUSES.map((status) => (
-                            <label key={status} className="flex items-center gap-2 text-sm">
+                            <label key={t(status)} className="flex items-center gap-2 text-sm">
                                 <Checkbox
                                     checked={statuses.includes(status)}
                                     onCheckedChange={() => toggleStatus(status)}
                                 />
-                                {status}
+                                {t(status)}
                             </label>
                         ))}
                     </div>
                 </div>
 
                 <div className="space-y-2">
-                    <Label>Faixa de valor</Label>
+                    <Label>{t("Faixa de valor")}</Label>
                     <div className="flex items-center gap-2 max-w-sm">
                         <Input
                             type="number"
                             step="0.01"
-                            placeholder="Mínimo"
+                            placeholder={t("Mínimo")}
                             value={minValue}
                             onChange={(e) => setMinValue(e.target.value)}
                         />
-                        <span className="text-muted-foreground">até</span>
+                        <span className="text-muted-foreground">{t("até")}</span>
                         <Input
                             type="number"
                             step="0.01"
-                            placeholder="Máximo"
+                            placeholder={t("Máximo")}
                             value={maxValue}
                             onChange={(e) => setMaxValue(e.target.value)}
                         />
                     </div>
                 </div>
 
-                {error && <p className="text-sm text-red-600">{error}</p>}
+                {error && <p className="text-sm text-red-600">{t(error)}</p>}
 
                 <Button onClick={handleSearch} disabled={loading}>
-                    {loading ? 'Buscando...' : 'Buscar'}
+                    {loading ? t("Buscando...") : t("Buscar")}
                 </Button>
             </div>
 
             {hasSearched && !loading && (
                 <div className="flex flex-wrap items-center justify-end gap-3">
-                    <p className="mr-auto text-sm text-muted-foreground">Período carregado: {parseISODate(period.from).toLocaleDateString('pt-BR', { timeZone: 'UTC' })} até {parseISODate(period.to).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</p>
+                    <p className="mr-auto text-sm text-muted-foreground">{t("Período carregado: ")}{parseISODate(period.from).toLocaleDateString(locale, { timeZone: 'UTC' })}{t(" até ")}{parseISODate(period.to).toLocaleDateString(locale, { timeZone: 'UTC' })}</p>
                     <Button variant="outline" size="sm" onClick={handleExportPdf}>
-                        <Download className="h-4 w-4 mr-1" />
-                        Exportar PDF
-                    </Button>
+                        <Download className="h-4 w-4 mr-1" />{t("Exportar PDF ")}</Button>
                 </div>
             )}
 
             {hasSearched && !loading && (
                 <section className="rounded-xl border p-4 space-y-3">
-                    <h2 className="font-semibold">Orçamento e comparação mensal</h2>
-                    <p className="text-sm text-muted-foreground">Meses completos, incluindo Pago, Pendente e VR/VA. Este resumo independe dos filtros da lista. A variação compara com o mês anterior.</p>
+                    <h2 className="font-semibold">{t("Orçamento e comparação mensal")}</h2>
+                    <p className="text-sm text-muted-foreground">{t("Meses completos, incluindo Pago, Pendente e VR/VA. Este resumo independe dos filtros da lista. A variação compara com o mês anterior.")}</p>
                     <div className="overflow-x-auto">
                         <Table>
-                            <TableHeader><TableRow>{['Mês', 'Categoria', 'Despesas', 'Limite', 'Saldo do orçamento', 'Mês anterior', 'Variação'].map(label => <TableHead key={label}>{label}</TableHead>)}</TableRow></TableHeader>
+                            <TableHeader><TableRow>{[t("Mês"), t("Categoria"), t("Despesas"), t("Limite"), t("Saldo do orçamento"), t("Mês anterior"), t("Variação")].map(label => <TableHead key={t(label)}>{t(label)}</TableHead>)}</TableRow></TableHeader>
                             <TableBody>{summary.map((row, index) => <TableRow key={index}>{row.map((value, column) => <TableCell key={column}>{value}</TableCell>)}</TableRow>)}</TableBody>
                         </Table>
                     </div>
@@ -332,20 +333,18 @@ export function ReportsView() {
             {hasSearched && !loading && (
                 <div className="rounded-xl border">
                     {filtered.length === 0 ? (
-                        <p className="text-sm text-muted-foreground p-4">
-                            Nenhuma despesa encontrada nesse período.
-                        </p>
+                        <p className="text-sm text-muted-foreground p-4">{t("Nenhuma despesa encontrada nesse período.")}</p>
                     ) : (
                         <div className="overflow-x-auto">
                             <Table>
                                 <TableHeader>
                                     <TableRow>
-                                        <TableHead>Nome</TableHead>
-                                        <TableHead>Data</TableHead>
-                                        <TableHead>Categoria</TableHead>
-                                        <TableHead>Valor</TableHead>
-                                        <TableHead>Status</TableHead>
-                                        <TableHead>Comentário</TableHead>
+                                        <TableHead>{t("Nome")}</TableHead>
+                                        <TableHead>{t("Data")}</TableHead>
+                                        <TableHead>{t("Categoria")}</TableHead>
+                                        <TableHead>{t("Valor")}</TableHead>
+                                        <TableHead>{t("Status")}</TableHead>
+                                        <TableHead>{t("Comentário")}</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -353,44 +352,44 @@ export function ReportsView() {
                                         <TableRow key={expense.id}>
                                             <TableCell>{expense.nome}</TableCell>
                                             <TableCell>
-                                                {parseISODate(expense.data_pagamento).toLocaleDateString('pt-BR', {
+                                                {parseISODate(expense.data_pagamento).toLocaleDateString(locale, {
                                                     timeZone: 'UTC',
                                                 })}
                                             </TableCell>
-                                            <TableCell>{expense.category || 'Sem categoria'}</TableCell>
+                                            <TableCell>{!expense.category || expense.category === 'Sem categoria' ? t('Sem categoria') : expense.category}</TableCell>
                                             <TableCell>
-                                                {expense.valor.toLocaleString('pt-BR', {
+                                                {expense.valor.toLocaleString(locale, {
                                                     style: 'currency',
                                                     currency: 'BRL',
                                                 })}
                                             </TableCell>
                                             <TableCell>
-                                                <Badge className={statusColor[expense.status]}>{expense.status}</Badge>
+                                                <Badge className={statusColor[expense.status]}>{t(expense.status)}</Badge>
                                             </TableCell>
                                             <TableCell>{expense.comentario}</TableCell>
                                         </TableRow>
                                     ))}
                                 </TableBody>
                                 <TableFooter>
-                                    <TableRow><TableCell colSpan={3}>VR/VA</TableCell><TableCell>{money(totalBenefits)}</TableCell><TableCell colSpan={2}></TableCell></TableRow>
+                                    <TableRow><TableCell colSpan={3}>{t("VR/VA")}</TableCell><TableCell>{money(totalBenefits)}</TableCell><TableCell colSpan={2}></TableCell></TableRow>
                                     <TableRow>
-                                        <TableCell colSpan={3}>Total do período</TableCell>
+                                        <TableCell colSpan={3}>{t("Total do período")}</TableCell>
                                         <TableCell>
-                                            {total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                            {total.toLocaleString(locale, { style: 'currency', currency: 'BRL' })}
                                         </TableCell>
                                         <TableCell colSpan={2}></TableCell>
                                     </TableRow>
                                     <TableRow>
-                                        <TableCell colSpan={3}>Total pago</TableCell>
+                                        <TableCell colSpan={3}>{t("Total pago")}</TableCell>
                                         <TableCell>
-                                            {totalPago.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                            {totalPago.toLocaleString(locale, { style: 'currency', currency: 'BRL' })}
                                         </TableCell>
                                         <TableCell colSpan={2}></TableCell>
                                     </TableRow>
                                     <TableRow>
-                                        <TableCell colSpan={3}>Total pendente</TableCell>
+                                        <TableCell colSpan={3}>{t("Total pendente")}</TableCell>
                                         <TableCell>
-                                            {totalPendente.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                            {totalPendente.toLocaleString(locale, { style: 'currency', currency: 'BRL' })}
                                         </TableCell>
                                         <TableCell colSpan={2}></TableCell>
                                     </TableRow>
