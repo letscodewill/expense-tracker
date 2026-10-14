@@ -29,6 +29,8 @@ O PDF é enviado em uma requisição autenticada com store:false, sem ser salvo 
 
 A IA retorna dados estruturados, que são validados no servidor. Não salva nada no banco; gravação acontece apenas ao confirmar na tela de revisão, com a sessão do próprio usuário e as políticas existentes.
 
+Na mesma análise do PDF, a IA sugere categorias pela descrição do estabelecimento. O servidor carrega somente as categorias da conta autenticada e limita a resposta a esses nomes. Sugestões desconhecidas, ausentes ou sem confiança ficam em **Sem categoria**. Nenhuma categoria é criada automaticamente. A revisão permite alterar cada categoria antes de confirmar; apenas a escolha final é gravada. A leitura padrão e as planilhas continuam com a seleção manual. Não há chamada adicional de IA por despesa nem mudança na cota de quatro análises mensais. Esta etapa não aprende associações permanentes entre estabelecimentos e categorias.
+
 ## Validação antes de liberar
 
 Testes automatizados usam arquivos sintéticos e respostas simuladas, sem enviar dados financeiros nem gastar créditos. Após configurar a chave, validar PDFs de bancos diferentes, inclusive digitalizados, parcelas, estornos e arquivos ilegíveis. Conferir itens e total manualmente. Testar limites de saldo, timeout, senha e repetição da importação. Possíveis duplicidades por nome, valor e mês, incluindo linhas repetidas no arquivo, exigem revisão antes de salvar. A confirmação permite manter despesas legítimas iguais; consulte [DUPLICIDADES.md](DUPLICIDADES.md) para critérios e limites.

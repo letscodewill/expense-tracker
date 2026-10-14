@@ -3,6 +3,8 @@
   "Não foi possível salvar sua preferência. Tente novamente.": "Could not save your preference. Try again.",
   "Conheça o NoControle": "Discover NoControle",
   "Ver novidades": "What's new",
+  "Aguarde suas categorias carregarem e selecione o arquivo novamente.": "Wait for your categories to load, then select the file again.",
+  "A IA sugeriu categorias da sua conta. Confira e altere antes de importar. Descrições incertas ficam em “Sem categoria”.": "AI suggested categories from your account. Review and edit them before importing. Uncertain descriptions remain “Uncategorized”.",
   "Busque por nome, valor, data de pagamento ou categoria em todos os meses. Combine os filtros para refinar os resultados.": "Search by name, amount, payment date or category across all months. Combine filters to refine your results.",
   "Pagamento a partir de": "Payment date from",
   "Pagamento até": "Payment date through",

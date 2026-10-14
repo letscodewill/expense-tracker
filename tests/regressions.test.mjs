@@ -746,7 +746,7 @@ test('fifth business day excludes weekends for every possible starting weekday',
   }
 })
 
-function invoiceRuntime({ responses = {}, extract, prepare, fetch: fetchMock, selectedMonth = { month: 10, year: 2026 } } = {}) {
+function invoiceRuntime({ responses = {}, extract, prepare, fetch: fetchMock, categories, selectedMonth = { month: 10, year: 2026 } } = {}) {
   const runtime = hooks(), db = database(responses), imported = []
   const pdf = load('lib/pdf-text-extract.ts', { 'pdfjs-dist': { version: 'test', GlobalWorkerOptions: {} } })
   const { ImportInvoiceDialog } = load('components/import-invoice-dialog.tsx', {
@@ -756,6 +756,7 @@ function invoiceRuntime({ responses = {}, extract, prepare, fetch: fetchMock, se
     '@/lib/payment-date': load('lib/payment-date.ts'),
     '@/lib/spreadsheet-import': load('lib/spreadsheet-import.ts'),
     '@/lib/invoice-ai': load('lib/invoice-ai.ts'),
+    ...(categories ? { '@/lib/use-categories': { useCategories: () => ({ categories, loading: false, error: '' }) } } : {}),
     '@/lib/pdf-text-extract': {
       PdfPasswordRequiredError: pdf.PdfPasswordRequiredError,
       extractPdfText: extract ?? (async () => '03/10 Mercado 80,00\n20/09 Restaurante 50,00'),
@@ -1771,6 +1772,66 @@ test('AI output rejects malformed expenses and preserves safe review warnings', 
   assert.throws(() => validateAIInvoice({ rows: [], warnings: [42] }))
 })
 
+test('AI categories accept only confident account categories and preserve conservative fallbacks', () => {
+  const { invoiceSchema, validateAIInvoice } = load('lib/invoice-ai.ts')
+  const categories = ['Pets & cuidados', 'Minha categoria']
+  assert.deepEqual(Array.from(invoiceSchema(categories).properties.rows.items.properties.category.enum), ['Sem categoria', ...categories])
+  for (const [category, confidence, expected] of [
+    ['Pets & cuidados', true, 'Pets & cuidados'], ['Pets & cuidados', false, 'Sem categoria'],
+    ['Categoria de outra conta', true, 'Sem categoria'], ['Pets & cuidados', 'true', 'Sem categoria'],
+    [null, true, 'Sem categoria'], ['Sem categoria', true, 'Sem categoria'],
+  ]) {
+    const result = validateAIInvoice({ rows: [{ nome: 'Compra', valor: 12.345, category, category_confident: confidence }], warnings: [] }, categories)
+    assert.equal(result.rows[0].category, expected)
+    assert.equal(result.rows[0].valor, 12.35)
+  }
+  assert.equal(validateAIInvoice({ rows: [{ nome: 'Compra', valor: 10 }], warnings: [] }, categories).rows[0].category, 'Sem categoria')
+})
+
+test('AI analysis loads categories only from the verified account and safely validates the provider response', async () => {
+  for (const categoryResponse of [success([{ name: 'Meus pets' }]), failure]) {
+    const db = database({ expense_categories: [categoryResponse] })
+    let calls = 0, reserved = 0
+    db.client.rpc = async name => { if (name === 'reserve_invoice_ai') { reserved++; return success({ allowed: true, token: 'slot' }) } return success(true) }
+    const { POST } = load('app/api/invoices/analyze/route.ts', {
+      '@/lib/supabase/server': { createClient: async () => db.client },
+      '@/lib/invoice-ai': load('lib/invoice-ai.ts'), '@/lib/invoice-ai-limit': load('lib/invoice-ai-limit.ts'),
+    }, { Response, Request, File, Buffer, AbortSignal, process: { env: { OPENAI_API_KEY: 'test' } }, fetch: async (_url, options) => {
+      calls++
+      const body = JSON.parse(options.body)
+      assert.deepEqual(body.text.format.schema.properties.rows.items.properties.category.enum, ['Sem categoria', 'Meus pets'])
+      return Response.json({ status: 'completed', output: [{ content: [{ type: 'output_text', text: JSON.stringify({ rows: [
+        { nome: 'Pet shop', valor: 50, category: 'Meus pets', category_confident: true },
+        { nome: 'Compra', valor: 10, category: 'Outra conta', category_confident: true },
+      ], warnings: [] }) }] }] })
+    } })
+    const form = new FormData(); form.append('file', new File(['%PDF-1.7 test'], 'fatura.pdf', { type: 'application/pdf' }))
+    form.append('user_id', 'another-user'); form.append('categories', '["Outra conta"]')
+    const response = await POST(new Request('https://test/api/invoices/analyze', { method: 'POST', headers: { origin: 'https://test' }, body: form }))
+    assert.ok(db.requests[0].calls.some(([method, column, value]) => method === 'eq' && column === 'user_id' && value === 'test-user'))
+    assert.equal(response.status, categoryResponse.error ? 503 : 200)
+    assert.equal(calls, categoryResponse.error ? 0 : 1); assert.equal(reserved, categoryResponse.error ? 0 : 1)
+    if (!categoryResponse.error) assert.deepEqual((await response.json()).rows.map(row => row.category), ['Meus pets', 'Sem categoria'])
+  }
+})
+
+test('AI review preserves suggestions, allows edits and saves the confirmed category without changing payment dates', async () => {
+  const invoice = invoiceRuntime({ categories: ['Sem categoria', 'Meus pets', 'Alimentação'], fetch: async () => Response.json({
+    rows: [{ nome: 'Pet shop', valor: 50, category: 'Meus pets', category_confident: true }], warnings: [],
+  }) })
+  let tree = await invoice.runtime.flush()
+  find(tree, node => node.type === 'input' && node.props.type === 'checkbox').props.onChange({ target: { checked: true } })
+  tree = await invoice.upload(new File(['%PDF-1.7 test'], 'fatura.pdf', { type: 'application/pdf' }))
+  assert.equal(invoice.db.requests.length, 0)
+  assert.equal(find(tree, node => node.props['aria-label'] === 'Categoria da despesa 1').props.value, 'Meus pets')
+  find(tree, node => node.props['aria-label'] === 'Categoria da despesa 1').props.onChange({ target: { value: 'Alimentação' } })
+  tree = await invoice.runtime.flush()
+  await find(tree, node => node.props.children === 'Importar 1 despesa(s)').props.onClick()
+  const payload = invoice.db.requests.find(request => request.calls.some(([method]) => method === 'insert')).calls.find(([method]) => method === 'insert')[1]
+  assert.equal(payload[0].category, 'Alimentação'); assert.equal(payload[0].data_pagamento, '2026-11-06'); assert.equal(payload[0].valor, 50)
+  assert.equal(Object.hasOwn(payload[0], 'category_confident'), false)
+})
+
 test('AI analysis rejects bad origin, anonymous users and missing setup without calling OpenAI', async () => {
   let calls = 0
   const run = async (origin, user, env = {}) => {
@@ -1790,7 +1851,7 @@ test('AI analysis rejects bad origin, anonymous users and missing setup without 
 test('AI analysis accepts any authenticated account despite an old allowlist, keeps API key server-side and handles incomplete responses', async () => {
   let requestBody, fail = false
   const { POST } = load('app/api/invoices/analyze/route.ts', {
-    '@/lib/supabase/server': { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: 'regular-user', email: 'other@example.com' } }, error: null }) }, rpc: async name => success(name === 'reserve_invoice_ai' ? { allowed: true, token: 'server-only-token' } : true) }) },
+    '@/lib/supabase/server': { createClient: async () => ({ from: database({}).client.from, auth: { getUser: async () => ({ data: { user: { id: 'regular-user', email: 'other@example.com' } }, error: null }) }, rpc: async name => success(name === 'reserve_invoice_ai' ? { allowed: true, token: 'server-only-token' } : true) }) },
     '@/lib/invoice-ai': load('lib/invoice-ai.ts'),
     '@/lib/invoice-ai-limit': load('lib/invoice-ai-limit.ts'),
   }, { Response, Request, File, Buffer, AbortSignal, process: { env: { OPENAI_API_KEY: 'secret-test', INVOICE_AI_ALLOWED_EMAILS: 'owner@example.com' } },
@@ -1830,6 +1891,7 @@ test('AI monthly quota stops the fifth invoice before OpenAI and never exposes r
   const { POST } = load('app/api/invoices/analyze/route.ts', {
     '@/lib/supabase/server': { createClient: async () => ({
       auth: { getUser: async () => ({ data: { user: { id: 'monthly-user' } }, error: null }) },
+      from: database({}).client.from,
       rpc: async (name, args) => {
         if (name === 'reserve_invoice_ai') { if (used >= 4) return success({ allowed: false }); reserved = true; return success({ allowed: true, token: 'secret-reservation' }) }
         assert.equal(args.reservation_token, 'secret-reservation')
@@ -1854,6 +1916,7 @@ test('AI failures and empty invoices release the reserved slot; quota outages fa
     const { POST } = load('app/api/invoices/analyze/route.ts', {
       '@/lib/supabase/server': { createClient: async () => ({
         auth: { getUser: async () => ({ data: { user: { id: 'quota-user' } }, error: null }) },
+        from: database({}).client.from,
         rpc: async (name, args) => { if (name === 'reserve_invoice_ai') return outcome === 'quota-failure' ? failure : success({ allowed: true, token: 'private-slot' }); finishes.push(args); return success(true) },
       }) },
       '@/lib/invoice-ai': load('lib/invoice-ai.ts'), '@/lib/invoice-ai-limit': load('lib/invoice-ai-limit.ts'),

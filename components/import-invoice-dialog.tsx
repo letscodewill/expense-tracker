@@ -68,6 +68,7 @@ export function ImportInvoiceDialog({
   }
   const [step, setStep] = useState<'upload' | 'mapping' | 'review'>('upload')
   const [useAI, setUseAI] = useState(false)
+  const [processedWithAI, setProcessedWithAI] = useState(false)
   const [warnings, setWarnings] = useState<string[]>([])
   const [sheets, setSheets] = useState<ImportSheet[]>([])
   const [sheetIndex, setSheetIndex] = useState(0)
@@ -96,6 +97,7 @@ export function ImportInvoiceDialog({
 
   async function processFile(file: File, password?: string) {
     setParsing(true)
+    setProcessedWithAI(false)
     setError('')
 
     try {
@@ -113,6 +115,7 @@ export function ImportInvoiceDialog({
       if (!/\.pdf$/i.test(file.name)) throw new Error("Selecione um arquivo PDF, Excel (.xlsx) ou CSV.")
       let parsed: InvoiceRow[]
       if (useAI) {
+        if (categoriesLoading || categoriesError) throw new Error(categoriesError || 'Aguarde suas categorias carregarem e selecione o arquivo novamente.')
         const prepared = await preparePdfForAI(file, password)
         setPdfPassword('')
         setNeedsPassword(false)
@@ -122,9 +125,10 @@ export function ImportInvoiceDialog({
         const response = await fetch('/api/invoices/analyze', { method: 'POST', body: form })
         const result = await response.json()
         if (!response.ok) throw new Error(result.error || "Não foi possível analisar a fatura.")
-        const analyzed = validateAIInvoice(result)
+        const analyzed = validateAIInvoice(result, categories)
         parsed = analyzed.rows
         setWarnings(analyzed.warnings)
+        setProcessedWithAI(true)
       } else {
         const text = await extractPdfText(file, password)
         parsed = parseInvoiceText(text, selected.year)
@@ -139,7 +143,7 @@ export function ImportInvoiceDialog({
         )
       }
 
-      setRows(parsed.map(({ nome, valor }) => ({ nome, valor })))
+      setRows(parsed.map(({ nome, valor, category }) => ({ nome, valor, category: category ?? 'Sem categoria' })))
       setStep('review')
       setNeedsPassword(false)
       setPdfPassword('')
@@ -419,6 +423,7 @@ export function ImportInvoiceDialog({
             {error && <p className="text-sm text-red-600">{t(error)}</p>}
             {warnings.length > 0 && <details className="rounded-xl border p-3 text-sm"><summary className="cursor-pointer font-medium">{warnings.length}{t(" aviso(s) na leitura — confira antes de importar")}</summary><ul className="mt-2 list-disc space-y-1 pl-5">{warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></details>}
             <p className="text-sm font-medium">{t("Total das despesas: ")}{rows.reduce((sum, row) => sum + row.valor, 0).toLocaleString(locale, { style: 'currency', currency: 'BRL' })}{t(". Confira com a fatura; créditos e estornos não são importados como despesas.")}</p>
+            {processedWithAI && <p className="rounded-xl bg-muted p-3 text-sm text-muted-foreground">{t("A IA sugeriu categorias da sua conta. Confira e altere antes de importar. Descrições incertas ficam em “Sem categoria”.")}</p>}
 
             <div className="flex flex-wrap items-end gap-4 rounded-2xl bg-muted p-4">
               <div className="space-y-2">
