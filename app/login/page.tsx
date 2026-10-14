@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { LanguageSelector } from '@/components/language-selector'
+import { RecoverySubmitButton } from '@/components/recovery-submit-button'
 
 export default async function LoginPage({
   searchParams,
@@ -70,7 +71,7 @@ export default async function LoginPage({
               </div>
               <div className="text-right"><Link href="/login?mode=recover" className="text-sm font-medium text-primary hover:underline">{t("Esqueceu a senha?")}</Link></div>
             </>}
-            <Button type="submit" formAction={isRecoverMode ? recoverPassword : login} className="w-full">{isRecoverMode ? t("Enviar link de recuperação") : t("Entrar")}</Button>
+            {isRecoverMode ? <RecoverySubmitButton action={recoverPassword} /> : <Button type="submit" formAction={login} className="w-full">{t('Entrar')}</Button>}
           </form>
 
           {isRecoverMode ? <div className="mt-6 text-center"><Link href="/login" className="text-sm font-medium text-primary hover:underline">{t("Voltar para o login")}</Link></div>

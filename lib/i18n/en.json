@@ -1,5 +1,8 @@
 {
   "Opcional": "Optional",
+  "Enviando link...": "Sending link...",
+  "Aguarde pelo menos um minuto antes de pedir outro link. Verifique também sua caixa de entrada e spam.": "Wait at least one minute before requesting another link. Also check your inbox and spam folder.",
+  "Limite de solicitações atingido. Aguarde um pouco antes de tentar novamente e verifique sua caixa de entrada e spam.": "Request limit reached. Wait before trying again and check your inbox and spam folder.",
   "Importando...": "Importing...",
   "Importar {count} despesa(s)": "Import {count} expense(s)",
   "Nome da despesa {number}": "Name of expense {number}",

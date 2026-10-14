@@ -27,6 +27,7 @@ function load(file, mocks = {}, globals = {}) {
   const loadedModule = { exports: {} }
   const localRequire = (name) => {
     if (Object.hasOwn(mocks, name)) return mocks[name]
+    if (name === '@/lib/password-recovery') return load('lib/password-recovery.ts')
     if (name === '@/lib/i18n') return load('lib/i18n/index.ts', { './en.json': JSON.parse(fs.readFileSync(path.join(root, 'lib/i18n/en.json'), 'utf8')) })
     if (name === '@/components/language-provider') return { useLanguage: () => ({ language: 'pt-BR', locale: 'pt-BR', t: portugueseTranslation }) }
     if (name === '@/lib/i18n/server') return { getServerTranslation: async () => ({ language: 'pt-BR', locale: 'pt-BR', t: portugueseTranslation }) }
@@ -1502,7 +1503,8 @@ test('Material login and recovery preserve field names, submission actions and a
     const tree = await LoginPage({ searchParams: Promise.resolve({ mode, message: 'Mensagem de autenticação' }) })
     find(tree, node => node.type === 'ThemeSelector')
     find(tree, node => node.type === 'Input' && node.props.name === 'email' && node.props.required)
-    assert.equal(find(tree, node => node.type === 'Button' && node.props.type === 'submit').props.formAction, mode ? recoverPassword : login)
+    if (mode) assert.equal(find(tree, node => node.type === 'RecoverySubmitButton').props.action, recoverPassword)
+    else assert.equal(find(tree, node => node.type === 'Button' && node.props.type === 'submit').props.formAction, login)
     assert.equal(elements(tree, node => node.type === 'Input' && node.props.name === 'password').length, mode ? 0 : 1)
     assert.equal(elements(tree, node => node.type === 'GoogleSignInButton').length, mode ? 0 : 1)
     assert.equal(elements(tree, node => node.type === 'SignupDialog').length, mode ? 0 : 1)
@@ -1979,4 +1981,45 @@ test('English PDF translates summaries and statuses while preserving user conten
   assert.ok(calls.includes('Expense report'))
   assert.ok(calls.includes('NoControle | Page 1 of 2'))
   assert.ok(calls.includes('report-2026-11-01-to-2026-11-10.pdf'))
+})
+
+test('password recovery distinguishes cooldown from general limits and preserves private delivery errors', async () => {
+  const { recoveryErrorMessage } = load('lib/password-recovery.ts')
+  assert.ok(recoveryErrorMessage({ code: 'over_email_send_rate_limit', status: 429, message: 'For security purposes, you can only request this after 57 seconds.' }).includes('um minuto'))
+  assert.ok(recoveryErrorMessage({ status: 429, message: 'hourly limit exceeded' }).includes('Limite de solicitações'))
+  assert.equal(recoveryErrorMessage({ status: 500, message: 'Private SMTP server details' }), 'Não foi possível enviar o email de recuperação.')
+  for (const error of [null, { code: 'over_email_send_rate_limit', status: 429, message: 'For security purposes, you can only request this after 57 seconds.' }]) {
+    const requests = []
+    const { recoverPassword } = load('app/login/actions.ts', {
+      '@/lib/supabase/server': { createClient: async () => ({ auth: { resetPasswordForEmail: async (...args) => { requests.push(args); return { error } } } }) },
+      '@/lib/env/base-url': { getBaseUrl: () => 'https://nocontrole.example' },
+      'next/cache': { revalidatePath() {} },
+      'next/navigation': { redirect: url => { throw Object.assign(new Error('redirect'), { url }) } },
+    })
+    const form = new FormData(); form.set('email', 'recovery-test@example.com')
+    await assert.rejects(recoverPassword(form), result => {
+      const url = new URL(result.url, 'https://nocontrole.example')
+      assert.equal(url.searchParams.get('mode'), 'recover')
+      assert.ok(url.searchParams.get('message').includes(error ? 'um minuto' : 'Se o e-mail estiver cadastrado'))
+      return true
+    })
+    assert.equal(requests.length, 1)
+    assert.equal(requests[0][0], 'recovery-test@example.com')
+    assert.equal(requests[0][1].redirectTo, 'https://nocontrole.example/auth/callback?next=/auth/update-password')
+  }
+})
+
+test('recovery submit button is disabled and reports progress during an active submission', () => {
+  let pending = false
+  const { RecoverySubmitButton } = load('components/recovery-submit-button.tsx', { 'react-dom': { useFormStatus: () => ({ pending }) } })
+  const action = () => {}
+  let tree = RecoverySubmitButton({ action })
+  assert.equal(tree.props.disabled, false)
+  assert.equal(tree.props.formAction, action)
+  assert.equal(tree.props.children, 'Enviar link de recuperação')
+  pending = true
+  tree = RecoverySubmitButton({ action })
+  assert.equal(tree.props.disabled, true)
+  assert.equal(tree.props['aria-busy'], true)
+  assert.equal(tree.props.children, 'Enviando link...')
 })

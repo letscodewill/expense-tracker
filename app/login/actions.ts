@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getBaseUrl } from '@/lib/env/base-url'
+import { recoveryErrorMessage } from '@/lib/password-recovery'
 
 export async function login(formData: FormData) {
   const supabase = await createClient()
@@ -56,17 +57,14 @@ export async function recoverPassword(formData: FormData) {
 
   const email = formData.get('email') as string
 
-  console.log('DEBUG redirectTo (recover):', `${getBaseUrl()}/auth/callback`)
-
-const { error } = await supabase.auth.resetPasswordForEmail(email, {
-  redirectTo: `${getBaseUrl()}/auth/callback?next=/auth/update-password`,
-})
-
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${getBaseUrl()}/auth/callback?next=/auth/update-password`,
+  })
 
   if (error) {
-    console.error(error)
+    console.error('[password-recovery] Request failed:', { code: error.code, status: error.status })
     return redirect(
-      '/login?mode=recover&message=Não foi possível enviar o email de recuperação.'
+      `/login?mode=recover&message=${encodeURIComponent(recoveryErrorMessage(error))}`
     )
   }
 
