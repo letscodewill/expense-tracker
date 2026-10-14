@@ -16,8 +16,14 @@ union all select owner_id,target,'__payment_test_paid__',date '2099-10-15',30,'P
 union all select owner_id,target,'__payment_test_future__',date '2099-11-01',40,'Pendente' from payment_test_context
 union all select owner_id,target,'__payment_test_past__',date '2099-09-30',50,'Pendente' from payment_test_context
 union all select owner_id,other_board,'__payment_test_other__',date '2099-10-10',60,'Pendente' from payment_test_context
-union all select other_id,foreign_board,'__payment_test_foreign__',date '2099-10-10',70,'Pendente' from payment_test_context
-union all select other_id,target,'__payment_test_wrong_owner__',date '2099-10-10',80,'Pendente' from payment_test_context;
+union all select other_id,foreign_board,'__payment_test_foreign__',date '2099-10-10',70,'Pendente' from payment_test_context;
+do $$ begin
+  begin
+    insert into public.expenses(user_id,board_id,nome,data_pagamento,valor,status)
+      select other_id,target,'__payment_test_wrong_owner__',date '2099-10-10',80,'Pendente' from payment_test_context;
+    raise exception 'FAIL: cross-account board reference accepted';
+  exception when foreign_key_violation then null; end;
+end $$;
 select set_config('request.jwt.claim.sub',owner_id::text,true) from payment_test_context;
 set local role authenticated;
 do $$
