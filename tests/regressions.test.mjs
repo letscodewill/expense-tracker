@@ -1237,6 +1237,25 @@ test('password-protected invoices use the payment date and clear the password on
 
 const testAuthEnv = { NEXT_PUBLIC_SUPABASE_URL: 'https://testproject.supabase.co', NEXT_PUBLIC_SUPABASE_ANON_KEY: 'test-public-key' }
 
+test('web analytics strips auth parameters, fragments and ticket identifiers without mutating the source', () => {
+  const { sanitizeAnalyticsEvent } = load('lib/web-analytics.ts')
+  for (const [url, expected] of [
+    ['https://nocontrole.test/login?email=private%40example.com&error=secret#access_token=token', 'https://nocontrole.test/login'],
+    ['https://nocontrole.test/?month=2026-11&salary=1234', 'https://nocontrole.test/'],
+    ['https://nocontrole.test/tickets/private-ticket-id?token=secret', 'https://nocontrole.test/tickets/[id]'],
+    ['https://nocontrole.test/admin/tickets/private-id', 'https://nocontrole.test/admin/tickets/[id]'],
+    ['https://user:password@nocontrole.test/reports#private', 'https://nocontrole.test/reports'],
+  ]) {
+    const event = { type: 'pageview', url }
+    assert.equal(sanitizeAnalyticsEvent(event).url, expected)
+    assert.equal(event.url, url)
+  }
+  for (const url of ['invalid', 'javascript:secret', 'https://nocontrole.test/auth/callback?code=secret', 'https://nocontrole.test/unknown/private-name']) {
+    assert.equal(sanitizeAnalyticsEvent({ type: 'pageview', url }), null)
+  }
+  assert.equal(sanitizeAnalyticsEvent({ type: 'event', url: 'https://nocontrole.test/' }), null)
+})
+
 test('quick search accepts Brazilian amounts and treats wildcard characters literally', () => {
   const { searchAmount, searchNamePattern } = load('lib/expense-search.ts')
   for (const [input, value] of [['4,86', 4.86], ['R$ 1.234,56', 1234.56], ['125.50', 125.5], ['1.234', 1234], ['50', 50]]) assert.equal(searchAmount(input), value)
