@@ -27,6 +27,7 @@ function load(file, mocks = {}, globals = {}) {
   const loadedModule = { exports: {} }
   const localRequire = (name) => {
     if (Object.hasOwn(mocks, name)) return mocks[name]
+    if (name === '@/lib/feature-tour') return load('lib/feature-tour.ts')
     if (name === '@/lib/password-recovery') return load('lib/password-recovery.ts')
     if (name === '@/lib/i18n') return load('lib/i18n/index.ts', { './en.json': JSON.parse(fs.readFileSync(path.join(root, 'lib/i18n/en.json'), 'utf8')) })
     if (name === '@/components/language-provider') return { useLanguage: () => ({ language: 'pt-BR', locale: 'pt-BR', t: portugueseTranslation }) }
@@ -42,7 +43,7 @@ function load(file, mocks = {}, globals = {}) {
   }
   vm.runInNewContext(output, {
     module: loadedModule, exports: loadedModule.exports, require: localRequire,
-    URL,
+    URL, URLSearchParams,
     console: { ...console, error() {}, warn() {} },
     setTimeout: (callback) => { callback(); return 0 },
     ...globals,
@@ -1269,6 +1270,53 @@ test('quick search rejects anonymous access and invalid terms before reading fin
   }
 })
 
+test('quick search applies inclusive payment dates and an exact category to both name and amount queries', async () => {
+  for (const term of ['', '4,86']) {
+    const db = database({})
+    const { GET } = load('app/api/expenses/search/route.ts', {
+      '@/lib/supabase/server': { createClient: async () => db.client }, '@/lib/expense-search': load('lib/expense-search.ts'),
+    }, { Response })
+    const params = new URLSearchParams({ q: term, start: '2026-11-01', end: '2026-11-30', category: 'Pets %_ & Saúde' })
+    assert.equal((await GET(new Request(`https://test/api/expenses/search?${params}`))).status, 200)
+    assert.equal(db.requests.length, term ? 2 : 1)
+    for (const request of db.requests) {
+      for (const call of [['eq', 'user_id', 'test-user'], ['gte', 'data_pagamento', '2026-11-01'], ['lte', 'data_pagamento', '2026-11-30'], ['eq', 'category', 'Pets %_ & Saúde']]) {
+        assert.ok(request.calls.some(actual => JSON.stringify(actual) === JSON.stringify(call)))
+      }
+    }
+  }
+})
+
+test('quick search rejects impossible dates, reversed ranges and oversized categories before querying', async () => {
+  const { validSearchDate } = load('lib/expense-search.ts')
+  assert.equal(validSearchDate('2028-02-29'), true)
+  for (const params of ['start=2026-02-29', 'end=2026-13-01', 'start=2026-11-30&end=2026-11-01', 'start=01/11/2026', `category=${'a'.repeat(61)}`]) {
+    const db = database({})
+    const { GET } = load('app/api/expenses/search/route.ts', {
+      '@/lib/supabase/server': { createClient: async () => db.client }, '@/lib/expense-search': load('lib/expense-search.ts'),
+    }, { Response })
+    assert.equal((await GET(new Request(`https://test/api/expenses/search?${params}`))).status, 400)
+    assert.equal(db.requests.length, 0)
+  }
+})
+
+test('quick search uses account categories and allows searching by category without a text term', async () => {
+  const runtime = hooks(), urls = []
+  const { QuickExpenseSearch } = load('components/quick-expense-search.tsx', {
+    react: runtime.react,
+    '@/lib/use-categories': { useCategories: () => ({ categories: ['Sem categoria', 'Meus pets'], loading: false, error: '' }) },
+  }, {
+    AbortController, URLSearchParams, clearTimeout() {}, fetch: async url => { urls.push(url); return { ok: true, json: async () => ({ hasMore: false, results: [] }) } },
+  })
+  let tree = runtime.render(QuickExpenseSearch, { onNavigate() {} })
+  find(tree, node => node.type === 'Dialog').props.onOpenChange(true); tree = runtime.render()
+  assert.deepEqual(elements(tree, node => node.type === 'option').map(node => node.props.value), ['', 'Sem categoria', 'Meus pets'])
+  find(tree, node => node.type === 'select').props.onChange({ target: { value: 'Meus pets' } }); tree = runtime.render(); tree = await runtime.flush()
+  assert.equal(new URL(urls.at(-1), 'https://test').searchParams.get('category'), 'Meus pets')
+  find(tree, node => node.props.children === 'Limpar filtros').props.onClick(); tree = runtime.render()
+  assert.equal(find(tree, node => node.type === 'select').props.value, '')
+})
+
 test('quick search dialog displays the debt location and navigates to its payment month', async () => {
   const runtime = hooks(), navigated = []
   const { QuickExpenseSearch } = load('components/quick-expense-search.tsx', { react: runtime.react }, {
@@ -2022,4 +2070,120 @@ test('recovery submit button is disabled and reports progress during an active s
   assert.equal(tree.props.disabled, true)
   assert.equal(tree.props['aria-busy'], true)
   assert.equal(tree.props.children, 'Enviando link...')
+})
+
+test('tour deduplicates visits by account and login and persists only an authenticated users own preference', async () => {
+  const tour = load('lib/feature-tour.ts'), data = new Map()
+  const storage = { getItem: key => data.get(key), setItem: (key, value) => data.set(key, value) }
+  const key = tour.tourVisitKey('user-a', 'login-1')
+  assert.equal(tour.claimTourVisit(storage, key, false), true)
+  assert.equal(tour.claimTourVisit(storage, key, false), false)
+  assert.equal(tour.claimTourVisit(storage, tour.tourVisitKey('user-a', 'login-2'), false), true)
+  assert.equal(tour.claimTourVisit(storage, tour.tourVisitKey('user-b', 'login-1'), false), true)
+  assert.equal(tour.claimTourVisit(storage, 'dismissed', true), false)
+  assert.equal(tour.claimTourVisit({ getItem() { throw new Error('blocked') } }, 'blocked', false), true)
+  for (const currentUser of [null, { id: 'different-user' }]) {
+    let writes = 0
+    const client = { auth: { getUser: async () => ({ data: { user: currentUser }, error: null }), updateUser: async () => { writes++ } } }
+    await assert.rejects(tour.dismissFeatureTour(client, 'user-a'))
+    assert.equal(writes, 0)
+  }
+  const writes = []
+  const client = { auth: {
+    getUser: async () => ({ data: { user: { id: 'user-a' } }, error: null }),
+    updateUser: async payload => { writes.push(payload); return { data: { user: { id: 'user-a', user_metadata: { ...payload.data, full_name: 'Ana', avatar_path: 'user-a/photo.png' } } }, error: null } },
+  } }
+  await tour.dismissFeatureTour(client, 'user-a')
+  assert.equal(writes.length, 1)
+  assert.deepEqual(Object.keys(writes[0].data), [tour.FEATURE_TOUR_METADATA_KEY])
+  assert.equal(writes[0].data[tour.FEATURE_TOUR_METADATA_KEY], tour.FEATURE_TOUR_VERSION)
+})
+
+test('tour shows to existing users, navigates steps and closes without saving unless explicitly selected', async () => {
+  const runtime = hooks(), data = new Map(), window = Object.assign(new EventTarget(), { sessionStorage: { getItem: key => data.get(key), setItem: (key, value) => data.set(key, value) } })
+  let authCalls = 0
+  const { FeatureTour } = load('components/feature-tour.tsx', {
+    react: runtime.react, 'next/navigation': { useRouter: () => ({ refresh() {} }) },
+    '@/lib/supabase/client': { createClient: () => { authCalls++; throw new Error('unexpected auth write') } },
+  }, { window, Event })
+  runtime.render(FeatureTour, { userId: 'existing-user', signedInAt: 'login-1', dismissed: false })
+  let tree = await runtime.flush()
+  assert.equal(find(tree, node => node.type === 'Dialog').props.open, true)
+  find(tree, node => node.props['aria-label'] === 'Ir para etapa 5').props.onClick()
+  tree = await runtime.flush()
+  find(tree, node => node.type === 'DialogTitle' && node.props.children === 'Seu painel, do seu jeito')
+  await find(tree, node => node.props.children === 'Entendi').props.onClick()
+  tree = await runtime.flush()
+  assert.equal(find(tree, node => node.type === 'Dialog').props.open, false)
+  assert.equal(authCalls, 0)
+  const second = hooks(), view = load('components/feature-tour.tsx', { react: second.react, 'next/navigation': { useRouter: () => ({ refresh() {} }) }, '@/lib/supabase/client': { createClient: () => { throw new Error('unexpected write') } } }, { window, Event })
+  second.render(view.FeatureTour, { userId: 'existing-user', signedInAt: 'login-1', dismissed: false })
+  assert.equal(find(await second.flush(), node => node.type === 'Dialog').props.open, false)
+})
+
+test('tour saves dismissal across devices, stays open on failure and can be reopened after dismissal', async () => {
+  for (const fail of [false, true]) {
+    const runtime = hooks(), window = Object.assign(new EventTarget(), { sessionStorage: { getItem: () => null, setItem() {} } })
+    const tour = load('lib/feature-tour.ts'); let writes = 0, refreshes = 0
+    const client = { auth: {
+      getUser: async () => ({ data: { user: { id: 'user-a' } }, error: null }),
+      updateUser: async payload => { writes++; return { error: fail ? new Error('offline') : null, data: { user: { id: 'user-a', user_metadata: payload.data } } } },
+    } }
+    const { FeatureTour } = load('components/feature-tour.tsx', { react: runtime.react, 'next/navigation': { useRouter: () => ({ refresh() { refreshes++ } }) }, '@/lib/supabase/client': { createClient: () => client } }, { window, Event })
+    runtime.render(FeatureTour, { userId: 'user-a', signedInAt: 'login', dismissed: true })
+    let tree = await runtime.flush()
+    assert.equal(find(tree, node => node.type === 'Dialog').props.open, false)
+    window.dispatchEvent(new Event(tour.FEATURE_TOUR_OPEN_EVENT)); tree = await runtime.flush()
+    assert.equal(find(tree, node => node.type === 'Dialog').props.open, true)
+    assert.equal(find(tree, node => node.props.type === 'checkbox').props.checked, true)
+    find(tree, node => node.props.type === 'checkbox').props.onChange({ target: { checked: false } }); tree = await runtime.flush()
+    await find(tree, node => node.props.children === 'Agora não').props.onClick(); tree = await runtime.flush()
+    assert.equal(writes, 1)
+    assert.equal(refreshes, fail ? 0 : 1)
+    assert.equal(find(tree, node => node.type === 'Dialog').props.open, fail)
+    if (fail) {
+      find(tree, node => node.props.role === 'alert')
+      find(tree, node => node.props.type === 'checkbox').props.onChange({ target: { checked: true } }); tree = await runtime.flush()
+      await find(tree, node => node.props.children === 'Agora não').props.onClick(); tree = await runtime.flush()
+      assert.equal(find(tree, node => node.type === 'Dialog').props.open, false)
+      assert.equal(writes, 1)
+    }
+  }
+})
+
+test('tour checkbox saves dismissal once when close is requested twice during the same update', async () => {
+  const runtime = hooks(), window = Object.assign(new EventTarget(), { sessionStorage: { getItem: () => null, setItem() {} } })
+  let release, checks = 0, writes = 0
+  const client = { auth: {
+    getUser: () => { checks++; return new Promise(resolve => { release = resolve }) },
+    updateUser: async payload => { writes++; return { data: { user: { id: 'user-a', user_metadata: payload.data } }, error: null } },
+  } }
+  const { FeatureTour } = load('components/feature-tour.tsx', { react: runtime.react, 'next/navigation': { useRouter: () => ({ refresh() {} }) }, '@/lib/supabase/client': { createClient: () => client } }, { window, Event })
+  runtime.render(FeatureTour, { userId: 'user-a', signedInAt: 'login', dismissed: false })
+  let tree = await runtime.flush()
+  find(tree, node => node.props.type === 'checkbox').props.onChange({ target: { checked: true } }); tree = await runtime.flush()
+  const close = find(tree, node => node.props.children === 'Agora não').props.onClick
+  close(); close(); tree = await runtime.flush()
+  assert.equal(checks, 1)
+  assert.equal(writes, 0)
+  assert.equal(find(tree, node => node.props.type === 'checkbox').props.disabled, true)
+  release({ data: { user: { id: 'user-a' } }, error: null }); tree = await runtime.flush()
+  assert.equal(writes, 1)
+  assert.equal(find(tree, node => node.type === 'Dialog').props.open, false)
+})
+
+test('home loads the tour preference from the verified account across devices', async () => {
+  const tour = load('lib/feature-tour.ts')
+  const user = { id: 'user-a', email: 'test@example.com', last_sign_in_at: 'login-1', user_metadata: { full_name: 'Ana', [tour.FEATURE_TOUR_METADATA_KEY]: tour.FEATURE_TOUR_VERSION } }
+  const { default: HomePage } = load('app/page.tsx', {
+    '@/app/actions': {}, '@/lib/tickets': load('lib/tickets.ts'), '@/lib/profile-photo': load('lib/profile-photo.ts'),
+    '@/lib/supabase/server': { createClient: async () => ({ auth: { getUser: async () => ({ data: { user } }) } }) },
+    'next/navigation': { redirect() { throw new Error('unexpected redirect') } },
+  })
+  const tree = await HomePage()
+  const presentation = find(tree, node => node.type === 'FeatureTour')
+  assert.equal(presentation.props.dismissed, true)
+  assert.equal(presentation.props.userId, 'user-a')
+  assert.equal(presentation.props.signedInAt, 'login-1')
+  find(tree, node => node.type === 'FeatureTourLauncher')
 })

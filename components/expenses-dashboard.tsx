@@ -165,7 +165,7 @@ export function ExpensesDashboard({ navigationActions, notificationActions }: { 
               <DialogDescription>{t("Aparência, suporte e sua conta.")}</DialogDescription>
             </DialogHeader>
             <nav aria-label={t("Opções da conta")} className="flex flex-col items-stretch gap-3 [&>a]:flex [&>a]:min-h-11 [&>a]:items-center [&>a]:rounded-xl [&>button]:min-h-11 [&>button]:justify-start [&>form>button]:w-full [&>form>button]:justify-start" onClick={event => {
-              if ((event.target as HTMLElement).closest('a[href]')) setNavigationOpen(false)
+              if ((event.target as HTMLElement).closest('a[href], [data-close-navigation]')) setNavigationOpen(false)
             }}>
               {navigationActions}
               <PwaInstallButton />

@@ -10,7 +10,13 @@ export function searchNamePattern(input: string): string {
   return `%${input.replace(/[\\%_]/g, '\\$&')}%`
 }
 
+export function validSearchDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value < '0001-01-01') return false
+  const date = new Date(`${value}T12:00:00Z`)
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value
+}
+
 export type ExpenseSearchResult = {
   id: string; nome: string; valor: number; data_pagamento: string; status: string; board_id: string | null
-  board_name: string; board_month: number | null; board_year: number | null
+  board_name: string; board_month: number | null; board_year: number | null; category?: string
 }

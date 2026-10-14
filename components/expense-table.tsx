@@ -376,9 +376,9 @@ export function ExpenseTable({
             <p className="text-sm text-muted-foreground p-4">{t("Nenhuma despesa em ")}{selectedLabel}.
             </p>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="expense-table-wrapper min-w-0 lg:overflow-x-auto">
               <Table>
-                <TableHeader className="hidden sm:table-header-group">
+                <TableHeader className="hidden lg:table-header-group">
                   <TableRow>
                     <TableHead>{t("Nome")}</TableHead>
                     <TableHead>{t("Data")}</TableHead>
@@ -393,8 +393,8 @@ export function ExpenseTable({
                   {expenses.map((expense) => {
                     const instLabel = installmentLabel(expense)
                     return (
-                      <TableRow key={expense.id} className="group expense-row grid grid-cols-2 items-start gap-x-2 py-3 sm:table-row sm:py-0">
-                        <TableCell className="expense-name col-span-2 min-w-0 sm:table-cell">
+                      <TableRow key={expense.id} className="group expense-row grid grid-cols-2 items-start gap-x-2 py-3 lg:table-row lg:py-0">
+                        <TableCell className="expense-name col-span-2 min-w-0 lg:table-cell">
                           <span className="flex flex-wrap items-center gap-2 break-words">
                             <span>{expense.nome}</span>
                             {instLabel && (
@@ -407,21 +407,20 @@ export function ExpenseTable({
                             )}
                           </span>
                         </TableCell>
-                        <TableCell className="expense-date text-xs text-muted-foreground sm:table-cell">
-                          <span className="sr-only sm:hidden">{t("Pagamento:")}</span>{parseISODate(expense.data_pagamento).toLocaleDateString(locale, {
+                        <TableCell className="expense-date text-xs text-muted-foreground lg:table-cell">
+                          <span className="sr-only lg:hidden">{t("Pagamento:")}</span>{parseISODate(expense.data_pagamento).toLocaleDateString(locale, {
                             timeZone: 'UTC',
                           })}
                         </TableCell>
-                        <TableCell className="expense-value text-right font-medium tabular-nums sm:table-cell sm:text-left">
+                        <TableCell className="expense-value text-right font-medium tabular-nums lg:table-cell lg:text-left">
                           <MaskedValue value={expense.valor} />
                         </TableCell>
-                        {/* <div className="basis-full h-0 sm:hidden" /> */}
-                        <TableCell className="expense-status sm:table-cell">
+                        <TableCell className="expense-status lg:table-cell">
                           <Badge className={statusColor[expense.status]}>{expense.status === 'Pago' ? <Check className="mr-1 size-3" aria-hidden="true" /> : expense.status === 'VR/VA' ? <CreditCard className="mr-1 size-3" aria-hidden="true" /> : <Clock className="mr-1 size-3" aria-hidden="true" />}{t(expense.status)}</Badge>
                         </TableCell>
-                        <TableCell className="expense-comment col-span-2 break-words text-xs text-muted-foreground sm:table-cell">{expense.comentario}</TableCell>
-                        <TableCell className="expense-category text-right text-xs text-muted-foreground sm:text-left">{!expense.category || expense.category === 'Sem categoria' ? t('Sem categoria') : expense.category}</TableCell>
-                        <TableCell className="expense-actions col-span-2 sm:table-cell">
+                        <TableCell className="expense-comment col-span-2 break-words text-xs text-muted-foreground lg:table-cell">{expense.comentario}</TableCell>
+                        <TableCell className="expense-category text-right text-xs text-muted-foreground lg:text-left">{!expense.category || expense.category === 'Sem categoria' ? t('Sem categoria') : expense.category}</TableCell>
+                        <TableCell className="expense-actions col-span-2 lg:table-cell">
                           <div className="flex flex-col gap-1 md:opacity-70 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity">
                             <div className="flex flex-wrap gap-1">
                               <Button

@@ -1,18 +1,28 @@
 import { createClient } from '@/lib/supabase/server'
-import { searchAmount, searchNamePattern } from '@/lib/expense-search'
+import { searchAmount, searchNamePattern, validSearchDate } from '@/lib/expense-search'
 
 export async function GET(request: Request) {
   const headers = { 'Cache-Control': 'private, no-store' }
   const supabase = await createClient()
   const auth = await supabase.auth.getUser()
   if (auth.error || !auth.data.user) return Response.json({ error: 'Entre novamente para pesquisar.' }, { status: 401, headers })
-  const term = (new URL(request.url).searchParams.get('q') ?? '').trim()
-  if (!term || term.length > 100) return Response.json({ error: 'Digite um nome ou valor de até 100 caracteres.' }, { status: 400, headers })
+  const params = new URL(request.url).searchParams
+  const term = (params.get('q') ?? '').trim()
+  const start = params.get('start') ?? '', end = params.get('end') ?? '', category = params.get('category') ?? ''
+  if (term.length > 100 || (!term && !start && !end && !category)) return Response.json({ error: 'Informe um nome, valor, data ou categoria para pesquisar.' }, { status: 400, headers })
+  if ((start && !validSearchDate(start)) || (end && !validSearchDate(end)) || (start && end && start > end)) return Response.json({ error: 'Informe um período válido. A data inicial deve ser anterior ou igual à final.' }, { status: 400, headers })
+  if (category.length > 60) return Response.json({ error: 'Categoria inválida.' }, { status: 400, headers })
   const userId = auth.data.user.id
-  const base = () => supabase.from('expenses').select('id,nome,valor,data_pagamento,status,board_id')
-    .eq('user_id', userId).is('represents_board_id', null).order('data_pagamento', { ascending: false }).order('id').limit(51)
+  const base = () => {
+    let query = supabase.from('expenses').select('id,nome,valor,data_pagamento,status,board_id,category')
+      .eq('user_id', userId).is('represents_board_id', null)
+    if (start) query = query.gte('data_pagamento', start)
+    if (end) query = query.lte('data_pagamento', end)
+    if (category) query = query.eq('category', category)
+    return query.order('data_pagamento', { ascending: false }).order('id').limit(51)
+  }
   const amount = searchAmount(term)
-  const queries = [base().ilike('nome', searchNamePattern(term))]
+  const queries = [term ? base().ilike('nome', searchNamePattern(term)) : base()]
   if (amount !== null) queries.push(base().eq('valor', amount))
   const responses = await Promise.all(queries)
   if (responses.some(result => result.error)) return Response.json({ error: 'Não foi possível pesquisar. Tente novamente.' }, { status: 503, headers })

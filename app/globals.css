@@ -149,6 +149,37 @@
   }
 }
 
+/* Subtle, theme-aware scrollbars for the page and nested scrolling surfaces. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--muted-foreground) 45%, transparent) transparent;
+}
+
+@media (hover: hover) {
+  *:hover {
+    scrollbar-color: color-mix(in srgb, var(--primary) 65%, transparent) transparent;
+  }
+}
+
+/* Older WebKit browsers do not support the standard scrollbar properties. */
+@supports not (scrollbar-width: thin) {
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--muted-foreground) 45%, transparent);
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in srgb, var(--primary) 65%, transparent);
+  }
+}
+
+@media (forced-colors: active) {
+  * { scrollbar-width: auto; scrollbar-color: auto; }
+}
+
 /* Shared Material styling also reaches controls rendered in portals. */
 [data-slot="button"] {
   border-radius: 999px;
@@ -382,10 +413,11 @@
 .material-dashboard .material-salary .text-muted-foreground { color: var(--muted-foreground); }
 .material-dashboard .material-board { box-shadow: none; }
 .material-dashboard .material-table [data-slot="table-cell"] { padding: 0.75rem; }
-@media (max-width: 639px) {
+@media (width < 1024px) {
   .expense-list [data-slot="table"], .expense-list [data-slot="table-body"] { display: block; width: 100%; }
   .expense-list [data-slot="table-container"] { overflow-x: visible; }
-  .expense-list [data-slot="table-cell"] { display: block; white-space: normal; min-width: 0; padding: 0.375rem 0.75rem; }
+  .expense-list .expense-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .expense-list [data-slot="table-cell"] { display: block; white-space: normal; min-width: 0; overflow-wrap: anywhere; padding: 0.375rem 0.75rem; }
   .expense-list .expense-name { order: 0; font-weight: 500; }
   .expense-list .expense-date { order: 1; }
   .expense-list .expense-value { order: 2; }

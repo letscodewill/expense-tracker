@@ -13,6 +13,8 @@ import { ProfilePhoto } from '@/components/profile-photo'
 import { ThemeSelector } from '@/components/theme-selector'
 import { AdminTicketNotifications } from '@/components/admin-ticket-notifications'
 import { LanguageSelector } from '@/components/language-selector'
+import { FeatureTour, FeatureTourLauncher } from '@/components/feature-tour'
+import { FEATURE_TOUR_METADATA_KEY, FEATURE_TOUR_VERSION } from '@/lib/feature-tour'
 
 export default async function HomePage() {
   const { t } = await getServerTranslation()
@@ -58,9 +60,11 @@ export default async function HomePage() {
         </div>
       </header>
       <main>
+        <FeatureTour key={user.id} userId={user.id} signedInAt={user.last_sign_in_at ?? ''} dismissed={user.user_metadata?.[FEATURE_TOUR_METADATA_KEY] === FEATURE_TOUR_VERSION} />
         <ExpensesDashboard notificationActions={ticketAdmin ? <AdminTicketNotifications /> : undefined} navigationActions={<>
           <LanguageSelector />
           <ThemeSelector />
+          <FeatureTourLauncher />
           <ChangePasswordButton />
           <ReportDialog />
           <Link href="/tickets" className="rounded-full border border-border px-4 py-2 text-sm font-medium text-primary hover:bg-accent">{t("Meus tickets")}</Link>
