@@ -53,11 +53,12 @@ async function main() {
     const drive = new Drive(tokens.access_token)
     const profile = await drive.json('about?fields=user(emailAddress)')
     if (profile.user?.emailAddress?.toLowerCase() !== 'willslima123@gmail.com') throw new Error('Conta diferente da escolhida; nenhuma pasta foi criada.')
-    const existing = await drive.list(`name = 'Backups NoControle' and mimeType = 'application/vnd.google-apps.folder' and trashed = false and appProperties has { key='app' and value='${APP}' }`)
-    if (existing.length > 1) throw new Error('Há mais de uma pasta da rotina. Selecione a correta antes de prosseguir.')
-    const folder = existing[0] ?? await drive.createFolder('Backups NoControle', null, { app: APP })
+    const existingFolders = await drive.list(`name = 'Backups NoControle' and mimeType = 'application/vnd.google-apps.folder' and trashed = false and appProperties has { key='app' and value='${APP}' }`)
+    if (existingFolders.length > 1) throw new Error('Há mais de uma pasta da rotina. Selecione a correta antes de prosseguir.')
+    const folder = existingFolders[0] ?? await drive.createFolder('Backups NoControle', null, { app: APP })
     await drive.assertPrivate(folder.id)
     const settings = {
+      ...existing,
       BACKUP_ENCRYPTION_KEY: existing.BACKUP_ENCRYPTION_KEY || randomBytes(32).toString('hex'),
       GOOGLE_BACKUP_CLIENT_ID: client.client_id,
       GOOGLE_BACKUP_CLIENT_SECRET: client.client_secret,
@@ -71,7 +72,7 @@ async function main() {
     if (Object.values(settings).some(value => /['\r\n]/.test(value))) throw new Error('Configuração contém caracteres não suportados. Codifique caracteres especiais da senha na URL do banco.')
     await writeFile(output, Object.entries(settings).map(([name, value]) => `${name}='${value}'`).join('\n') + '\n', { flag: hasExisting ? 'w' : 'wx', mode: 0o600 })
     console.log('Pasta privada criada/verificada; credenciais e chave salvas em .env.backup.local (ignorado pelo Git).')
-    console.log('Complete as credenciais do Supabase nesse arquivo e configure os Secrets do GitHub seguindo docs/BACKUP.md.')
+    console.log(hasExisting ? 'Chave de criptografia e configurações anteriores preservadas. Atualize GOOGLE_BACKUP_REFRESH_TOKEN nos Secrets do GitHub.' : 'Complete as credenciais do Supabase nesse arquivo e configure os Secrets do GitHub seguindo docs/BACKUP.md.')
     console.log('Guarde a chave de criptografia também em um gerenciador de senhas, separado dos backups.')
   } finally { server.close() }
 }

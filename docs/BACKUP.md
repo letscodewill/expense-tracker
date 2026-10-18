@@ -2,7 +2,7 @@
 
 ## Estado da implementação
 
-A autorização Google foi concluída e um primeiro backup real foi enviado ao Drive, copiado para o HD e verificado em 6 de outubro de 2026. A tarefa diária de cópia no Windows está registrada e foi executada com resultado zero. **A geração diária na nuvem ainda não está ativa:** faltam a publicação do workflow na branch padrão, os Secrets/Variables do GitHub e uma execução manual bem-sucedida. A conexão Google deste chat não fornece credenciais para o GitHub Actions.
+A geração diária na nuvem foi ativada: execuções agendadas de 10 a 13 de outubro de 2026 foram confirmadas. A execução de 14/10 falhou por autorização Google inválida (`invalid_grant`), também confirmada localmente nessa data. A cópia de 13/10 no HD passou na verificação de integridade, e a tarefa Windows teve resultado zero na última execução consultada. **O envio precisa ser reautorizado e validado novamente; a execução atual ainda não foi confirmada.** A conexão Google deste chat não renova as credenciais usadas pelo GitHub Actions.
 
 - Conta escolhida: **willslima123@gmail.com**.
 - Pasta criada pela autorização da rotina: **Backups NoControle**, na raiz do Meu Drive, sem compartilhamento.
@@ -52,7 +52,22 @@ Abra o endereço mostrado e entre como **willslima123@gmail.com**. O assistente 
 
 **Guarde uma cópia da chave `BACKUP_ENCRYPTION_KEY` em um gerenciador de senhas.** Ela não fica no Drive nem em `C:\backupNoControle`. Perder a chave impede recuperar os backups. Não gere outra chave para reutilizar arquivos antigos.
 
-Se precisar renovar a autorização Google, execute o assistente novamente: ele preserva a chave e as configurações existentes em `.env.backup.local`. Depois atualize o refresh token nos Secrets do GitHub. Não apague esse arquivo para reautorizar.
+Se precisar renovar a autorização Google, execute o assistente novamente: ele preserva a chave e as configurações existentes em `.env.backup.local`. Depois atualize o refresh token nos Secrets do GitHub. Não apague esse arquivo para reautorizar. Em 18/10/2026 foi corrigido o encobrimento da variável de configurações pela lista de pastas; `tests/backup-reauthorization.test.mjs` valida que chave, banco e destino local permanecem iguais ao atualizar o token, usando apenas dados fictícios.
+
+### Renovar o token após `invalid_grant`
+
+1. No projeto correspondente do Google Cloud, abrir **Google Auth Platform → Audience/Público-alvo**. Se o aplicativo externo estiver em **Testing/Teste**, mudar para **In production/Em produção** antes de autorizar novamente. Em teste, tokens com escopo Drive expiram em sete dias; outras causas de revogação continuam possíveis em produção. Referência: https://developers.google.com/identity/protocols/oauth2#expiration.
+2. No PowerShell, entrar em `C:\projects\expense-tracker` e executar o configurador corrigido com o JSON do cliente Desktop. O caminho depende de onde o arquivo foi salvo:
+
+   ```powershell
+   node scripts/backup/configure-google.mjs "C:\Users\wills\Downloads\client_secret_24098200982-pf1tafc51aes8v5arcs0opcq1v3io1li.apps.googleusercontent.com.json"
+   ```
+
+3. Abrir o link apresentado pelo terminal, entrar com **willslima123@gmail.com** e autorizar. Manter o terminal aberto até a mensagem de conclusão. O assistente atualiza `.env.backup.local` sem imprimir tokens nem alterar `BACKUP_ENCRYPTION_KEY`.
+4. Abrir `.env.backup.local` no editor e copiar somente o valor de `GOOGLE_BACKUP_REFRESH_TOKEN`, sem aspas. No GitHub → repositório → Settings → Secrets and variables → Actions → Repository secrets, editar o Secret de mesmo nome. Se reutilizou o mesmo JSON, os Secrets do client ID e client secret permanecem os mesmos; se escolheu outro cliente, atualizar também esses dois campos. Não enviar valores pelo chat.
+5. No GitHub, executar **Actions → Backup diario NoControle → Run workflow** e confirmar sucesso. Para atualizar a cópia local após isso, executar `node --env-file=.env.backup.local scripts/backup.mjs sync`. A tarefa Windows continuará utilizando o token salvo no arquivo local.
+
+Não substituir `BACKUP_ENCRYPTION_KEY`: os arquivos antigos dependem da chave original. Uma execução bem-sucedida e uma cópia local verificada confirmam a retomada; a restauração completa exige um ambiente separado.
 
 Nunca envie o JSON OAuth, `.env.backup.local` ou os Secrets pelo chat. Guarde o JSON fora da pasta sincronizada do Drive e fora de commits.
 

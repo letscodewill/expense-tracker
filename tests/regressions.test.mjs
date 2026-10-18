@@ -377,7 +377,7 @@ test('collapsing expense rows keeps title, total and unpaid balance visible', as
     find(tree, node => node.props['aria-label'] === 'Alternar exibição do quadro').props.onClick()
     tree = runtime.render()
     assert.equal(elements(tree, node => node.type === 'Table').length, 0)
-    find(tree, node => node.type === 'h2' && node.props.children === 'Despesas do mês')
+    find(tree, node => node.type === 'button' && node.props.children === 'Despesas do mês')
     find(tree, node => node.type === 'MaskedValue' && node.props.value === 100)
     find(tree, node => node.type === 'MaskedValue' && node.props.value === 80)
     find(tree, node => node.props['aria-label'] === 'Alternar exibição do quadro').props.onClick()
@@ -385,6 +385,28 @@ test('collapsing expense rows keeps title, total and unpaid balance visible', as
     assert.equal(elements(tree, node => node.type === 'Table').length, 1)
     assert.equal(db.requests.length, 1)
   }
+})
+
+test('board focus opens collapsed expenses without refetching and restores collapse state on close', async () => {
+  const runtime = hooks(), db = database({ expenses: [success([expense])] })
+  const { ExpenseTable } = load('components/expense-table.tsx', { react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client } })
+  runtime.render(ExpenseTable, { boardId: 'board-1', title: 'Itaú', selected, defaultOpen: false })
+  let tree = await runtime.flush()
+  assert.equal(elements(tree, node => node.type === 'Table').length, 0)
+  find(tree, node => node.type === 'button' && node.props['aria-haspopup'] === 'dialog').props.onClick()
+  tree = runtime.render()
+  assert.equal(find(tree, node => node.type === 'Dialog').props.open, true)
+  assert.equal(elements(tree, node => node.type === 'Table').length, 1)
+  find(tree, node => node.type === 'MaskedValue' && node.props.value === expense.valor)
+  find(tree, node => node.type === 'Button' && node.props.children === 'Editar').props.onClick()
+  tree = runtime.render()
+  assert.equal(find(tree, node => node.type === 'AddExpenseDialog').props.expenseToEdit.id, expense.id)
+  find(tree, node => node.type === 'AddExpenseDialog').props.onOpenChange(false)
+  tree = runtime.render()
+  find(tree, node => node.type === 'Dialog').props.onOpenChange(false)
+  tree = runtime.render()
+  assert.equal(elements(tree, node => node.type === 'Table').length, 0)
+  assert.equal(db.requests.length, 1)
 })
 
 test('VR/VA and paid expenses do not contribute to pending balance in any board', async () => {

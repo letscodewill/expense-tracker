@@ -1,4 +1,4 @@
-// Read-only review proof: runs the current configurator with synthetic files,
+// Regression check: runs the current configurator with synthetic files,
 // mocked OAuth, mocked Drive and an in-memory writer. No real credentials used.
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -48,7 +48,10 @@ for (let index = 0; index < 20 && !written && !failure; index++) await new Promi
 assert.equal(failure, undefined)
 assert.ok(written)
 const saved = parseEnv(written)
-assert.notEqual(saved.BACKUP_ENCRYPTION_KEY, oldKey)
-assert.equal(saved.BACKUP_DATABASE_URL, '')
-assert.equal(saved.BACKUP_SUPABASE_SECRET_KEY, '')
-console.log('CONFIRMED: reauthorization replaces the previous encryption key and clears database settings. Synthetic configuration only; no real file was modified.')
+assert.equal(saved.BACKUP_ENCRYPTION_KEY, oldKey)
+assert.equal(saved.BACKUP_DATABASE_URL, 'postgresql://synthetic')
+assert.equal(saved.BACKUP_SUPABASE_SECRET_KEY, 'synthetic-secret')
+assert.equal(saved.BACKUP_LOCAL_DIR, 'C:\\synthetic-backup')
+assert.equal(saved.GOOGLE_BACKUP_REFRESH_TOKEN, 'synthetic-refresh')
+assert.equal(saved.GOOGLE_BACKUP_FOLDER_ID, 'existing-folder')
+console.log('PASS: reauthorization preserves the encryption key, database settings and local destination while updating the OAuth token. Synthetic configuration only; no real file was modified.')

@@ -1,7 +1,7 @@
 'use client'
 
 import { useLanguage } from '@/components/language-provider'
-import { useEffect, useState, useCallback, useTransition } from 'react'
+import { useEffect, useState, useCallback, useTransition, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
@@ -11,6 +11,7 @@ import { AddExpenseDialog } from '@/components/add-expense-dialog'
 import type { MonthYear } from '@/components/month-year-picker'
 import { Pencil, Check, X, ChevronsUpDown, Clock, CreditCard } from 'lucide-react'
 import { MaskedValue } from '@/components/masked-value'
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 
 type Expense = {
   id: number
@@ -86,6 +87,8 @@ export function ExpenseTable({
 
   const supabase = createClient()
   const [isOpen, setIsOpen] = useState(defaultOpen)
+  const [focused, setFocused] = useState(false)
+  const boardTriggerRef = useRef<HTMLButtonElement>(null)
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState(false)
@@ -261,11 +264,11 @@ export function ExpenseTable({
   )
   const selectedLabel = new Date(selected.year, selected.month, 1).toLocaleDateString(locale, { month: 'long', year: 'numeric' })
 
-  return (
-    <div className="material-board space-y-3 rounded-2xl border p-3 sm:p-4">
+  const renderBoard = (inModal = false) => (
+    <div className="material-board min-w-0 space-y-3 rounded-2xl border p-3 sm:p-4">
       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <Button
+        <div className="flex flex-1 items-center gap-2 min-w-0">
+          {!inModal && <Button
             variant="ghost"
             size="icon"
             className="size-8 shrink-0"
@@ -275,7 +278,7 @@ export function ExpenseTable({
           >
             <ChevronsUpDown className="h-4 w-4" />
             <span className="sr-only">{t("Alternar exibição do quadro")}</span>
-          </Button>
+          </Button>}
 
           {boardId && renamingBoard ? (
             <div className="flex items-center gap-2 min-w-0">
@@ -320,7 +323,17 @@ export function ExpenseTable({
             </div>
           ) : (
             <>
-              <h2 className="text-lg font-medium tracking-tight truncate">{boardId ? title : t(title)}</h2>
+              <h2 className="min-w-0 flex-1 text-lg font-medium tracking-tight">
+                {inModal ? <span className="block truncate">{boardId ? title : t(title)}</span> : (
+                  <button
+                    ref={boardTriggerRef}
+                    type="button"
+                    className="block w-full cursor-pointer truncate rounded-md py-2 text-left transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+                    aria-haspopup="dialog"
+                    onClick={() => setFocused(true)}
+                  >{boardId ? title : t(title)}</button>
+                )}
+              </h2>
               {boardId && (
                 <Button
                   variant="ghost"
@@ -359,7 +372,7 @@ export function ExpenseTable({
       </div>
 
       {paymentError && <p role="alert" className="text-sm text-destructive">{t(paymentError)}</p>}
-      {isOpen && <div className="space-y-4">
+      {(inModal || (!focused && isOpen)) && <div className="space-y-4">
         <div className="material-table expense-list rounded-xl border">
           {loading || isPending ? (
             <p className="text-sm text-muted-foreground p-4">{t("Carregando...")}</p>
@@ -469,7 +482,7 @@ export function ExpenseTable({
         </div>
       </div>}
 
-      {editingExpense && (
+      {editingExpense && (inModal || !focused) && (
         <AddExpenseDialog
           selected={selected}
           boardId={boardId}
@@ -481,5 +494,21 @@ export function ExpenseTable({
         />
       )}
     </div>
+  )
+
+  return (
+    <Dialog open={focused} onOpenChange={setFocused}>
+      {!focused && renderBoard()}
+      <DialogContent
+        className="max-h-[90dvh] w-[96vw] max-w-[96vw] gap-0 overflow-hidden rounded-2xl p-3 pt-14 sm:w-[90vw] sm:max-w-[90vw] sm:p-5 sm:pt-14 [&>[data-slot=dialog-close]]:top-1 [&>[data-slot=dialog-close]]:right-3 [&>[data-slot=dialog-close]]:z-10 [&>[data-slot=dialog-close]]:pb-2"
+        finalFocus={boardTriggerRef}
+      >
+        <DialogTitle className="sr-only">{boardId ? title : t(title)}</DialogTitle>
+        <DialogDescription className="sr-only">{selectedLabel}</DialogDescription>
+        <div className="min-h-0 min-w-0 max-h-[calc(90dvh-4.25rem)] overflow-y-auto overscroll-contain pr-2 sm:max-h-[calc(90dvh-4.75rem)] sm:pr-3 [scrollbar-gutter:stable]">
+          {focused && renderBoard(true)}
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }

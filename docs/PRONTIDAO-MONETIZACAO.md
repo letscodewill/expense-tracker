@@ -4,6 +4,8 @@
 
 **Atualização após autorização do usuário — 14/10/2026:** a exclusão de quadros foi corrigida e testada no Supabase pela migração `20261014223610_secure_board_deletion.sql`. As descrições da falha abaixo são o registro da condição anterior. A função deixou de usar privilégios elevados, não permite chamada anônima e restringe exclusão/limpeza à conta autenticada. Os vínculos de despesas e resumos também passaram a exigir o mesmo proprietário. Testes de exclusão, isolamento e pagamentos passaram com rollback; detalhes em [BOARD_DELETION.md](../supabase/BOARD_DELETION.md). Os demais pontos continuam pendentes.
 
+**Atualização — 18/10/2026:** corrigido o configurador de reautorização do Google para preservar a chave e as configurações existentes. O teste passou a ser uma regressão automática em `tests/backup-reauthorization.test.mjs`. A reautorização real, a atualização do Secret no GitHub e a confirmação de um novo backup continuam pendentes; seguir [BACKUP.md](BACKUP.md).
+
 ## Evidências e limites
 
 - Revisão do código atual, rotas, dependências, documentação e workflow de backup.
@@ -30,7 +32,7 @@
 - O Google Drive conectado confirmou a pasta **Backups NoControle** sem compartilhamento e backups até 13/10. A última subpasta contém `database.dump.enc`, `roles.sql.enc` e `manifest.json.enc`, todos privados. A presença foi confirmada por metadados, sem leitura de conteúdo financeiro pelo conector.
 - A cópia local de 13/10 em `C:\backupNoControle\nocontrole-2026-10-13T14-07-11-c8bbbad3` passou novamente em `node --env-file=.env.backup.local scripts/backup.mjs verify ...`. A chave atual consegue autenticar essa cópia; nenhum arquivo descriptografado foi gravado.
 - A tarefa Windows está **Ready**, `StartWhenAvailable=True`, com última execução **13/10/2026 19:03:46**, resultado **0**, próxima **15/10/2026 07:30**. Essa execução anterior não prova que a autorização ainda funciona hoje; o teste atual de renovação falhou.
-- **Novo achado crítico no configurador:** `scripts/backup/configure-google.mjs` declara `existing` para as configurações e novamente para a lista de pastas. O segundo valor encobre o primeiro. Ao reautorizar, o script gera outra chave de criptografia e apaga os campos de conexão do banco, contrariando a documentação. `node tests/backup-reauthorization-review.mjs` reproduziu isso com arquivos, OAuth e Drive simulados; nenhum arquivo real foi modificado.
+- **Achado crítico no configurador, corrigido em 18/10:** `scripts/backup/configure-google.mjs` declarava `existing` para as configurações e novamente para a lista de pastas. O segundo valor encobria o primeiro, gerando outra chave de criptografia e apagando os campos de conexão do banco ao reautorizar. Uma simulação reproduziu o erro sem alterar arquivos reais. Após a correção, `tests/backup-reauthorization.test.mjs` verifica automaticamente a preservação da chave e das configurações.
 - Corrigir e testar o configurador **antes de reexecutá-lo**, preservar a chave existente e suas credenciais, verificar o estado de publicação OAuth, reautorizar e atualizar o refresh token nos Secrets do GitHub. Depois testar uma geração nova e a sincronização no HD. Não trocar `BACKUP_ENCRYPTION_KEY` para recuperar os arquivos antigos.
 - A listagem do Supabase mostrou somente o projeto de produção. Não há destino Supabase isolado identificado para comprovar a restauração completa. A verificação de integridade não equivale a recuperar Auth, banco, Storage e login em outro projeto. Nenhuma restauração foi tentada contra produção.
 
