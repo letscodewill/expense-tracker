@@ -15,7 +15,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const primitives = new Proxy({}, { get: (_, name) => String(name) })
 const portugueseTranslation = (text, values) => values ? text.replace(/\{(\w+)\}/g, (token, key) => values[key] === undefined ? token : String(values[key])) : text
 const englishDictionary = JSON.parse(fs.readFileSync(path.join(root, 'lib/i18n/en.json'), 'utf8'))
-const languageModule = () => load('lib/i18n/index.ts', { './en.json': englishDictionary })
+const spanishDictionary = JSON.parse(fs.readFileSync(path.join(root, 'lib/i18n/es.json'), 'utf8'))
+const languageModule = () => load('lib/i18n/index.ts', { './en.json': englishDictionary, './es.json': spanishDictionary })
 const englishTranslate = (text, values) => languageModule().translate(text, 'en', values)
 const englishLanguage = { useLanguage: () => ({ language: 'en', locale: 'en-US', t: englishTranslate }) }
 function load(file, mocks = {}, globals = {}) {
@@ -28,8 +29,11 @@ function load(file, mocks = {}, globals = {}) {
   const localRequire = (name) => {
     if (Object.hasOwn(mocks, name)) return mocks[name]
     if (name === '@/lib/feature-tour') return load('lib/feature-tour.ts')
+    if (name === '@/lib/use-currency') return { useCurrency: () => 'BRL' }
+    if (name === '@/lib/currency') return load('lib/currency.ts')
+    if (name === '@/lib/legal-content') return load('lib/legal-content.ts')
     if (name === '@/lib/password-recovery') return load('lib/password-recovery.ts')
-    if (name === '@/lib/i18n') return load('lib/i18n/index.ts', { './en.json': JSON.parse(fs.readFileSync(path.join(root, 'lib/i18n/en.json'), 'utf8')) })
+    if (name === '@/lib/i18n') return languageModule()
     if (name === '@/components/language-provider') return { useLanguage: () => ({ language: 'pt-BR', locale: 'pt-BR', t: portugueseTranslation }) }
     if (name === '@/lib/i18n/server') return { getServerTranslation: async () => ({ language: 'pt-BR', locale: 'pt-BR', t: portugueseTranslation }) }
     if (name === '@/lib/expense-duplicates') return load('lib/expense-duplicates.ts')
@@ -2055,7 +2059,7 @@ test('real encrypted PDFs are opened locally, rendered without encryption and re
 test('language selection persists, synchronizes tabs and works when storage is blocked', () => {
   const target = new EventTarget(), data = new Map(), document = { documentElement: { lang: 'pt-BR' }, cookie: '' }
   const localStorage = { getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value) }
-  const store = load('lib/i18n/index.ts', { './en.json': englishDictionary }, { window: target, document, localStorage, location: { protocol: 'https:' }, Event })
+  const store = load('lib/i18n/index.ts', { './en.json': englishDictionary, './es.json': spanishDictionary }, { window: target, document, localStorage, location: { protocol: 'https:' }, Event })
   let calls = 0
   const unsubscribe = store.subscribeLanguage(() => calls++)
   store.selectLanguage('en')
@@ -2091,6 +2095,85 @@ test('translation preserves supplied names, safely interpolates values and cover
     }
     visit(source)
   }
+})
+
+test('Spanish covers all dictionary keys and placeholders and preserves user content', () => {
+  const { translate, normalizeLanguage, languageLocale } = languageModule()
+  assert.deepEqual(Object.keys(spanishDictionary).sort(), Object.keys(englishDictionary).sort())
+  for (const [key, value] of Object.entries(spanishDictionary)) {
+    assert.ok(value.trim().length > 0, key)
+    assert.deepEqual((key.match(/\{\w+\}/g) ?? []).sort(), (value.match(/\{\w+\}/g) ?? []).sort(), key)
+  }
+  assert.equal(normalizeLanguage('es'), 'es')
+  assert.equal(normalizeLanguage('invalid'), 'pt-BR')
+  assert.equal(languageLocale('es'), 'es-419')
+  assert.equal(translate(' Pendente ', 'es'), ' Pendiente ')
+  assert.equal(translate('Foto de {name}', 'es', { name: '<Ana> $&' }), 'Foto de <Ana> $&')
+  assert.equal(translate('Mi categoría personal', 'es'), 'Mi categoría personal')
+})
+
+test('display currency persists independently, syncs tabs and remains usable with blocked storage', () => {
+  const target = new EventTarget(), values = new Map()
+  const localStorage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) }
+  const store = load('lib/currency.ts', {}, { window: target, localStorage, Event })
+  assert.equal(store.getCurrencySnapshot(), 'BRL')
+  let events = 0
+  const unsubscribe = store.subscribeCurrency(() => events++)
+  store.selectCurrency('USD')
+  assert.equal(store.getCurrencySnapshot(), 'USD')
+  assert.equal(values.get(store.CURRENCY_STORAGE_KEY), 'USD')
+  assert.equal(values.has('nocontrole:language'), false)
+  values.set(store.CURRENCY_STORAGE_KEY, 'invalid')
+  const event = new Event('storage'); event.key = store.CURRENCY_STORAGE_KEY; event.newValue = 'invalid'; target.dispatchEvent(event)
+  assert.equal(store.getCurrencySnapshot(), 'BRL')
+  localStorage.setItem = () => { throw new Error('blocked') }
+  store.selectCurrency('USD')
+  assert.equal(store.getCurrencySnapshot(), 'USD')
+  assert.equal(events, 3)
+  unsubscribe()
+  store.selectCurrency('BRL')
+  assert.equal(events, 3)
+})
+
+test('USD presentation changes the symbol without conversion and respects salary masking', () => {
+  const { MaskedValue } = load('components/masked-value.tsx', {
+    '@/lib/use-currency': { useCurrency: () => 'USD' },
+    '@/context/visibility-context': { useValuesVisibility: () => ({ hidden: true }) },
+  })
+  assert.equal(MaskedValue({ value: 1234.56 }).props.children, (1234.56).toLocaleString('pt-BR', { style: 'currency', currency: 'USD', currencyDisplay: 'narrowSymbol' }))
+  assert.equal(MaskedValue({ value: 1234.56, mask: true }).props.children, 'US$ ••••')
+})
+
+test('legal documents are public in all languages and publish the approved contact and exact links', async () => {
+  for (const language of ['pt-BR', 'en', 'es']) {
+    const { LegalDocument } = load('components/legal-document.tsx', {
+      '@/lib/i18n/server': { getServerTranslation: async () => ({ language }) },
+    }, { process: { env: {} } })
+    for (const kind of ['privacy', 'terms']) {
+      const tree = await LegalDocument({ kind })
+      find(tree, node => node.type === 'h1')
+      find(tree, node => node.props.href === 'mailto:suportenocontroleofc@gmail.com')
+      find(tree, node => node.props.href === '/privacypolicy')
+      find(tree, node => node.props.href === '/termsofservice')
+      assert.ok(elements(tree, node => node.type === 'section').length >= 7)
+    }
+  }
+})
+
+test('Spanish expense UI preserves original payment statuses in database writes', async () => {
+  const runtime = hooks(), db = database({ expenses: [success([expense]), success([{ id: expense.id }]), success([{ ...expense, status: 'Pago' }])] })
+  const { ExpenseTable } = load('components/expense-table.tsx', {
+    react: runtime.react,
+    '@/components/language-provider': { useLanguage: () => ({ language: 'es', locale: 'es-419', t: (text, values) => languageModule().translate(text, 'es', values) }) },
+    '@/lib/supabase/client': { createClient: () => db.client },
+  })
+  runtime.render(ExpenseTable, { boardId: null, title: 'Painel principal', selected })
+  let tree = await runtime.flush()
+  find(tree, node => node.props.children === 'Tablero principal')
+  await find(tree, node => node.props.title === 'Marcar como pagado').props.onClick()
+  tree = await runtime.flush()
+  assert.equal(db.requests.find(request => request.calls.some(([method]) => method === 'update')).calls.find(([method]) => method === 'update')[1].status, 'Pago')
+  find(tree, node => node.type === 'Badge' && Array.isArray(node.props.children) && node.props.children.includes('Pagado'))
 })
 
 test('English expense UI keeps payment statuses and financial amounts unchanged in database writes', async () => {
@@ -2133,6 +2216,36 @@ test('English PDF translates summaries and statuses while preserving user conten
   assert.ok(calls.includes('Expense report'))
   assert.ok(calls.includes('NoControle | Page 1 of 2'))
   assert.ok(calls.includes('report-2026-11-01-to-2026-11-10.pdf'))
+})
+
+test('Spanish PDF uses USD presentation without converting amounts or translating saved names', async () => {
+  const runtime = hooks(), tables = [], calls = []
+  const row = { ...expense, nome: 'Meu gasto original', category: 'Minha categoria', valor: 80, data_pagamento: '2026-11-06' }
+  const db = database({ expenses: [success([row])], category_budgets: [success([])] })
+  class Pdf {
+    internal = { pageSize: { getHeight: () => 210 } }
+    setFontSize() {} text(text) { calls.push(text) } addPage() {} getNumberOfPages() { return 1 } setPage() {} save(name) { calls.push(name) }
+  }
+  const { ReportsView } = load('components/reports-view.tsx', {
+    react: runtime.react,
+    '@/lib/use-currency': { useCurrency: () => 'USD' },
+    '@/components/language-provider': { useLanguage: () => ({ language: 'es', locale: 'es-419', t: (text, values) => languageModule().translate(text, 'es', values) }) },
+    '@/lib/supabase/client': { createClient: () => db.client },
+    jspdf: Pdf, 'jspdf-autotable': (_doc, options) => tables.push(options),
+  })
+  let tree = runtime.render(ReportsView)
+  find(tree, node => node.props.id === 'report-from').props.onChange({ target: { value: '2026-11-01' } })
+  find(tree, node => node.props.id === 'report-to').props.onChange({ target: { value: '2026-11-10' } })
+  tree = await runtime.flush()
+  await find(tree, node => node.props.children === 'Buscar').props.onClick()
+  tree = await runtime.flush()
+  find(tree, node => node.props.onClick?.name === 'handleExportPdf').props.onClick()
+  assert.equal(tables[0].head[0][0], 'Nombre')
+  assert.equal(tables[0].body[0][0], row.nome)
+  assert.equal(tables[0].body[0][2], row.category)
+  assert.equal(tables[0].body[0][3], '$80.00')
+  assert.equal(tables[0].body[0][4], 'Pendiente')
+  assert.ok(calls.includes('informe-2026-11-01-a-2026-11-10.pdf'))
 })
 
 test('password recovery distinguishes cooldown from general limits and preserves private delivery errors', async () => {

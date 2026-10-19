@@ -444,7 +444,7 @@ export function ExpenseTable({
                                 disabled={payingExpenseId !== null}
                                 title={expense.status === 'Pago' ? t("Marcar como pendente") : t("Marcar como pago")}
                               >
-                                {expense.status === 'Pago' ? 'Desfazer' : 'Pagar'}
+                                {expense.status === 'Pago' ? t('Desfazer') : t('Pagar')}
                               </Button>
                               <Button variant="ghost" size="sm" onClick={() => setEditingExpense(expense)}>{t("Editar")}</Button>
                               <Button

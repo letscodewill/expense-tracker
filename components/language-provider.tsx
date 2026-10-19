@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
-import { getLanguageSnapshot, LANGUAGE_STORAGE_KEY, normalizeLanguage, selectLanguage, subscribeLanguage, translate, type Language, type TranslationValues } from '@/lib/i18n'
+import { getLanguageSnapshot, LANGUAGE_STORAGE_KEY, normalizeLanguage, selectLanguage, subscribeLanguage, translate, languageLocale, type Language, type TranslationValues } from '@/lib/i18n'
 
 const LanguageContext = createContext<Language>('pt-BR')
 export function LanguageProvider({ children, initialLanguage }: { children: ReactNode; initialLanguage: Language }) {
@@ -28,5 +28,5 @@ export function useLanguage() {
   const initialLanguage = useContext(LanguageContext)
   const language = useSyncExternalStore(subscribeLanguage, getLanguageSnapshot, () => initialLanguage)
   const t = useCallback((text: string, values?: TranslationValues) => translate(text, language, values), [language])
-  return { language, locale: language === 'en' ? 'en-US' : 'pt-BR', t }
+  return { language, locale: languageLocale(language), t }
 }

@@ -17,10 +17,17 @@ vm.runInNewContext(code, {
   },
 })
 // Local proof only: a successful mocked code exchange, no real tokens or users.
-const response = await result.exports.GET(new Request('https://expense.example/auth/callback?code=mock&next=%40phishing.invalid%2Flogin'))
-const destination = new URL(response.headers.get('location'))
-assert.equal(destination.hostname, 'phishing.invalid')
-console.log('CONFIRMED: successful auth callback can redirect to another origin through next=@phishing.invalid/login')
+for (const next of ['@phishing.invalid/login', 'https://phishing.invalid', '//phishing.invalid', '/\\phishing.invalid', '\\phishing.invalid', 'javascript:alert(1)', '/\n/phishing.invalid', ' /reports']) {
+  const response = await result.exports.GET(new Request(`https://expense.example/auth/callback?code=mock&next=${encodeURIComponent(next)}`))
+  assert.equal(response.headers.get('location'), 'https://expense.example/')
+}
+for (const next of ['/auth/update-password', '/reports?month=10', '/planning#budget']) {
+  const response = await result.exports.GET(new Request(`https://expense.example/auth/callback?code=mock&next=${encodeURIComponent(next)}`))
+  assert.equal(response.headers.get('location'), `https://expense.example${next}`)
+}
+const missing = await result.exports.GET(new Request('https://expense.example/auth/callback'))
+assert.equal(new URL(missing.headers.get('location')).pathname, '/login')
+console.log('PASS: authentication callback rejects external redirects and preserves internal recovery, query and fragment destinations')
 
 const { createClient } = nodeRequire('@supabase/supabase-js')
 let queryUrl

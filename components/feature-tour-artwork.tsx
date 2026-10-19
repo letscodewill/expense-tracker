@@ -1,12 +1,14 @@
 'use client'
 
 import { CalendarDays, Check, FileSpreadsheet, FileText, Moon, Palette, Plus, Search, Sun, WalletCards } from 'lucide-react'
+import { useCurrency } from '@/lib/use-currency'
 import { useLanguage } from '@/components/language-provider'
 import type { FeatureTourStep } from '@/lib/feature-tour'
 
 export function FeatureTourArtwork({ step, label }: { step: FeatureTourStep; label: string }) {
   const { t, locale } = useLanguage()
-  const money = (amount: number) => amount.toLocaleString(locale, { style: 'currency', currency: 'BRL' })
+  const currency = useCurrency()
+  const money = (amount: number) => amount.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })
   const row = (name: string, amount: number) => <div key={name} className="flex items-center justify-between gap-3 rounded-xl bg-background/80 px-3 py-2.5 text-sm"><span className="truncate">{t(name)}</span><span className="shrink-0 font-semibold tabular-nums">{money(amount)}</span></div>
   return <div role="img" aria-label={label} className="relative flex min-h-52 items-center justify-center overflow-hidden rounded-2xl border border-primary/15 bg-secondary/40 p-4 sm:min-h-64 sm:p-7">
     <div aria-hidden="true" className="w-full max-w-lg space-y-3">

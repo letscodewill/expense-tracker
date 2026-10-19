@@ -15,7 +15,7 @@ const slides = [
   { title: 'Importe e confira suas faturas', description: 'Envie um PDF ou uma planilha Excel/CSV. Revise nomes, valores, categorias e o mês de pagamento antes de confirmar a importação.' },
   { title: 'Planeje seu orçamento', description: 'Crie categorias, defina limites mensais e acompanhe a comparação entre meses. Veja também os lembretes das contas próximas do vencimento.' },
   { title: 'Encontre uma despesa em segundos', description: 'Toque na lupa ao lado do seletor de mês. Pesquise um nome ou valor para descobrir em qual quadro e mês a despesa está cadastrada.' },
-  { title: 'Seu painel, do seu jeito', description: 'Escolha temas claros ou escuros, sua paleta de cores e o idioma Português ou English. Sua foto de perfil também pode ser alterada.' },
+  { title: 'Seu painel, do seu jeito', description: 'Escolha temas claros ou escuros, sua paleta de cores e o idioma Português, English ou Español. Sua foto de perfil também pode ser alterada.' },
 ] as const
 
 export function FeatureTourLauncher() {

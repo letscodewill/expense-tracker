@@ -1,11 +1,13 @@
 'use client'
 
+import { useCurrency } from '@/lib/use-currency'
 import { useLanguage } from '@/components/language-provider'
 import { CalendarCheck, ChartPie, ReceiptText, Check, Clock, WalletCards } from 'lucide-react'
 
 export function LoginProductPreview() {
   const { t, locale } = useLanguage()
-  const money = (value: number) => value.toLocaleString(locale, { style: 'currency', currency: 'BRL' })
+  const currency = useCurrency()
+  const money = (value: number) => value.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })
 
   return <section aria-labelledby="product-heading" className="min-w-0 space-y-7 lg:pr-6">
     <div className="max-w-xl space-y-4">

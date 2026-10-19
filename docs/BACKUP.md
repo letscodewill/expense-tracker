@@ -125,6 +125,8 @@ As cópias no HD **não são apagadas automaticamente**. Isso mantém uma cópia
 
 ## Verificação e recuperação
 
+Para o ensaio em ambiente separado, consulte o [passo a passo de restauração](TESTE-RESTAURACAO-PASSO-A-PASSO.md). Ele distingue autenticar/descriptografar arquivos de restaurar banco, Auth e Storage.
+
 Para autenticar uma cópia local sem revelar os dados:
 
 ```powershell

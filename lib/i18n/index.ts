@@ -1,15 +1,19 @@
 import english from './en.json'
+import spanish from './es.json'
 
-export type Language = 'pt-BR' | 'en'
+export type Language = 'pt-BR' | 'en' | 'es'
 export const LANGUAGE_STORAGE_KEY = 'nocontrole:language'
 export const LANGUAGE_COOKIE = 'nocontrole-language'
 export const LANGUAGE_EVENT = 'nocontrole:language-change'
 export function normalizeLanguage(value: unknown): Language {
-  return value === 'en' ? 'en' : 'pt-BR'
+  return value === 'en' || value === 'es' ? value : 'pt-BR'
+}
+export function languageLocale(language: Language): string {
+  return language === 'en' ? 'en-US' : language === 'es' ? 'es-419' : 'pt-BR'
 }
 export type TranslationValues = Record<string, string | number>
 export function translate(text: string, language: Language, values?: TranslationValues): string {
-  const dictionary = english as Record<string, string>
+  const dictionary = (language === 'es' ? spanish : english) as Record<string, string>
   const trimmed = text.trim()
   const localized = language === 'pt-BR' ? text : dictionary[text] ?? (dictionary[trimmed] ? text.replace(trimmed, dictionary[trimmed]) : text)
   return values ? localized.replace(/\{(\w+)\}/g, (token, key: string) => values[key] === undefined ? token : String(values[key])) : localized

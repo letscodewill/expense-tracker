@@ -169,6 +169,12 @@ export function ExpensesDashboard({ navigationActions, notificationActions }: { 
             }}>
               {navigationActions}
               <PwaInstallButton />
+              <Link href="/privacypolicy" className="border-t border-border px-3 text-sm text-muted-foreground hover:bg-accent hover:text-foreground">
+                {t("Política de privacidade")}
+              </Link>
+              <Link href="/termsofservice" className="px-3 text-sm text-muted-foreground hover:bg-accent hover:text-foreground">
+                {t("Termos de uso")}
+              </Link>
             </nav>
           </DialogContent>
         </Dialog>

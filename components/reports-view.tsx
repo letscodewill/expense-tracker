@@ -1,5 +1,6 @@
 'use client'
 
+import { useCurrency } from '@/lib/use-currency'
 import { useLanguage } from '@/components/language-provider'
 import { useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -65,6 +66,7 @@ function firstDayOfMonthISO(): string {
 
 export function ReportsView() {
   const { t, locale } = useLanguage()
+  const currency = useCurrency()
 
     const supabase = createClient()
 
@@ -166,7 +168,7 @@ export function ReportsView() {
     const totalPago = sumFiltered('Pago')
     const totalPendente = sumFiltered('Pendente')
     const totalBenefits = sumFiltered('VR/VA')
-    const money = (value: number) => value.toLocaleString(locale, { style: 'currency', currency: 'BRL' })
+    const money = (value: number) => value.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })
     const summary: string[][] = []
     if (period.from) {
         const cursor = parseISODate(`${period.from.slice(0, 7)}-01`)
@@ -230,7 +232,7 @@ export function ReportsView() {
             doc.setFontSize(8)
             doc.text(t('NoControle | Página {page} de {pages}', { page, pages }), 14, doc.internal.pageSize.getHeight() - 8)
         }
-        doc.save(locale === 'en-US' ? `report-${period.from}-to-${period.to}.pdf` : `relatorio-${period.from}-a-${period.to}.pdf`)
+        doc.save(locale === 'en-US' ? `report-${period.from}-to-${period.to}.pdf` : locale === 'es-419' ? `informe-${period.from}-a-${period.to}.pdf` : `relatorio-${period.from}-a-${period.to}.pdf`)
     }
 
     return (
@@ -360,7 +362,8 @@ export function ReportsView() {
                                             <TableCell>
                                                 {expense.valor.toLocaleString(locale, {
                                                     style: 'currency',
-                                                    currency: 'BRL',
+                                                    currency,
+                                                    currencyDisplay: 'narrowSymbol',
                                                 })}
                                             </TableCell>
                                             <TableCell>
@@ -375,21 +378,21 @@ export function ReportsView() {
                                     <TableRow>
                                         <TableCell colSpan={3}>{t("Total do período")}</TableCell>
                                         <TableCell>
-                                            {total.toLocaleString(locale, { style: 'currency', currency: 'BRL' })}
+                                            {total.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })}
                                         </TableCell>
                                         <TableCell colSpan={2}></TableCell>
                                     </TableRow>
                                     <TableRow>
                                         <TableCell colSpan={3}>{t("Total pago")}</TableCell>
                                         <TableCell>
-                                            {totalPago.toLocaleString(locale, { style: 'currency', currency: 'BRL' })}
+                                            {totalPago.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })}
                                         </TableCell>
                                         <TableCell colSpan={2}></TableCell>
                                     </TableRow>
                                     <TableRow>
                                         <TableCell colSpan={3}>{t("Total pendente")}</TableCell>
                                         <TableCell>
-                                            {totalPendente.toLocaleString(locale, { style: 'currency', currency: 'BRL' })}
+                                            {totalPendente.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })}
                                         </TableCell>
                                         <TableCell colSpan={2}></TableCell>
                                     </TableRow>

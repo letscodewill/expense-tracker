@@ -1,5 +1,6 @@
 'use client'
 
+import { useCurrency } from '@/lib/use-currency'
 import { useLanguage } from '@/components/language-provider'
 import { useEffect, useState } from 'react'
 import { Search } from 'lucide-react'
@@ -13,6 +14,7 @@ import { useCategories } from '@/lib/use-categories'
 
 export function QuickExpenseSearch({ onNavigate }: { onNavigate: (period: MonthYear) => void }) {
   const { t, locale } = useLanguage()
+  const currency = useCurrency()
   const monthLabel = (month: number, year: number) => new Date(year, month, 1).toLocaleDateString(locale, { month: 'long', year: 'numeric' })
   const dateLabel = (value: string) => new Date(value + 'T12:00:00').toLocaleDateString(locale)
 
@@ -79,7 +81,7 @@ export function QuickExpenseSearch({ onNavigate }: { onNavigate: (period: MonthY
             const period = { year, month: month - 1 }
             const mismatched = row.board_month !== null && (row.board_month !== period.month || row.board_year !== period.year)
             return <li key={row.id} className="rounded-2xl border bg-card p-4">
-              <div className="flex flex-wrap items-start justify-between gap-2"><p className="min-w-0 break-words font-medium">{row.nome}</p><p className="font-medium text-primary">{Number(row.valor).toLocaleString(locale, { style: 'currency', currency: 'BRL' })}</p></div>
+              <div className="flex flex-wrap items-start justify-between gap-2"><p className="min-w-0 break-words font-medium">{row.nome}</p><p className="font-medium text-primary">{Number(row.valor).toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })}</p></div>
               <p className="mt-2 break-words text-sm">{row.board_id === null ? t(row.board_name) : row.board_name} · {monthLabel(period.month, period.year)}</p>
               <p className="mt-1 text-xs text-muted-foreground">{t("Pagamento: ")}{dateLabel(row.data_pagamento)} · {t(row.status)}</p>
               {row.category && <p className="mt-1 break-words text-xs text-muted-foreground">{t("Categoria")}: {row.category === 'Sem categoria' ? t(row.category) : row.category}</p>}

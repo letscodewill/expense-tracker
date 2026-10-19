@@ -1,4 +1,5 @@
 'use client'
+import { useCurrency } from '@/lib/use-currency'
 import { useLanguage } from '@/components/language-provider'
 import { extractPdfText, preparePdfForAI, PdfPasswordRequiredError } from '@/lib/pdf-text-extract'
 import { useRef, useState } from 'react'
@@ -57,6 +58,7 @@ export function ImportInvoiceDialog({
   hideTrigger,
 }: ImportInvoiceDialogProps) {
   const { t, locale } = useLanguage()
+  const currency = useCurrency()
 
   const supabase = createClient()
   const { categories, loading: categoriesLoading, error: categoriesError } = useCategories()
@@ -422,7 +424,7 @@ export function ImportInvoiceDialog({
             {duplicateReview?.draft === draftKey && <DuplicateExpenseNotice warnings={duplicateReview.warnings} confirmed={acceptedDuplicates === duplicateReview.key} onConfirm={value => setAcceptedDuplicates(value ? duplicateReview.key : '')} />}
             {error && <p className="text-sm text-red-600">{t(error)}</p>}
             {warnings.length > 0 && <details className="rounded-xl border p-3 text-sm"><summary className="cursor-pointer font-medium">{warnings.length}{t(" aviso(s) na leitura — confira antes de importar")}</summary><ul className="mt-2 list-disc space-y-1 pl-5">{warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></details>}
-            <p className="text-sm font-medium">{t("Total das despesas: ")}{rows.reduce((sum, row) => sum + row.valor, 0).toLocaleString(locale, { style: 'currency', currency: 'BRL' })}{t(". Confira com a fatura; créditos e estornos não são importados como despesas.")}</p>
+            <p className="text-sm font-medium">{t("Total das despesas: ")}{rows.reduce((sum, row) => sum + row.valor, 0).toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })}{t(". Confira com a fatura; créditos e estornos não são importados como despesas.")}</p>
             {processedWithAI && <p className="rounded-xl bg-muted p-3 text-sm text-muted-foreground">{t("A IA sugeriu categorias da sua conta. Confira e altere antes de importar. Descrições incertas ficam em “Sem categoria”.")}</p>}
 
             <div className="flex flex-wrap items-end gap-4 rounded-2xl bg-muted p-4">
@@ -459,7 +461,7 @@ export function ImportInvoiceDialog({
                   <TableRow>
                     <TableHead className="min-w-[240px]">{t("Nome")}</TableHead>
                     <TableHead className="w-[160px]">{t("Pagamento")}</TableHead>
-                    <TableHead className="w-[160px]">{t("Valor (R$)")}</TableHead>
+                    <TableHead className="w-[160px]">{t("Valor")}{` (${currency})`}</TableHead>
                     <TableHead className="min-w-[180px]">{t("Categoria")}</TableHead>
                     <TableHead className="w-[40px]"></TableHead>
                   </TableRow>

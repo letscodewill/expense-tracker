@@ -1,4 +1,5 @@
 'use client'
+import { useCurrency } from '@/lib/use-currency'
 import { useLanguage } from '@/components/language-provider'
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -11,7 +12,8 @@ import { Input } from '@/components/ui/input'
 
 export function BudgetReminders({ selected, refreshKey }: { selected: MonthYear; refreshKey: number }) {
   const { t, locale } = useLanguage()
-  const money = (value: number) => value.toLocaleString(locale, { style: 'currency', currency: 'BRL' })
+  const currency = useCurrency()
+  const money = (value: number) => value.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })
 
   const client = createClient()
   const { categories, loading: categoriesLoading, error: categoriesError } = useCategories()
@@ -145,7 +147,7 @@ export function BudgetReminders({ selected, refreshKey }: { selected: MonthYear;
         return <div key={category} className="space-y-2 rounded-xl border p-3">
           <h3 className="font-medium">{category === 'Sem categoria' ? t(category) : category}</h3><p className="text-sm">{t("Este mês:")} <strong>{money(spent)}</strong></p>
           <p className="text-xs text-muted-foreground">{t("Mês anterior: ")}{money(before)}{t(" · Diferença: ")}{money(spent-before)}</p>
-          <label className="block text-sm">{t("Limite mensal (R$)")}<Input aria-label={t('Limite de {category}', { category })} type="number" step="0.01" min="0.01" placeholder={t("Sem limite")} value={limits[category] ?? ''} onChange={event => { dirtyLimits.current = true; setLimits(previous => ({ ...previous, [category]: event.target.value })) }} /></label>
+          <label className="block text-sm">{t("Limite mensal")}{` (${currency})`}<Input aria-label={t('Limite de {category}', { category })} type="number" step="0.01" min="0.01" placeholder={t("Sem limite")} value={limits[category] ?? ''} onChange={event => { dirtyLimits.current = true; setLimits(previous => ({ ...previous, [category]: event.target.value })) }} /></label>
           {limit > 0 && <><progress aria-label={t('Uso do orçamento de {category}', { category })} className="h-2 w-full accent-primary" max={limit} value={Math.min(spent,limit)} /><p className={`text-xs ${spent > limit ? 'text-destructive' : 'text-muted-foreground'}`}>{spent > limit ? t('Limite excedido em {amount}', { amount: money(spent-limit) }) : t('Disponível: {amount}', { amount: money(limit-spent) })}</p></>}
         </div>
       })}</fieldset>}

@@ -14,6 +14,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { signup } from '@/app/login/actions'
+import Link from 'next/link'
 
 export function SignupDialog() {
   const { t } = useLanguage()
@@ -119,10 +120,15 @@ export function SignupDialog() {
           </div>
 
           {error && <p className="text-sm text-red-600">{t(error)}</p>}
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            <Link href="/termsofservice" target="_blank" rel="noopener noreferrer" className="text-primary underline">{t("Termos de uso")}</Link>
+            {' · '}
+            <Link href="/privacypolicy" target="_blank" rel="noopener noreferrer" className="text-primary underline">{t("Política de privacidade")}</Link>
+          </p>
 
           <DialogFooter>
             <Button type="submit" className="w-full" disabled={isPending}>
-              {isPending ? 'Criando...' : t("Criar conta")}
+              {isPending ? t('Criando...') : t("Criar conta")}
             </Button>
           </DialogFooter>
         </form>

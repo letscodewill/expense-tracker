@@ -3,6 +3,7 @@ import type { BeforeSendEvent } from '@vercel/analytics/next'
 const pages = new Set([
   '/', '/login', '/planning', '/reports', '/tickets',
   '/admin', '/admin/administrators', '/admin/tickets', '/auth/update-password',
+  '/privacypolicy', '/termsofservice', '/privacy', '/terms',
 ])
 
 /** Collect page counts without auth parameters, ticket IDs or custom event data. */

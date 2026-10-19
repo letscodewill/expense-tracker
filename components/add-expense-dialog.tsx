@@ -1,5 +1,6 @@
 'use client'
 
+import { useCurrency } from '@/lib/use-currency'
 import { useLanguage } from '@/components/language-provider'
 import { z } from 'zod'
 import { useReducer, useState, useMemo, useRef } from 'react'
@@ -198,7 +199,8 @@ export function AddExpenseDialog({
   ...props
 }: AddExpenseDialogProps) {
   const { t, locale } = useLanguage()
-  const formatBRL = (n: number) => n.toLocaleString(locale, { style: 'currency', currency: 'BRL' })
+  const currency = useCurrency()
+  const formatMoney = (n: number) => n.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })
 
   const [destinationPeriod, setDestinationPeriod] = useState<MonthYear>(initialSelected ?? { month: new Date().getMonth(), year: new Date().getFullYear() })
   const [destinationBoard, setDestinationBoard] = useState('')
@@ -626,10 +628,10 @@ export function AddExpenseDialog({
                 <div className="rounded-md border bg-muted/40 p-3 text-sm space-y-1">
                   <p>
                     <span className="text-muted-foreground">{t("Valor por parcela:")}</span>{' '}
-                    <span className="font-medium">{formatBRL(preview.perInstallment)}</span>
+                    <span className="font-medium">{formatMoney(preview.perInstallment)}</span>
                   </p>
                   <p className="text-muted-foreground">
-                    {preview.n}{t("× de")} {formatBRL(preview.perInstallment)}{t(" — de ")}{preview.firstDateLabel}{t(" até ")}{preview.lastDateLabel} {t("(total")} {formatBRL(preview.total)})
+                    {preview.n}{t("× de")} {formatMoney(preview.perInstallment)}{t(" — de ")}{preview.firstDateLabel}{t(" até ")}{preview.lastDateLabel} {t("(total")} {formatMoney(preview.total)})
                   </p>
                 </div>
               )}

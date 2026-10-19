@@ -84,7 +84,7 @@ export default async function LoginPage({
         </section>
           </div>
         </div>
-        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 py-5 text-xs text-muted-foreground"><p>{t("NoControle · Seu dinheiro, mais organizado.")}</p><Link href="/login?mode=recover" className="hover:text-primary hover:underline">{t("Ajuda com acesso à conta")}</Link></footer>
+        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 py-5 text-xs text-muted-foreground"><p>{t("NoControle · Seu dinheiro, mais organizado.")}</p><nav className="flex flex-wrap gap-4"><Link href="/privacypolicy" className="hover:text-primary hover:underline">{t("Política de privacidade")}</Link><Link href="/termsofservice" className="hover:text-primary hover:underline">{t("Termos de uso")}</Link><Link href="/login?mode=recover" className="hover:text-primary hover:underline">{t("Ajuda com acesso à conta")}</Link></nav></footer>
       </div>
     </main>
   )

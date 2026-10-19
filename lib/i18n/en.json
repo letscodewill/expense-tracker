@@ -22,7 +22,6 @@
   "Encontre uma despesa em segundos": "Find an expense in seconds",
   "Toque na lupa ao lado do seletor de mês. Pesquise um nome ou valor para descobrir em qual quadro e mês a despesa está cadastrada.": "Tap the magnifying glass next to the month selector. Search by name or amount to find the board and month where an expense was saved.",
   "Seu painel, do seu jeito": "Your dashboard, your way",
-  "Escolha temas claros ou escuros, sua paleta de cores e o idioma Português ou English. Sua foto de perfil também pode ser alterada.": "Choose light or dark themes, a color palette and Portuguese or English. You can also change your profile photo.",
   "Um guia rápido para aproveitar as funcionalidades do seu painel.": "A quick guide to getting the most out of your dashboard.",
   "Imagens ilustrativas. Seus dados não são alterados pelo tutorial.": "Illustrative examples. This guide does not change your financial data.",
   "Revise antes de salvar": "Review before saving",
@@ -620,5 +619,16 @@
   " e ": " and ",
   " de ": " of ",
   "NoControle — Painel de despesas": "NoControle — Expense dashboard",
-  "Organize despesas, faturas e orçamento em um só lugar.": "Organize expenses, statements and budgets in one place."
+  "Organize despesas, faturas e orçamento em um só lugar.": "Organize expenses, statements and budgets in one place.",
+  "Escolha temas claros ou escuros, sua paleta de cores e o idioma Português, English ou Español. Sua foto de perfil também pode ser alterada.": "Choose light or dark themes, a color palette and Portuguese, English or Spanish. You can also change your profile photo.",
+  "Política de privacidade": "Privacy policy",
+  "Termos de uso": "Terms of service",
+  "Criando...": "Creating...",
+  "Pagar": "Pay",
+  "Desfazer": "Undo",
+  "Moeda de exibição": "Display currency",
+  "Apenas exibição: não converte valores nem altera os dados salvos.": "Display only: does not convert amounts or change saved data.",
+  "Limite mensal": "Monthly budget",
+  "Não foi possível validar o link.": "Could not validate the link.",
+  "Link inválido ou expirado.": "Invalid or expired link."
 }
