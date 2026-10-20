@@ -8,6 +8,23 @@ export const LANGUAGE_EVENT = 'nocontrole:language-change'
 export function normalizeLanguage(value: unknown): Language {
   return value === 'en' || value === 'es' ? value : 'pt-BR'
 }
+// Only used when this browser has no saved preference. Regional variants share
+// the same translations; unsupported languages fall back to English.
+export function detectLanguage(acceptLanguage: string | null): Language {
+  const preferences = (acceptLanguage ?? '').split(',').map((entry, index) => {
+    const [tag, ...parameters] = entry.trim().split(';')
+    const quality = parameters.find((parameter) => /^q\s*=/i.test(parameter.trim()))
+    const raw = quality?.split('=')[1]?.trim()
+    const weight = raw === undefined ? 1 : /^(?:0(?:\.\d{0,3})?|1(?:\.0{0,3})?)$/.test(raw) ? Number(raw) : 0
+    return { tag: tag.toLowerCase(), weight, index }
+  }).filter(({ weight }) => weight > 0).sort((a, b) => b.weight - a.weight || a.index - b.index)
+  for (const { tag } of preferences) {
+    if (!/^(pt|en|es)(?:-[a-z0-9]{1,8})*$/.test(tag)) continue
+    const base = tag.split('-')[0]
+    return base === 'pt' ? 'pt-BR' : base as Language
+  }
+  return 'en'
+}
 export function languageLocale(language: Language): string {
   return language === 'en' ? 'en-US' : language === 'es' ? 'es-419' : 'pt-BR'
 }

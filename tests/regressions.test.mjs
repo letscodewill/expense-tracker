@@ -2261,6 +2261,35 @@ test('savings page redirects anonymous users and renders for authenticated accou
   }
 })
 
+test('initial language matches browser preferences, regional variants and quality weights', () => {
+  const { detectLanguage } = languageModule()
+  for (const [header, expected] of [
+    ['es-MX,es;q=0.9,en;q=0.8', 'es'], ['en-US,en;q=0.9', 'en'],
+    ['pt-PT,en;q=0.8', 'pt-BR'], ['es;q=0.2,en;q=0.9', 'en'],
+    ['de-DE,es-AR;q=0.8', 'es'], ['es;q=0,en;q=0.5', 'en'],
+    ['ES-cl;q=1,en;q=1', 'es'], ['es;q=invalid,en;q=0.4', 'en'],
+    ['de-DE,*;q=0.5', 'en'], ['fr-FR', 'en'], [null, 'en'], ['', 'en'],
+  ]) assert.equal(detectLanguage(header), expected, String(header))
+})
+
+test('server language respects saved choices including Portuguese over browser detection', async () => {
+  for (const saved of ['pt-BR', 'en', 'es', undefined, 'invalid']) {
+    let headerReads = 0
+    const { getServerTranslation } = load('lib/i18n/server.ts', {
+      './index': languageModule(),
+      'next/headers': {
+        cookies: async () => ({ get: () => saved === undefined ? undefined : { value: saved } }),
+        headers: async () => { headerReads++; return { get: () => 'es-MX,en;q=0.8' } },
+      },
+    })
+    const expected = saved === 'pt-BR' || saved === 'en' || saved === 'es' ? saved : 'es'
+    const result = await getServerTranslation()
+    assert.equal(result.language, expected)
+    assert.equal(result.t('Pendente'), languageModule().translate('Pendente', expected))
+    assert.equal(headerReads, saved === expected ? 0 : 1)
+  }
+})
+
 test('Spanish covers all dictionary keys and placeholders and preserves user content', () => {
   const { translate, normalizeLanguage, languageLocale } = languageModule()
   assert.deepEqual(Object.keys(spanishDictionary).sort(), Object.keys(englishDictionary).sort())

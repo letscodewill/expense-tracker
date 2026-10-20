@@ -2,7 +2,7 @@
 
 ## Idioma
 
-Português continua como padrão. O seletor também oferece English e Español (locale `es-419`). O dicionário espanhol cobre as mesmas chaves do inglês; placeholders são verificados nos testes. Preferências de idioma usam cookie e armazenamento local do navegador, seguindo o comportamento anterior.
+Na primeira visita, sem preferência salva, o sistema usa o idioma informado pelo navegador (`Accept-Language`), respeitando a ordem e os pesos de preferência. Variantes como `es-MX`, `en-US` e `pt-PT` usam espanhol, inglês e português, respectivamente. Sem idioma compatível ou sem preferência informada pelo navegador, inglês é o padrão. Não há consulta de IP, localização ou serviço externo. O seletor oferece Português, English e Español (locale `es-419`); a escolha salva no cookie/armazenamento local prevalece sobre a detecção, inclusive ao sair e entrar novamente neste navegador. A preferência ainda não é sincronizada entre dispositivos pela conta. O dicionário espanhol cobre as mesmas chaves do inglês; placeholders são verificados nos testes.
 
 Textos cadastrados pelo usuário, nomes de quadros/categorias, comentários e os valores originais não são traduzidos ou alterados no banco. Status são apresentados traduzidos e continuam gravados com os códigos originais. E-mails enviados pelo Supabase/SendGrid são templates externos e precisam de configuração própria; esta alteração não os traduz automaticamente. Avisos produzidos dinamicamente pelo modelo de IA ainda podem estar no idioma do prompt brasileiro.
 
