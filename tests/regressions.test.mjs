@@ -29,6 +29,8 @@ function load(file, mocks = {}, globals = {}) {
   const localRequire = (name) => {
     if (Object.hasOwn(mocks, name)) return mocks[name]
     if (name === '@/lib/feature-tour') return load('lib/feature-tour.ts')
+    if (name === '@/lib/savings') return load('lib/savings.ts')
+    if (name === '@/lib/pro-benefits') return load('lib/pro-benefits.ts')
     if (name === '@/lib/use-currency') return { useCurrency: () => 'BRL' }
     if (name === '@/lib/currency') return load('lib/currency.ts')
     if (name === '@/lib/legal-content') return load('lib/legal-content.ts')
@@ -2094,6 +2096,168 @@ test('translation preserves supplied names, safely interpolates values and cover
       ts.forEachChild(node, visit)
     }
     visit(source)
+  }
+})
+
+test('courtesy validation and expiration use account grants rather than editable user metadata', () => {
+  const { validateCourtesy, courtesyStatus } = load('lib/pro-benefits.ts')
+  const input = { action: 'grant', userId: '00000000-0000-4000-8000-000000000001', requestId: '00000000-0000-4000-8000-000000000002', revision: 0, expiresAt: null, reason: 'Tester' }
+  assert.equal(validateCourtesy(input), null)
+  for (const patch of [{ reason: '' },{ reason: 'x'.repeat(301) },{ revision: -1 },{ revision: 0.5 },{ userId: 'bad' },{ requestId: '' },{ action: 'promote' },{ expiresAt: 'bad-date' }]) assert.ok(validateCourtesy({ ...input, ...patch }))
+  assert.equal(courtesyStatus({ is_master: true, courtesy: null }), 'Master')
+  assert.equal(courtesyStatus({ is_master: false, courtesy: null }), 'Sem cortesia')
+  assert.equal(courtesyStatus({ is_master: false, courtesy: { revoked_at: null, expires_at: null } }), 'Pro cortesia')
+  assert.equal(courtesyStatus({ is_master: false, courtesy: { revoked_at: null, expires_at: '2026-01-01T00:00:00Z' } }, Date.parse('2026-02-01T00:00:00Z')), 'Expirada')
+  assert.equal(courtesyStatus({ is_master: false, courtesy: { revoked_at: '2026-01-01T00:00:00Z', expires_at: null } }), 'Revogada')
+})
+
+test('courtesy action rejects regular users and delegated admins before writing a benefit', async () => {
+  const input = { action: 'grant', userId: '00000000-0000-4000-8000-000000000001', requestId: '00000000-0000-4000-8000-000000000002', revision: 0, expiresAt: null, reason: 'Tester' }
+  for (const [user, owner] of [[null, true],[{ id: 'regular', email: 'regular@example.com', email_confirmed_at: '2026-01-01' }, true],[{ id: 'owner', email: 'williansantos38@gmail.com', email_confirmed_at: '2026-01-01' }, false]]) {
+    const calls = []
+    const { changeCourtesy } = load('app/admin/benefits/actions.ts', {
+      '@/lib/supabase/server': { createClient: async () => ({ auth: { getUser: async () => ({ data: { user }, error: null }) }, rpc: async name => { calls.push(name); return { data: owner, error: null } } }) },
+      '@/lib/tickets': load('lib/tickets.ts'), 'next/cache': { revalidatePath() {} },
+    })
+    assert.ok((await changeCourtesy(input)).error)
+    assert.ok(!calls.includes('change_pro_courtesy'))
+  }
+})
+
+test('master courtesy action preserves idempotency, validates input and handles stale revisions safely', async () => {
+  const calls = [], paths = []
+  const client = { auth: { getUser: async () => ({ data: { user: { email: 'williansantos38@gmail.com', email_confirmed_at: '2026-01-01' } }, error: null }) }, rpc: async (name,args) => { calls.push([name,args]); return { data: true, error: null } } }
+  const { changeCourtesy } = load('app/admin/benefits/actions.ts', { '@/lib/supabase/server': { createClient: async () => client }, '@/lib/tickets': load('lib/tickets.ts'), 'next/cache': { revalidatePath: path => paths.push(path) } })
+  const input = { action: 'grant', userId: '00000000-0000-4000-8000-000000000001', requestId: '00000000-0000-4000-8000-000000000002', revision: 3, expiresAt: null, reason: ' Tester ' }
+  assert.equal((await changeCourtesy(input)).error, null)
+  assert.equal(calls[1][1].request_input, input.requestId)
+  assert.equal(calls[1][1].reason_input, 'Tester')
+  assert.ok(paths.includes('/admin/benefits'))
+  const writes = calls.length
+  assert.ok((await changeCourtesy({ ...input, reason: '' })).error)
+  assert.equal(calls.length, writes+1)
+  client.rpc = async name => name==='is_support_owner' ? { data: true, error: null } : { data: null, error: { message: 'O benefício foi alterado. Atualize a página antes de continuar.' } }
+  assert.equal((await changeCourtesy(input)).error, 'O benefício foi alterado. Atualize a página antes de continuar.')
+})
+
+test('master benefits page denies ordinary accounts and requires database ownership', async () => {
+  for (const [user, owner] of [[null,false],[{ email: 'regular@example.com', email_confirmed_at: '2026-01-01' },true],[{ email: 'williansantos38@gmail.com', email_confirmed_at: '2026-01-01' },false]]) {
+    const { default: Page } = load('app/admin/benefits/page.tsx', {
+      '@/lib/supabase/server': { createClient: async () => ({ auth: { getUser: async () => ({ data: { user }, error: null }) }, rpc: async () => ({ data: owner, error: null }) }) },
+      '@/lib/tickets': load('lib/tickets.ts'),
+      'next/navigation': { redirect: () => { throw new Error('redirect') }, notFound: () => { throw new Error('notFound') } },
+    })
+    await assert.rejects(Page({ searchParams: Promise.resolve({}) }), user ? /notFound/ : /redirect/)
+  }
+})
+
+test('benefit UI requires review, makes one write on double click and retains a failed attempt ID', async () => {
+  const runtime = hooks(), calls = [], refreshes = []
+  const target = { id: '00000000-0000-4000-8000-000000000001', email: 'tester@example.com', name: 'Tester', email_confirmed_at: '2026-01-01', is_master: false, courtesy: null }
+  const { ProBenefitsPanel } = load('components/pro-benefits-panel.tsx', {
+    react: runtime.react,
+    'next/navigation': { useRouter: () => ({ refresh: () => refreshes.push(true) }) },
+    '@/app/admin/benefits/actions': { changeCourtesy: async input => { calls.push(input); if (calls.length===1) throw new Error('response lost'); return { error: null } } },
+  }, { crypto: { randomUUID: () => '00000000-0000-4000-8000-000000000002' } })
+  let tree = runtime.render(ProBenefitsPanel, { overview: { users: [target], total: 1, history: [] }, search: '', offset: 0 })
+  find(tree,n=>n.type==='Button' && n.props.children==='Gerenciar benefício').props.onClick()
+  tree = runtime.render()
+  find(tree,n=>n.props.id==='benefit-reason').props.onChange({ target: { value: 'Tester' } })
+  find(tree,n=>n.type==='input' && n.props.type==='checkbox').props.onChange({ target: { checked: true } })
+  tree = runtime.render()
+  find(tree,n=>n.type==='Button' && n.props.children==='Conceder ou prorrogar Pro').props.onClick()
+  tree = runtime.render()
+  assert.equal(find(tree,n=>n.type==='Dialog').props.open,true)
+  assert.equal(calls.length,0)
+  const confirm = find(tree,n=>n.type==='Button' && n.props.children==='Confirmar')
+  await Promise.all([confirm.props.onClick(),confirm.props.onClick()])
+  tree = await runtime.flush()
+  assert.equal(calls.length,1)
+  await find(tree,n=>n.type==='Button' && n.props.children==='Tentar novamente').props.onClick()
+  tree = await runtime.flush()
+  assert.equal(calls[0].requestId,calls[1].requestId)
+  assert.equal(refreshes.length,1)
+  assert.equal(find(tree,n=>n.type==='Dialog').props.open,false)
+})
+
+test('savings uses exact cents and caps progress while preserving over-goal balances', () => {
+  const { savingsCents, savingsProgress } = load('lib/savings.ts')
+  assert.equal(savingsCents('4,86'), 486)
+  assert.equal(savingsCents('0.01'), 1)
+  assert.equal(savingsCents(' 1000.50 '), 100050)
+  for (const value of ['0', '-1', '1.999', '1e3', '', '1.000,00', 'Infinity', '1000000000']) assert.equal(savingsCents(value), null)
+  assert.equal(savingsProgress({ balance_cents: 0, goal_cents: null }).percent, 0)
+  assert.equal(savingsProgress({ balance_cents: 486, goal_cents: 1000 }).percent, 48.6)
+  const reached = savingsProgress({ balance_cents: 1100, goal_cents: 1000 })
+  assert.equal(reached.percent, 100); assert.equal(reached.achieved, true); assert.equal(reached.remaining, 0)
+})
+
+test('savings deposits celebrate the goal, changing a goal keeps money and overdrafts never call RPC', async () => {
+  const runtime = hooks(), calls = []
+  let account = { balance_cents: 0, goal_cents: 10000 }
+  const client = { rpc: async (_name, args) => {
+    calls.push(args)
+    if (args.action_input === 'deposit') account = { ...account, balance_cents: account.balance_cents + args.amount_input }
+    if (args.action_input === 'goal') account = { ...account, goal_cents: args.amount_input }
+    return { data: { ...account }, error: null }
+  } }
+  const { SavingsPanel } = load('components/savings-panel.tsx', { react: runtime.react, '@/lib/supabase/client': { createClient: () => client } }, { crypto: { randomUUID: () => 'request-id' } })
+  runtime.render(SavingsPanel)
+  let tree = await runtime.flush()
+  find(tree, n => n.props.id === 'savings-amount').props.onChange({ target: { value: '100,00' } })
+  tree = runtime.render()
+  await find(tree, n => n.type === 'Button' && Array.isArray(n.props.children) && n.props.children.includes('Adicionar valor')).props.onClick()
+  tree = await runtime.flush()
+  assert.equal(find(tree, n => n.type === 'Dialog').props.open, true)
+  assert.equal(find(tree, n => n.type === 'progress').props.value, 100)
+  find(tree, n => n.props.id === 'savings-goal').props.onChange({ target: { value: '200,00' } })
+  tree = runtime.render()
+  find(tree, n => n.type === 'form').props.onSubmit({ preventDefault() {} })
+  tree = await runtime.flush()
+  assert.equal(account.balance_cents, 10000)
+  assert.equal(find(tree, n => n.type === 'progress').props.value, 50)
+  find(tree, n => n.props.id === 'savings-amount').props.onChange({ target: { value: '100,01' } })
+  tree = runtime.render()
+  await find(tree, n => n.type === 'Button' && Array.isArray(n.props.children) && n.props.children.includes('Retirar valor')).props.onClick()
+  tree = await runtime.flush()
+  find(tree, n => n.props.role === 'alert' && n.props.children.includes('maior que o saldo'))
+  assert.equal(calls.length, 3)
+})
+
+test('savings double clicks and uncertain retries reuse one operation ID', async () => {
+  const runtime = hooks(), calls = []
+  let writes = 0
+  const client = { rpc: async (_name, args) => {
+    calls.push(args)
+    if (args.action_input === 'read') return { data: { balance_cents: 0, goal_cents: null }, error: null }
+    if (++writes === 1) throw new Error('network response lost')
+    return { data: { balance_cents: 486, goal_cents: null }, error: null }
+  } }
+  const { SavingsPanel } = load('components/savings-panel.tsx', { react: runtime.react, '@/lib/supabase/client': { createClient: () => client } }, { crypto: { randomUUID: () => 'same-request' } })
+  runtime.render(SavingsPanel)
+  let tree = await runtime.flush()
+  find(tree, n => n.props.id === 'savings-amount').props.onChange({ target: { value: '4,86' } })
+  tree = runtime.render()
+  const add = find(tree, n => n.type === 'Button' && Array.isArray(n.props.children) && n.props.children.includes('Adicionar valor'))
+  await Promise.all([add.props.onClick(), add.props.onClick()])
+  tree = await runtime.flush()
+  assert.equal(writes, 1)
+  assert.equal(find(tree, n => n.props.id === 'savings-amount').props.disabled, true)
+  await find(tree, n => n.type === 'Button' && n.props.children === 'Tentar novamente').props.onClick()
+  tree = await runtime.flush()
+  assert.equal(calls[1].request_input, calls[2].request_input)
+  assert.equal(find(tree, n => n.props.id === 'savings-amount').props.disabled, false)
+  assert.equal(calls[2].amount_input, 486)
+})
+
+test('savings page redirects anonymous users and renders for authenticated accounts', async () => {
+  for (const signedIn of [true, false]) {
+    const { default: Page } = load('app/savings/page.tsx', {
+      '@/lib/supabase/server': { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: signedIn ? { id: 'test-user' } : null } }) } }) },
+      'next/navigation': { redirect: url => { throw Object.assign(new Error('redirect'), { url }) } },
+    })
+    if (signedIn) find(await Page(), n => n.type === 'SavingsPanel')
+    else await assert.rejects(Page(), error => error.url === '/login')
   }
 })
 

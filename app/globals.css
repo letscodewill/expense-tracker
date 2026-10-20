@@ -428,3 +428,7 @@
   .expense-list .expense-actions { order: 6; border-top: 1px solid var(--border); margin-top: 0.5rem; padding-top: 0.625rem; }
   .expense-list .expense-actions [data-slot="button"] { min-height: 2.75rem; }
 }
+.savings-progress::-webkit-progress-bar { background: var(--muted); border-radius: 999px; }
+.savings-progress::-webkit-progress-value { background: var(--primary); border-radius: 999px; transition: width 300ms ease; }
+.savings-progress::-moz-progress-bar { background: var(--primary); border-radius: 999px; }
+@media (prefers-reduced-motion: reduce) { .savings-progress::-webkit-progress-value { transition: none; } }

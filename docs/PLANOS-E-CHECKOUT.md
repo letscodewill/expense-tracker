@@ -1,5 +1,7 @@
 # Planos e checkout — decisões e implementação seguinte
 
+**Base implementada:** gestão de [Pro cortesia](PRO-CORTESIA.md) e identificação de master permanente. O checkout deve utilizar essa fonte de permissões e compor a assinatura paga sem substituir ou cancelar benefícios ativos. Nenhum checkout ou cobrança foi ativado.
+
 ## Decisões de 19/10/2026
 
 - O mercado inicial será outro país da América Latina. O responsável ainda informará o país e o provedor.

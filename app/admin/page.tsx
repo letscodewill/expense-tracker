@@ -17,7 +17,7 @@ export default async function AdminPage() {
   const result = await supabase.rpc('get_admin_overview', { page_offset: 0, search_value: '' })
   return <div className="container mx-auto max-w-7xl p-4 md:p-8">
     <header className="material-app-bar mb-6 flex flex-wrap items-center justify-between gap-4"><div><p className="text-sm text-muted-foreground">{t("Administração • NoControle")}</p><h1 className="text-3xl font-medium">{t("Visão geral")}</h1></div><Link href="/" className="text-sm text-primary hover:underline">{t("Voltar ao Dashboard")}</Link></header>
-    <nav aria-label={t("Administração")} className="mb-6 flex flex-wrap gap-3"><Link href="/admin/tickets" className="rounded-xl border px-4 py-3 text-sm hover:bg-accent">{t("Atender chamados")}</Link><Link href="/admin/administrators" className="rounded-xl border px-4 py-3 text-sm hover:bg-accent">{t("Gerenciar administradores")}</Link></nav>
+    <nav aria-label={t("Administração")} className="mb-6 flex flex-wrap gap-3"><Link href="/admin/tickets" className="rounded-xl border px-4 py-3 text-sm hover:bg-accent">{t("Atender chamados")}</Link><Link href="/admin/administrators" className="rounded-xl border px-4 py-3 text-sm hover:bg-accent">{t("Gerenciar administradores")}</Link><Link href="/admin/benefits" className="rounded-xl border px-4 py-3 text-sm hover:bg-accent">{t('Planos e benefícios')}</Link></nav>
     {result.error || !result.data ? <p role="alert" className="rounded-2xl bg-destructive/10 p-4 text-destructive">{t("Não foi possível carregar os indicadores. Tente novamente.")}</p> : <AdminOverviewPanel initialData={result.data as AdminOverview} />}
   </div>
 }

@@ -13,7 +13,7 @@ import { FloatingActionMenu } from '@/components/floating-action-menu'
 import { AddExpenseDialog } from '@/components/add-expense-dialog'
 import { SalaryCard } from '@/components/salary-card'
 import Footer from './Footer'
-import { BarChart3, Menu, SlidersHorizontal } from 'lucide-react'
+import { BarChart3, Menu, SlidersHorizontal, PiggyBank } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog'
 import Link from 'next/link'
 import { PwaInstallButton } from '@/components/pwa-install-button'
@@ -156,6 +156,7 @@ export function ExpensesDashboard({ navigationActions, notificationActions }: { 
           <SlidersHorizontal className="size-4 shrink-0" aria-hidden="true" />
           <span className="sm:hidden">{t("Planejamento")}</span><span className="hidden sm:inline">{t("Orçamento e lembretes")}</span>
         </Link>
+        <Link href="/savings" className="inline-flex min-h-10 items-center gap-2 rounded-xl px-2 text-sm font-medium hover:bg-accent"><PiggyBank className="size-4 shrink-0" aria-hidden="true" />{t('Cofrinho')}</Link>
         <div className="ml-auto">{notificationActions}</div>
         <Dialog open={navigationOpen} onOpenChange={setNavigationOpen}>
           <DialogTrigger render={<Button variant="ghost" size="sm" aria-label={t("Abrir menu de navegação")} aria-expanded={navigationOpen} className="shrink-0 gap-2"><Menu className="size-5" aria-hidden="true" />{t("Menu")}</Button>} />

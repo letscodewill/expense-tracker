@@ -46,6 +46,11 @@ export default async function HomePage() {
     } catch { /* Keep the dashboard available when image storage is unavailable. */ }
   }
   const displayName = String(user.user_metadata?.full_name || user.email || 'Usuário')
+  let plan: { source?: string; can_manage_benefits?: boolean } | null = null
+  try {
+    const planResult = await supabase.rpc('get_my_plan')
+    if (!planResult.error) plan = planResult.data
+  } catch { /* A plan lookup outage must not hide the expense dashboard. */ }
 
   return (
     <div className="material-dashboard container mx-auto max-w-7xl px-3 py-4 sm:px-4 md:px-8 md:py-6">
@@ -53,6 +58,8 @@ export default async function HomePage() {
         <div className="min-w-0">
           <p className="text-xs font-semibold tracking-wide text-primary">NoControle</p>
           <h1 className="mt-1 text-xl font-medium tracking-tight sm:text-2xl">{t("Despesas")}</h1>
+          {plan?.source === 'master' && <p className="mt-1 text-xs font-medium text-primary">{t('Master · Pro permanente')}</p>}
+          {plan?.source === 'courtesy' && <p className="mt-1 text-xs font-medium text-primary">{t('Pro cortesia')}</p>}
         </div>
         <div className="ml-auto flex min-w-0 items-center gap-3">
           <ProfilePhoto name={displayName} photo={profilePhoto} custom={!!customPhoto} hasGooglePhoto={!!providerPhoto} />
@@ -71,6 +78,7 @@ export default async function HomePage() {
           {ticketAdmin && <Link href="/admin/tickets" className="rounded-full bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-accent">{t("Painel de tickets")}</Link>}
           {isMasterIdentity(user) && <Link href="/admin/administrators" className="rounded-full border border-border px-4 py-2 text-sm font-medium text-primary hover:bg-accent">{t("Administradores")}</Link>}
           {isMasterIdentity(user) && <Link href="/admin" className="rounded-full border border-border px-4 py-2 text-sm font-medium text-primary hover:bg-accent">{t("Painel administrativo")}</Link>}
+          {isMasterIdentity(user) && plan?.can_manage_benefits === true && <Link href="/admin/benefits" className="rounded-full border border-border px-4 py-2 text-sm font-medium text-primary hover:bg-accent">{t('Planos e benefícios')}</Link>}
           <form>
             <Button formAction={signOut} type="submit" variant="outline" size="sm">{t("Sair")}</Button>
           </form>
