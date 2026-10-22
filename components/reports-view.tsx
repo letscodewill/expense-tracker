@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { Download } from 'lucide-react'
+import { downloadReport, reportCsv, reportTxt, type ReportExport } from '@/lib/report-export'
 
 type CheckboxProps = {
     checked?: boolean
@@ -85,6 +86,9 @@ export function ReportsView() {
     const [error, setError] = useState('')
     const [hasSearched, setHasSearched] = useState(false)
     const searching = useRef(false)
+    const [exporting, setExporting] = useState(false)
+    const exportingRef = useRef(false)
+    const [exportError, setExportError] = useState('')
 
     function toggleStatus(status: ExpenseStatus) {
         setStatuses((prev) =>
@@ -191,6 +195,35 @@ export function ReportsView() {
                     remaining === null ? '—' : `${remaining < 0 ? t('Excedido: ') : t('Disponível: ')}${money(Math.abs(remaining))}`, money(before), money(spent - before)])
             }
             cursor.setUTCMonth(cursor.getUTCMonth() + 1)
+        }
+    }
+
+    async function handleExportFile(format: 'txt' | 'csv' | 'xlsx') {
+        if (exportingRef.current || !hasSearched || loading) return
+        exportingRef.current = true
+        setExporting(true)
+        setExportError('')
+        try {
+            const report: ReportExport = {
+                title: t('Relatório de Despesas'),
+                period: `${period.from} — ${period.to}`,
+                expenses: { title: t('Despesas'), headers: [t('Nome'), t('Data'), t('Categoria'), t('Valor'), t('Moeda'), t('Status'), t('Comentário')],
+                    rows: filtered.map(e => [e.nome, e.data_pagamento, !e.category || e.category === 'Sem categoria' ? t('Sem categoria') : e.category, Math.round(Number(e.valor) * 100) / 100, currency, t(e.status), e.comentario ?? '']) },
+                totals: { title: t('Resumo'), headers: [t('Descrição'), t('Valor'), t('Moeda')], rows: [[t('Total do período'), total, currency], [t('Total pago'), totalPago, currency], [t('VR/VA'), totalBenefits, currency], [t('Total pendente'), totalPendente, currency]] },
+                budgets: { title: t('Orçamento e comparação mensal'), headers: [t('Mês'), t('Categoria'), t('Despesas'), t('Limite'), t('Saldo do orçamento'), t('Mês anterior'), t('Variação')], rows: summary },
+                budgetNote: t('Meses completos; inclui Pago, Pendente e VR/VA. Independente dos filtros da lista. Variação em relação ao mês anterior.'),
+            }
+            const filename = `nocontrole-${period.from}-${period.to}.${format}`
+            if (format === 'xlsx') {
+                const { reportSpreadsheet } = await import('@/lib/report-spreadsheet')
+                const bytes = await reportSpreadsheet(report)
+                downloadReport(bytes as Uint8Array<ArrayBuffer>, filename, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            } else downloadReport(format === 'csv' ? reportCsv(report, locale) : reportTxt(report), filename, `${format === 'csv' ? 'text/csv' : 'text/plain'};charset=utf-8`)
+        } catch {
+            setExportError('Não foi possível exportar o arquivo. Tente novamente.')
+        } finally {
+            exportingRef.current = false
+            setExporting(false)
         }
     }
 
@@ -317,6 +350,12 @@ export function ReportsView() {
                     <p className="mr-auto text-sm text-muted-foreground">{t("Período carregado: ")}{parseISODate(period.from).toLocaleDateString(locale, { timeZone: 'UTC' })}{t(" até ")}{parseISODate(period.to).toLocaleDateString(locale, { timeZone: 'UTC' })}</p>
                     <Button variant="outline" size="sm" onClick={handleExportPdf}>
                         <Download className="h-4 w-4 mr-1" />{t("Exportar PDF ")}</Button>
+                    {(['txt', 'csv', 'xlsx'] as const).map(format => <Button key={format} variant="outline" size="sm" disabled={exporting} onClick={() => handleExportFile(format)}>
+                        <Download className="h-4 w-4 mr-1" />{format === 'xlsx' ? t('Exportar Excel') : format === 'csv' ? t('Exportar CSV') : t('Exportar TXT')}
+                    </Button>)}
+                    <p className="w-full text-sm text-muted-foreground">{t('A lista exportada respeita os filtros. TXT e Excel incluem totais e orçamento; CSV contém os lançamentos. A moeda é apenas de exibição, sem conversão.')}</p>
+                    {exporting && <p role="status" className="w-full text-sm">{t('Exportando...')}</p>}
+                    {exportError && <p role="alert" className="w-full text-sm text-destructive">{t(exportError)}</p>}
                 </div>
             )}
 

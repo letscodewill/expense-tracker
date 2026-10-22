@@ -30,6 +30,8 @@ function load(file, mocks = {}, globals = {}) {
     if (Object.hasOwn(mocks, name)) return mocks[name]
     if (name === '@/lib/feature-tour') return load('lib/feature-tour.ts')
     if (name === '@/lib/savings') return load('lib/savings.ts')
+    if (name === '@/lib/report-export') return load('lib/report-export.ts')
+    if (name === '@/lib/invoice-document') return load('lib/invoice-document.ts')
     if (name === '@/lib/pro-benefits') return load('lib/pro-benefits.ts')
     if (name === '@/lib/use-currency') return { useCurrency: () => 'BRL' }
     if (name === '@/lib/currency') return load('lib/currency.ts')
@@ -650,6 +652,50 @@ test('invoice parsing preserves Brazilian currency, dates and split-line amounts
   assert.equal(JSON.stringify(result), JSON.stringify([{ nome: 'Mercado', valor: 1234.56, data: '2026-10-03' }, { nome: 'Restaurante', valor: 80, data: '2026-10-04' }]))
 })
 
+test('CSV and TXT export accents, quotes, multiline data and neutralize spreadsheet formulas', () => {
+  const { reportCsv, reportTxt } = load('lib/report-export.ts')
+  const report = { title: 'Despesas', period: '2026-11-01 — 2026-11-30',
+    expenses: { title: 'Despesas', headers: ['Nome', 'Valor', 'Comentário'], rows: [['Ação; "Itaú"', 4.86, 'linha 1\nlinha 2'], [' =HYPERLINK("url")', 0, '@SUM(A1)']] },
+    totals: { title: 'Resumo', headers: ['Total'], rows: [[4.86]] },
+    budgets: { title: 'Orçamento', headers: ['Categoria'], rows: [['Mercado']] }, budgetNote: 'Meses completos',
+  }
+  const csv = reportCsv(report, 'pt-BR')
+  assert.ok(csv.startsWith('\uFEFF'))
+  assert.ok(csv.includes('"Ação; ""Itaú""";"4,86";"linha 1\nlinha 2"'))
+  assert.ok(csv.includes('"\' =HYPERLINK('))
+  assert.ok(csv.includes('"\'@SUM(A1)"'))
+  assert.ok(reportCsv(report, 'en-US').includes('"4.86"'))
+  const txt = reportTxt(report)
+  assert.ok(txt.includes('linha 1 / linha 2'))
+  assert.ok(txt.includes('Resumo') && txt.includes('Meses completos') && txt.includes('Mercado'))
+  assert.equal(reportCsv({ ...report, expenses: { ...report.expenses, rows: [] } }, 'pt-BR'), '\uFEFF"Nome";"Valor";"Comentário"\r\n')
+})
+
+test('Excel exports numeric amounts, literal formula-like text and separate summaries', async () => {
+  // ExcelJS checks array identity; run in its own realm rather than the UI VM.
+  const output = ts.transpileModule(fs.readFileSync(path.join(root, 'lib/report-spreadsheet.ts'), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText
+  const exports = {}
+  new Function('require', 'exports', output)(nodeRequire, exports)
+  const { reportSpreadsheet } = exports
+  const report = { title: 'Relatório', period: '2026-11-01 — 2026-11-30',
+    expenses: { title: 'Despesas', headers: ['Nome', 'Valor'], rows: [['=1+1', 4.86], ['Itaú', 10]] },
+    totals: { title: 'Resumo', headers: ['Total', 'Valor'], rows: [['Total', 14.86]] },
+    budgets: { title: 'Orçamento e comparação mensal', headers: ['Categoria', 'Valor'], rows: [['Mercado', 'R$ 14,86']] }, budgetNote: 'Meses completos',
+  }
+  const bytes = await reportSpreadsheet(report)
+  const { Workbook } = nodeRequire('exceljs')
+  const workbook = new Workbook()
+  await workbook.xlsx.load(Buffer.from(bytes))
+  assert.equal(workbook.worksheets.length, 3)
+  const sheet = workbook.worksheets[0]
+  assert.equal(sheet.getCell('A5').value, '=1+1')
+  assert.equal(sheet.getCell('B5').value, 4.86)
+  assert.equal(sheet.getCell('A5').formula, undefined)
+  assert.equal(sheet.views[0].ySplit, 4)
+  assert.equal(workbook.worksheets[1].getCell('B5').value, 14.86)
+  assert.equal(workbook.worksheets[2].getCell('A3').value, 'Meses completos')
+})
+
 test('report exports categories, benefits and full-month budgets without mixing filters', async () => {
   const runtime = hooks()
   const rows = [
@@ -659,7 +705,7 @@ test('report exports categories, benefits and full-month budgets without mixing 
     { ...expense, id: 4, category: 'Mercado', data_pagamento: '2026-10-06', valor: 100, status: 'Pago' },
   ]
   const db = database({ expenses: [success(rows)], category_budgets: [success([{ month: '2026-11-01', category: 'Mercado', amount: 120 }])] })
-  const tables = [], calls = []
+  const tables = [], calls = [], downloads = []
   class Pdf {
     internal = { pageSize: { getHeight: () => 210 } }
     setFontSize() {} text(...args) { calls.push(args) } addPage() {} getNumberOfPages() { return 2 } setPage() {}
@@ -667,6 +713,7 @@ test('report exports categories, benefits and full-month budgets without mixing 
   }
   const { ReportsView } = load('components/reports-view.tsx', {
     react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client },
+    '@/lib/report-export': { ...load('lib/report-export.ts'), downloadReport: (...args) => downloads.push(args) },
     jspdf: Pdf, 'jspdf-autotable': (_doc, options) => tables.push(options),
   })
   let tree = runtime.render(ReportsView, {})
@@ -690,6 +737,12 @@ test('report exports categories, benefits and full-month budgets without mixing 
   assert.ok(summary[5].includes('100,00'))
   assert.ok(summary[6].includes('30,00'))
   assert.ok(calls.some(([kind, name]) => kind === 'save' && name === 'relatorio-2026-11-01-a-2026-11-10.pdf'))
+  await find(tree, n => n.type === 'Button' && n.props.children?.includes('Exportar CSV')).props.onClick()
+  assert.equal(downloads[0][1], 'nocontrole-2026-11-01-2026-11-10.csv')
+  assert.ok(downloads[0][0].includes('Mercado VR'))
+  assert.ok(!downloads[0][0].includes('Mercado pago'))
+  await find(tree, n => n.type === 'Button' && n.props.children?.includes('Exportar TXT')).props.onClick()
+  assert.ok(downloads[1][0].includes('Total pendente') && downloads[1][0].includes('80'))
 })
 
 test('report paginates large datasets and real PDF keeps content inside every page', async () => {
@@ -774,7 +827,7 @@ test('fifth business day excludes weekends for every possible starting weekday',
   }
 })
 
-function invoiceRuntime({ responses = {}, extract, prepare, fetch: fetchMock, categories, selectedMonth = { month: 10, year: 2026 } } = {}) {
+function invoiceRuntime({ responses = {}, extract, prepare, fetch: fetchMock, categories, categoryState, selectedMonth = { month: 10, year: 2026 } } = {}) {
   const runtime = hooks(), db = database(responses), imported = []
   const pdf = load('lib/pdf-text-extract.ts', { 'pdfjs-dist': { version: 'test', GlobalWorkerOptions: {} } })
   const { ImportInvoiceDialog } = load('components/import-invoice-dialog.tsx', {
@@ -785,6 +838,7 @@ function invoiceRuntime({ responses = {}, extract, prepare, fetch: fetchMock, ca
     '@/lib/spreadsheet-import': load('lib/spreadsheet-import.ts'),
     '@/lib/invoice-ai': load('lib/invoice-ai.ts'),
     ...(categories ? { '@/lib/use-categories': { useCategories: () => ({ categories, loading: false, error: '' }) } } : {}),
+    ...(categoryState ? { '@/lib/use-categories': { useCategories: () => categoryState } } : {}),
     '@/lib/pdf-text-extract': {
       PdfPasswordRequiredError: pdf.PdfPasswordRequiredError,
       extractPdfText: extract ?? (async () => '03/10 Mercado 80,00\n20/09 Restaurante 50,00'),
@@ -801,6 +855,42 @@ function invoiceRuntime({ responses = {}, extract, prepare, fetch: fetchMock, ca
   }
   return { runtime, db, imported, upload, ImportInvoiceDialog, props, PdfPasswordRequiredError: pdf.PdfPasswordRequiredError }
 }
+
+test('AI import shows preparation, retry, ready and analysis states and enables upload only when ready', async () => {
+  let retried = 0, finish
+  const categoryState = { categories: ['Sem categoria'], loading: true, error: '', retry: () => { retried++ } }
+  const invoice = invoiceRuntime({ categoryState, fetch: () => new Promise(resolve => { finish = resolve }) })
+  let tree = await invoice.runtime.flush()
+  find(tree, n => n.type === 'input' && n.props.type === 'checkbox').props.onChange({ target: { checked: true } })
+  tree = await invoice.runtime.flush()
+  assert.equal(find(tree, n => n.props.id === 'invoice-pdf').props.disabled, true)
+  assert.ok(elements(tree, n => n.props.role === 'status' && n.props.children?.includes('Preparando a IA e carregando suas categorias...')).length)
+  categoryState.loading = false; categoryState.error = 'Não foi possível carregar categorias. Tente novamente.'
+  tree = invoice.runtime.render()
+  assert.equal(find(tree, n => n.props.id === 'invoice-pdf').props.disabled, true)
+  find(tree, n => n.props.children === 'Tentar novamente').props.onClick()
+  assert.equal(retried, 1)
+  categoryState.error = ''
+  tree = invoice.runtime.render()
+  assert.equal(find(tree, n => n.props.id === 'invoice-pdf').props.disabled, false)
+  find(tree, n => n.props.children === 'IA pronta. Selecione seu PDF ou imagem para analisar.')
+  const pending = invoice.upload(new File(['synthetic'], 'receipt.png', { type: 'image/png' }))
+  await invoice.runtime.flush(); tree = invoice.runtime.render()
+  assert.equal(find(tree, n => n.props.id === 'invoice-pdf').props.disabled, true)
+  assert.ok(elements(tree, n => n.props.role === 'status' && n.props.children?.includes('Analisando o arquivo...')).length)
+  finish(Response.json({ rows: [{ nome: 'Mercado', valor: 5 }], warnings: [] }))
+  await pending
+  assert.equal(invoice.db.requests.length, 0)
+})
+
+test('app loading announces progress in the selected language and uses a compact dashboard state', () => {
+  for (const compact of [false, true]) {
+    const { AppLoading } = load('components/app-loading.tsx', { '@/components/language-provider': englishLanguage })
+    const tree = AppLoading({ compact })
+    assert.equal(tree.props.role, 'status')
+    find(tree, n => n.props.children === (compact ? 'Loading your boards...' : 'Preparing your dashboard...'))
+  }
+})
 
 test('duplicate matching normalizes accents and cents, distinguishes months and excludes edited rows', async () => {
   const { detectExpenseDuplicates, checkExpenseDuplicates } = load('lib/expense-duplicates.ts')
@@ -1074,7 +1164,7 @@ test('browser reminders respect account preference, permission and daily dedupli
 test('custom categories load from the account and refresh after changes', async () => {
   const runtime = hooks(), db = database({ expense_categories: [success([{ name: 'Sem categoria' }, { name: 'Pets' }]), success([{ name: 'Sem categoria' }])] })
   const listeners = new Map()
-  const { useCategories } = load('lib/use-categories.ts', { react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client } }, { window: { addEventListener: (event, callback) => listeners.set(event, callback), removeEventListener() {} } })
+  const { useCategories } = load('lib/use-categories.ts', { react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client } }, { setTimeout, clearTimeout, window: { addEventListener: (event, callback) => listeners.set(event, callback), removeEventListener() {} } })
   let state
   function Consumer() { state = useCategories(); return null }
   runtime.render(Consumer, {}); await runtime.flush()
@@ -1084,6 +1174,45 @@ test('custom categories load from the account and refresh after changes', async 
   assert.ok(db.requests.every(request => request.calls.some(([method, column, value]) => method === 'eq' && column === 'user_id' && value === 'test-user')))
   const { categoryTotals } = load('lib/budgeting.ts')
   assert.equal(categoryTotals([{ ...expense, category: 'Pets' }], '2026-10', ['Sem categoria', 'Pets']).Pets, 80)
+})
+
+test('categories remain ready while file-picker focus refreshes and do not restart on render', async () => {
+  const runtime = hooks(), listeners = new Map()
+  let finish, state, clients = 0
+  const db = database({ expense_categories: [success([{ name: 'Pets' }]), new Promise(resolve => { finish = resolve })] })
+  const { useCategories } = load('lib/use-categories.ts', { react: runtime.react, '@/lib/supabase/client': { createClient: () => { clients++; return { ...db.client } } } }, { setTimeout, clearTimeout, window: { addEventListener: (name, callback) => listeners.set(name, callback), removeEventListener() {} } })
+  function Consumer() { state = useCategories(); return null }
+  runtime.render(Consumer); assert.equal(state.loading, true)
+  await runtime.flush(); assert.equal(state.loading, false)
+  const pending = listeners.get('focus')()
+  await runtime.flush()
+  assert.equal(state.loading, false)
+  assert.ok(state.categories.includes('Pets'))
+  assert.equal(clients, 1)
+  await listeners.get('focus')(); assert.equal(db.requests.length, 2)
+  finish(success([{ name: 'Mercado' }]))
+  await pending; await runtime.flush()
+  assert.ok(state.categories.includes('Mercado'))
+  assert.equal(state.loading, false)
+})
+
+test('categories show recoverable errors and a stalled load times out rather than spinning forever', async () => {
+  for (const stalled of [false, true]) {
+    const runtime = hooks(); let state, expire
+    const db = database({ expense_categories: [stalled ? new Promise(() => {}) : failure, success([{ name: 'Pets' }])] })
+    const { useCategories } = load('lib/use-categories.ts', { react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client } }, {
+      setTimeout: callback => { expire = callback; return 1 }, clearTimeout() {}, window: { addEventListener() {}, removeEventListener() {} },
+    })
+    function Consumer() { state = useCategories(); return null }
+    runtime.render(Consumer); await runtime.flush()
+    if (stalled) { assert.equal(state.loading, true); expire(); await runtime.flush() }
+    assert.equal(state.loading, false)
+    assert.ok(state.error.includes('Tente novamente'))
+    state.retry(); await runtime.flush()
+    assert.equal(state.error, '')
+    assert.equal(state.loading, false)
+    assert.ok(state.categories.includes('Pets'))
+  }
 })
 
 test('category management validates names, saves the owner and removes only after confirmation', async () => {
@@ -1159,7 +1288,7 @@ test('invoice review is spacious and imports all rows on the selected fifth busi
 })
 
 test('changing payment month updates every row and creates the board in the correct year', async () => {
-  const invoice = invoiceRuntime({ responses: { boards: [success({ id: 'new-board' })] } })
+  const invoice = invoiceRuntime({ responses: { boards: [success([]), success({ id: 'new-board' })] } })
   let tree = await invoice.upload()
   find(tree, (node) => node.props.id === 'invoice-payment-month').props.onChange({ target: { value: '2027-01' } })
   tree = await invoice.runtime.flush()
@@ -1171,12 +1300,50 @@ test('changing payment month updates every row and creates the board in the corr
   tree = await invoice.runtime.flush()
   await find(tree, (node) => node.props.children === 'Importar 2 despesa(s)').props.onClick()
   await invoice.runtime.flush()
-  const board = invoice.db.requests.find((request) => request.table === 'boards').calls.find(([method]) => method === 'insert')[1]
+  const board = invoice.db.requests.find((request) => request.table === 'boards' && request.calls.some(([method]) => method === 'insert')).calls.find(([method]) => method === 'insert')[1]
   assert.equal(board.month, 0)
   assert.equal(board.year, 2027)
   assert.equal(board.name, 'Fatura janeiro')
   const rows = invoice.db.requests.find((request) => request.table === 'expenses' && request.calls.some(([method]) => method === 'insert')).calls.find(([method]) => method === 'insert')[1]
   assert.ok(rows.every((row) => row.data_pagamento === '2027-01-07' && row.board_id === 'new-board'))
+})
+
+test('invoice destinations load the selected months own boards and save there instead of the dashboard month', async () => {
+  const invoice = invoiceRuntime({ selectedMonth: { month: 9, year: 2026 }, responses: { boards: [success([{ id: 'november-itau', name: 'Itaú novembro' }])] } })
+  let tree = await invoice.upload()
+  find(tree, n => n.props.id === 'invoice-payment-month').props.onChange({ target: { value: '2026-11' } })
+  tree = await invoice.runtime.flush()
+  assert.equal(elements(tree, n => n.type === 'SelectItem' && n.props.value === 'existing-board').length, 0)
+  find(tree, n => n.type === 'SelectItem' && n.props.value === 'november-itau')
+  const query = invoice.db.requests.find(request => request.table === 'boards')
+  for (const [column, value] of [['user_id', 'test-user'], ['month', 10], ['year', 2026]]) assert.ok(query.calls.some(([method, key, expected]) => method === 'eq' && key === column && expected === value))
+  find(tree, n => n.type === 'Select').props.onValueChange('november-itau')
+  tree = await invoice.runtime.flush()
+  await find(tree, n => n.props.children === 'Importar 2 despesa(s)').props.onClick()
+  const payload = invoice.db.requests.find(request => request.table === 'expenses' && request.calls.some(([method]) => method === 'insert')).calls.find(([method]) => method === 'insert')[1]
+  assert.ok(payload.every(row => row.board_id === 'november-itau' && row.data_pagamento === '2026-11-06'))
+  assert.equal(invoice.db.requests.filter(request => request.table === 'boards').length, 1)
+})
+
+test('invoice destination ignores late responses from a previously selected month and retries lookup errors', async () => {
+  let finishOld
+  const invoice = invoiceRuntime({ responses: { boards: [new Promise(resolve => { finishOld = resolve }), failure, success([{ id: 'jan', name: 'Janeiro' }])] } })
+  let tree = await invoice.upload()
+  find(tree, n => n.props.id === 'invoice-payment-month').props.onChange({ target: { value: '2026-12' } })
+  tree = await invoice.runtime.flush()
+  assert.equal(find(tree, n => n.type === 'Select').props.disabled, true)
+  find(tree, n => n.props.id === 'invoice-payment-month').props.onChange({ target: { value: '2027-01' } })
+  tree = await invoice.runtime.flush()
+  assert.equal(find(tree, n => n.props.children === 'Importar 2 despesa(s)').props.disabled, true)
+  assert.ok(elements(tree, n => n.props.role === 'alert').length)
+  find(tree, n => n.props.children === 'Tentar novamente').props.onClick()
+  tree = await invoice.runtime.flush()
+  find(tree, n => n.type === 'SelectItem' && n.props.value === 'jan')
+  finishOld(success([{ id: 'dec', name: 'Dezembro' }]))
+  tree = await invoice.runtime.flush()
+  find(tree, n => n.type === 'SelectItem' && n.props.value === 'jan')
+  assert.equal(elements(tree, n => n.type === 'SelectItem' && n.props.value === 'dec').length, 0)
+  assert.equal(invoice.db.requests.filter(request => request.calls.some(([method]) => method === 'insert')).length, 0)
 })
 
 test('existing board destinations reset when the payment month changes', async () => {
@@ -1835,6 +2002,60 @@ test('AI categories accept only confident account categories and preserve conser
   assert.equal(validateAIInvoice({ rows: [{ nome: 'Compra', valor: 10 }], warnings: [] }, categories).rows[0].category, 'Sem categoria')
 })
 
+test('image analysis checks MIME signatures before quota and sends supported formats as images', async () => {
+  const samples = [
+    ['image/png', [137, 80, 78, 71, 13, 10, 26, 10]],
+    ['image/jpeg', [255, 216, 255, 224]],
+    ['image/webp', [82, 73, 70, 70, 0, 0, 0, 0, 87, 69, 66, 80]],
+    ['image/png', [37, 80, 68, 70, 45]], ['image/svg+xml', [60, 115, 118, 103]],
+    ['image/png', []], ['image/png', new Uint8Array(3 * 1024 * 1024 + 1)],
+  ]
+  for (const [mime, bytes] of samples) {
+    let calls = 0, reserved = 0
+    const finishes = []
+    const valid = bytes.length > 0 && bytes.length < 100 && mime !== 'image/svg+xml' && bytes[0] !== 37
+    const { POST } = load('app/api/invoices/analyze/route.ts', {
+      '@/lib/supabase/server': { createClient: async () => ({
+        from: database({}).client.from, auth: { getUser: async () => ({ data: { user: { id: 'image-user' } } }) },
+        rpc: async (name, args) => { if (name === 'reserve_invoice_ai') { reserved++; return success({ allowed: true, token: 'slot' }) } finishes.push(args); return success(true) },
+      }) }, '@/lib/invoice-ai': load('lib/invoice-ai.ts'), '@/lib/invoice-ai-limit': load('lib/invoice-ai-limit.ts'),
+    }, { Response, Request, File, Buffer, AbortSignal, process: { env: { OPENAI_API_KEY: 'synthetic' } }, fetch: async (_url, options) => {
+      calls++
+      const body = JSON.parse(options.body)
+      const image = body.input[0].content.find(item => item.type === 'input_image')
+      assert.ok(image.image_url.startsWith(`data:${mime};base64,`))
+      assert.equal(image.detail, 'high')
+      assert.equal(body.store, false)
+      assert.ok(body.instructions.includes('um único lançamento pelo total final'))
+      assert.ok(!body.instructions.includes('Não inclua totais'))
+      return Response.json({ status: 'completed', output: [{ content: [{ type: 'output_text', text: JSON.stringify({ rows: [{ nome: 'Mercado', valor: 82.41 }], warnings: [] }) }] }] })
+    } })
+    const form = new FormData(); form.append('file', new File([new Uint8Array(bytes)], 'compra.png', { type: mime }))
+    const result = await POST(new Request('https://test/api/invoices/analyze', { method: 'POST', headers: { origin: 'https://test' }, body: form }))
+    assert.equal(result.status, valid ? 200 : 400, `${mime}: ${bytes.length}`)
+    assert.equal(calls, valid ? 1 : 0); assert.equal(reserved, valid ? 1 : 0)
+    if (valid) assert.equal(finishes[0].succeeded, true)
+  }
+})
+
+test('image uploads require AI consent and enter editable review without PDF parsing or writes', async () => {
+  let calls = 0
+  const invoice = invoiceRuntime({ prepare: async () => { throw new Error('Must not parse image as PDF') }, fetch: async (_url, options) => {
+    calls++
+    assert.equal(options.body.get('file').name, 'compra.png')
+    return Response.json({ rows: [{ nome: 'Compra no cartão', valor: 82.41 }], warnings: ['Confira o total'] })
+  } })
+  let tree = await invoice.upload(new File(['synthetic'], 'compra.png', { type: 'image/png' }))
+  assert.equal(calls, 0)
+  assert.ok(elements(tree, n => n.props.children === 'Ative a leitura com IA antes de enviar uma imagem.').length)
+  find(tree, n => n.type === 'input' && n.props.type === 'checkbox').props.onChange({ target: { checked: true } })
+  tree = await invoice.upload(new File(['synthetic'], 'compra.png', { type: 'image/png' }))
+  assert.equal(calls, 1)
+  assert.equal(invoice.db.requests.length, 0)
+  assert.ok(elements(tree, n => n.props.value === 'Compra no cartão').length)
+  assert.ok(elements(tree, n => n.props.value === 82.41).length)
+})
+
 test('AI analysis loads categories only from the verified account and safely validates the provider response', async () => {
   for (const categoryResponse of [success([{ name: 'Meus pets' }]), failure]) {
     const db = database({ expense_categories: [categoryResponse] })
@@ -1949,7 +2170,8 @@ test('AI monthly quota stops the fifth invoice before OpenAI and never exposes r
     }) },
     '@/lib/invoice-ai': load('lib/invoice-ai.ts'), '@/lib/invoice-ai-limit': load('lib/invoice-ai-limit.ts'),
   }, { Response, Request, File, Buffer, AbortSignal, process: { env: { OPENAI_API_KEY: 'test' } }, fetch: async () => { calls++; return Response.json({ status: 'completed', output: [{ content: [{ type: 'output_text', text: JSON.stringify({ rows: [{ nome: 'Mercado', valor: 10 }], warnings: [] }) }] }] }) } })
-  const request = () => { const form = new FormData(); form.append('file', new File(['%PDF-1.7 test'], 'fatura.pdf', { type: 'application/pdf' })); return new Request('https://test/api/invoices/analyze', { method: 'POST', headers: { origin: 'https://test' }, body: form }) }
+  let uploads = 0
+  const request = () => { const form = new FormData(); const image = uploads++ % 2 === 1; form.append('file', image ? new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], 'compra.png', { type: 'image/png' }) : new File(['%PDF-1.7 test'], 'fatura.pdf', { type: 'application/pdf' })); return new Request('https://test/api/invoices/analyze', { method: 'POST', headers: { origin: 'https://test' }, body: form }) }
   for (let index = 0; index < 4; index++) {
     const response = await POST(request()); assert.equal(response.status, 200); assert.ok(!(await response.text()).includes('secret-reservation'))
   }

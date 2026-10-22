@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import Link from 'next/link'
 import { PwaInstallButton } from '@/components/pwa-install-button'
 import { QuickExpenseSearch } from '@/components/quick-expense-search'
+import { AppLoading } from '@/components/app-loading'
 
 type Board = {
   id: string
@@ -150,7 +151,8 @@ export function ExpensesDashboard({ navigationActions, notificationActions }: { 
   )
 
   return (
-    <div className="space-y-4 sm:space-y-5">
+    <div className="space-y-4 sm:space-y-5" aria-busy={loadingBoards}>
+      {loadingBoards && <AppLoading compact />}
       <nav aria-label={t("Navegação do Dashboard")} className="flex min-w-0 items-center justify-between gap-2 rounded-2xl border border-border bg-card px-3 py-2 sm:px-4">
         <Link href={`/planning?month=${selected.year}-${String(selected.month + 1).padStart(2, '0')}`} className="inline-flex min-h-10 min-w-0 items-center gap-2 rounded-xl px-2 text-sm font-medium hover:bg-accent">
           <SlidersHorizontal className="size-4 shrink-0" aria-hidden="true" />

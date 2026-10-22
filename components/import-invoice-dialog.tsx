@@ -2,7 +2,7 @@
 import { useCurrency } from '@/lib/use-currency'
 import { useLanguage } from '@/components/language-provider'
 import { extractPdfText, preparePdfForAI, PdfPasswordRequiredError } from '@/lib/pdf-text-extract'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { checkExpenseDuplicates, type DuplicateWarning } from '@/lib/expense-duplicates'
 import { DuplicateExpenseNotice } from '@/components/duplicate-expense-notice'
 import { createClient } from '@/lib/supabase/client'
@@ -31,7 +31,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Upload, X } from 'lucide-react'
+import { LoaderCircle, Upload, X } from 'lucide-react'
 import type { MonthYear } from '@/components/month-year-picker'
 
 type Board = { id: string; name: string }
@@ -60,8 +60,8 @@ export function ImportInvoiceDialog({
   const { t, locale } = useLanguage()
   const currency = useCurrency()
 
-  const supabase = createClient()
-  const { categories, loading: categoriesLoading, error: categoriesError } = useCategories()
+  const [supabase] = useState(() => createClient())
+  const { categories, loading: categoriesLoading, error: categoriesError, retry: retryCategories } = useCategories()
   const [openState, setOpenState] = useState(false)
   const open = openProp ?? openState
   const setOpen = (value: boolean) => {
@@ -84,6 +84,13 @@ export function ImportInvoiceDialog({
   const paymentDate = fifthBusinessDayISO(paymentPeriod.year, paymentPeriod.month)
   const paymentDateLabel = paymentDate.split('-').reverse().join('/')
   const sameBoardMonth = paymentPeriod.month === selected.month && paymentPeriod.year === selected.year
+  const boardPeriodKey = `${paymentPeriod.year}-${paymentPeriod.month}`
+  const [periodBoards, setPeriodBoards] = useState<{ key: string; boards: Board[]; error: string } | null>(null)
+  const [boardsRetry, setBoardsRetry] = useState(0)
+  const boardsRequest = useRef(0)
+  const boardOptions = sameBoardMonth ? boards : periodBoards?.key === boardPeriodKey ? periodBoards.boards : []
+  const loadingBoardOptions = !sameBoardMonth && periodBoards?.key !== boardPeriodKey
+  const boardOptionsError = !sameBoardMonth && periodBoards?.key === boardPeriodKey ? periodBoards.error : ''
   const [destination, setDestination] = useState<string>(MAIN_PANEL_VALUE)
   const [newBoardName, setNewBoardName] = useState('')
   const [saving, setSaving] = useState(false)
@@ -92,12 +99,36 @@ export function ImportInvoiceDialog({
   const [needsPassword, setNeedsPassword] = useState(false)
   const [pdfPassword, setPdfPassword] = useState('')
   const inFlight = useRef(false)
+  const processingFile = useRef(false)
   const createdBoard = useRef<{ key: string; id: string } | null>(null)
   const [duplicateReview, setDuplicateReview] = useState<{ key: string; draft: string; warnings: DuplicateWarning[] } | null>(null)
   const [acceptedDuplicates, setAcceptedDuplicates] = useState('')
   const draftKey = JSON.stringify([rows, paymentDate, destination, newBoardName])
 
+  useEffect(() => {
+    const revision = ++boardsRequest.current
+    if (!open || step !== 'review' || sameBoardMonth) return
+    let active = true
+    const key = `${paymentPeriod.year}-${paymentPeriod.month}`
+    async function loadBoards() {
+      try {
+        const { data: auth, error: authError } = await supabase.auth.getUser()
+        if (authError || !auth.user) throw new Error('session')
+        const { data, error } = await supabase.from('boards').select('id,name')
+          .eq('user_id', auth.user.id).eq('month', paymentPeriod.month).eq('year', paymentPeriod.year).order('name')
+        if (error || !data) throw new Error('boards')
+        if (active && revision === boardsRequest.current) setPeriodBoards({ key, boards: data, error: '' })
+      } catch {
+        if (active && revision === boardsRequest.current) setPeriodBoards({ key, boards: [], error: 'Não foi possível carregar os quadros deste mês. Tente novamente.' })
+      }
+    }
+    void loadBoards()
+    return () => { active = false }
+  }, [open, step, sameBoardMonth, paymentPeriod.month, paymentPeriod.year, supabase, boardsRetry])
+
   async function processFile(file: File, password?: string) {
+    if (processingFile.current) return
+    processingFile.current = true
     setParsing(true)
     setProcessedWithAI(false)
     setError('')
@@ -114,11 +145,13 @@ export function ImportInvoiceDialog({
         setStep('mapping')
         return
       }
-      if (!/\.pdf$/i.test(file.name)) throw new Error("Selecione um arquivo PDF, Excel (.xlsx) ou CSV.")
+      const isImage = /\.(jpe?g|png|webp)$/i.test(file.name)
+      if (!isImage && !/\.pdf$/i.test(file.name)) throw new Error("Selecione PDF, Excel, CSV ou imagem JPG, PNG ou WebP.")
+      if (isImage && !useAI) throw new Error('Ative a leitura com IA antes de enviar uma imagem.')
       let parsed: InvoiceRow[]
       if (useAI) {
         if (categoriesLoading || categoriesError) throw new Error(categoriesError || 'Aguarde suas categorias carregarem e selecione o arquivo novamente.')
-        const prepared = await preparePdfForAI(file, password)
+        const prepared = isImage ? file : await preparePdfForAI(file, password)
         setPdfPassword('')
         setNeedsPassword(false)
         setPendingFile(null)
@@ -140,7 +173,7 @@ export function ImportInvoiceDialog({
 
       if (parsed.length === 0) {
         setError(
-          "Não conseguimos identificar despesas automaticamente neste PDF. " +
+          "Não conseguimos identificar despesas automaticamente neste arquivo. " +
           "Você pode adicionar linhas manualmente abaixo."
         )
       }
@@ -160,6 +193,7 @@ export function ImportInvoiceDialog({
         setError(err instanceof Error ? err.message : "Não foi possível ler este arquivo. Verifique o formato e tente novamente.")
       }
     } finally {
+      processingFile.current = false
       setParsing(false)
     }
   }
@@ -208,6 +242,7 @@ export function ImportInvoiceDialog({
     setNewBoardName('')
     setError('')
     setPaymentMonth(null)
+    setPeriodBoards(null)
     setPendingFile(null)
     setNeedsPassword(false)
     setPdfPassword('')
@@ -236,6 +271,8 @@ export function ImportInvoiceDialog({
   }
 
   async function handleConfirm() {
+    if (loadingBoardOptions || boardOptionsError) return
+    if (destination !== MAIN_PANEL_VALUE && destination !== NEW_BOARD_VALUE && !boardOptions.some(board => board.id === destination)) return
     if (inFlight.current) return
     if (categoriesLoading || categoriesError || rows.some(row => !categories.includes(row.category ?? 'Sem categoria'))) {
       setError(categoriesError || "Escolha categorias disponíveis antes de importar.")
@@ -356,26 +393,36 @@ export function ImportInvoiceDialog({
 )}
       <DialogContent className={step === 'review' ? 'invoice-review-dialog' : 'max-h-[90dvh] overflow-y-auto max-w-2xl sm:max-w-2xl'}>
         <DialogHeader>
-          <DialogTitle>{t("Importar fatura ou planilha")}</DialogTitle>
+          <DialogTitle>{t("Importar fatura, planilha ou imagem")}</DialogTitle>
           <DialogDescription>{t("Confira os nomes, valores e o mês de pagamento antes de importar.")}</DialogDescription>
         </DialogHeader>
 
         {step === 'upload' && (
           <div className="space-y-4 py-4">
-            <Label htmlFor="invoice-pdf">{t("Selecione um PDF, Excel (.xlsx) ou CSV")}</Label>
+            <Label htmlFor="invoice-pdf">{t("Selecione PDF, Excel, CSV ou imagem")}</Label>
             <Input
               id="invoice-pdf"
               type="file"
-              accept=".pdf,.xlsx,.csv,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
+              accept=".pdf,.xlsx,.csv,.jpg,.jpeg,.png,.webp,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,image/jpeg,image/png,image/webp"
               onChange={handleFileChange}
-              disabled={parsing}
+              disabled={parsing || (useAI && (categoriesLoading || !!categoriesError))}
             />
-            <p className="text-sm text-muted-foreground">{t("Até 3 MB e 500 despesas por importação. Leitura com IA: até 4 faturas por usuário por mês. A leitura padrão e as planilhas não usam essa cota. No Google Planilhas, use Arquivo → Fazer download → Microsoft Excel ou CSV.")}</p>
+            <p className="text-sm text-muted-foreground">{t("Até 3 MB e 500 despesas por importação. PDFs e imagens compartilham a cota de 4 análises com IA por mês. A leitura padrão e as planilhas não usam essa cota. No Google Planilhas, baixe como Excel ou CSV.")}</p>
             <label className="flex items-start gap-3 rounded-2xl border p-4 text-sm">
               <input type="checkbox" checked={useAI} disabled={parsing || needsPassword} onChange={(event) => setUseAI(event.target.checked)} className="mt-1" />
-              <span><span className="font-medium">{t("Ler PDF com inteligência artificial")}</span><span className="mt-1 block text-muted-foreground">{t("Ao selecionar esta opção e enviar um PDF, o conteúdo será enviado à OpenAI para análise. PDFs com senha são abertos no navegador antes do envio; a senha não é enviada. Até 20 páginas. A disponibilidade depende da configuração do sistema. Planilhas são lidas sem IA.")}</span></span>
+              <span><span className="font-medium">{t("Ler PDF ou imagem com inteligência artificial")}</span><span className="mt-1 block text-muted-foreground">{t("Ao ativar a IA, o PDF ou a imagem será enviado à OpenAI para análise. PDFs com senha são abertos no navegador; a senha não é enviada. Até 20 páginas por PDF. Planilhas são lidas sem IA.")}</span></span>
             </label>
-            {parsing && <p role="status" className="text-sm text-muted-foreground">{useAI ? t("Analisando o arquivo...") : t("Lendo o arquivo...")}</p>}
+            {useAI && <div className="rounded-xl border border-border bg-muted/50 p-3 text-sm" aria-live="polite" aria-busy={categoriesLoading || parsing}>
+              {parsing || categoriesLoading ? <p role="status" className="flex items-center gap-2 text-muted-foreground">
+                <LoaderCircle className="size-4 shrink-0 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                {parsing ? t('Analisando o arquivo...') : t('Preparando a IA e carregando suas categorias...')}
+              </p> : categoriesError ? <div className="space-y-2">
+                <p role="alert" className="text-destructive">{t(categoriesError)}</p>
+                <Button type="button" variant="outline" size="sm" onClick={() => retryCategories?.()}>{t('Tentar novamente')}</Button>
+              </div> : <p role="status" className="text-primary">{t('IA pronta. Selecione seu PDF ou imagem para analisar.')}</p>}
+            </div>}
+            <p className="text-sm text-muted-foreground">{t('Imagens: JPG, PNG ou WebP de notificações de cartão, comprovantes de maquininha ou cupons fiscais. Envie uma imagem nítida por vez e ative a IA. Cada comprovante gera uma despesa pelo total, sem detalhar produtos. Recorte dados pessoais desnecessários e revise tudo antes de salvar.')}</p>
+            {parsing && !useAI && <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />{t("Lendo o arquivo...")}</p>}
 
             {needsPassword && (
               <div className="space-y-2 pt-2 border-t">
@@ -508,13 +555,13 @@ export function ImportInvoiceDialog({
 
             <div className="space-y-2 pt-2 border-t">
               <Label>{t("Adicionar despesas em:")}</Label>
-              <Select value={destination} onValueChange={(value) => setDestination(value ?? MAIN_PANEL_VALUE)} disabled={saving}>
+              <Select value={destination} onValueChange={(value) => setDestination(value ?? MAIN_PANEL_VALUE)} disabled={saving || loadingBoardOptions || !!boardOptionsError}>
                 <SelectTrigger>
-                  <SelectValue>{destination === MAIN_PANEL_VALUE ? t("Painel principal") : destination === NEW_BOARD_VALUE ? t("+ Criar novo quadro") : boards.find((board) => board.id === destination)?.name}</SelectValue>
+                  <SelectValue>{destination === MAIN_PANEL_VALUE ? t("Painel principal") : destination === NEW_BOARD_VALUE ? t("+ Criar novo quadro") : boardOptions.find((board) => board.id === destination)?.name}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={MAIN_PANEL_VALUE}>{t("Painel principal")}</SelectItem>
-                  {sameBoardMonth && boards.map((b) => (
+                  {boardOptions.map((b) => (
                     <SelectItem key={b.id} value={b.id}>
                       {b.name}
                     </SelectItem>
@@ -522,6 +569,8 @@ export function ImportInvoiceDialog({
                   <SelectItem value={NEW_BOARD_VALUE}>{t("+ Criar novo quadro")}</SelectItem>
                 </SelectContent>
               </Select>
+              {loadingBoardOptions && <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />{t('Carregando os quadros do mês selecionado...')}</p>}
+              {boardOptionsError && <div className="space-y-2"><p role="alert" className="text-sm text-destructive">{t(boardOptionsError)}</p><Button variant="outline" size="sm" onClick={() => { setPeriodBoards(null); setBoardsRetry(value => value + 1) }}>{t('Tentar novamente')}</Button></div>}
 
               {destination === NEW_BOARD_VALUE && (
                 <Input
@@ -538,7 +587,7 @@ export function ImportInvoiceDialog({
         <DialogFooter className="shrink-0">
           {step !== 'upload' && <Button variant="outline" disabled={saving || parsing} onClick={reset}>{t("Escolher outro arquivo")}</Button>}
           {step === 'review' && (
-            <Button onClick={handleConfirm} disabled={saving}>
+            <Button onClick={handleConfirm} disabled={saving || loadingBoardOptions || !!boardOptionsError}>
               {saving ? t('Importando...') : t('Importar {count} despesa(s)', { count: rows.length })}
             </Button>
           )}
