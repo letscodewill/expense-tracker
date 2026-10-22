@@ -47,7 +47,7 @@ export async function POST(request: Request) {
         input: [{ role: 'user', content: isImage
           ? [{ type: 'input_text', text: IMAGE_PURCHASE_INSTRUCTIONS }, { type: 'input_image', image_url: `data:${documentType};base64,${bytes.toString('base64')}`, detail: 'high' }]
           : [{ type: 'input_file', filename: 'fatura.pdf', file_data: `data:application/pdf;base64,${bytes.toString('base64')}` }] }],
-        text: { format: { type: 'json_schema', name: 'invoice', strict: true, schema: invoiceSchema(categories) } },
+        text: { format: { type: 'json_schema', name: 'invoice', strict: true, schema: invoiceSchema(categories, isImage) } },
       }),
     })
     if (!response.ok) return Response.json({ error: response.status === 429 ? 'A IA atingiu um limite de uso ou saldo. Tente mais tarde ou use a leitura padrão.' : 'A IA não conseguiu analisar este arquivo. Tente novamente ou revise manualmente.' }, { status: 502, headers })

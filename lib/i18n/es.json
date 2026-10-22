@@ -730,5 +730,22 @@
   "Não foi possível carregar categorias. Tente novamente.": "No se pudieron cargar las categorías. Inténtalo de nuevo.",
   "O carregamento das categorias demorou demais. Tente novamente.": "La carga de categorías tardó demasiado. Inténtalo de nuevo.",
   "Carregando os quadros do mês selecionado...": "Cargando los tableros del mes seleccionado...",
-  "Não foi possível carregar os quadros deste mês. Tente novamente.": "No se pudieron cargar los tableros de este mes. Inténtalo de nuevo."
+  "Não foi possível carregar os quadros deste mês. Tente novamente.": "No se pudieron cargar los tableros de este mes. Inténtalo de nuevo.",
+  "Tirar foto do comprovante": "Tomar foto del comprobante",
+  "Preparando a foto...": "Preparando la foto...",
+  "Ative a IA para fotografar. A câmera traseira será sugerida; as opções dependem do navegador. A foto é reduzida no aparelho antes do envio. Você revisa tudo antes de salvar.": "Activa la IA para tomar una foto. Se sugerirá la cámara trasera; las opciones dependen del navegador. La foto se reduce en tu dispositivo antes de enviarla. Revisa todo antes de guardar.",
+  "Formato da foto não suportado. Use JPG, PNG ou WebP.": "Formato de foto no compatible. Usa JPG, PNG o WebP.",
+  "A foto deve ter no máximo 20 MB antes da preparação.": "La foto debe tener un máximo de 20 MB antes de prepararla.",
+  "Não foi possível abrir a foto. Tire outra foto ou escolha uma imagem da galeria.": "No se pudo abrir la foto. Toma otra foto o elige una imagen de la galería.",
+  "A resolução da foto é muito grande. Use uma resolução menor na câmera.": "La resolución de la foto es demasiado alta. Usa una resolución menor en la cámara.",
+  "Não foi possível preparar a foto neste navegador. Escolha uma imagem da galeria.": "No se pudo preparar la foto en este navegador. Elige una imagen de la galería.",
+  "A foto preparada excede 3 MB. Aproxime o comprovante ou reduza a resolução.": "La foto preparada supera los 3 MB. Acerca el comprobante o reduce la resolución.",
+  "Não foi possível preparar a foto. Tente novamente.": "No se pudo preparar la foto. Inténtalo de nuevo.",
+  "Detectado no comprovante: {count} parcelas.": "Detectado en el comprobante: {count} cuotas.",
+  "Detectado no comprovante: parcela {current} de {count}.": "Detectado en el comprobante: cuota {current} de {count}.",
+  "O valor identificado é de uma parcela. Confira antes de importar.": "El importe identificado corresponde a una cuota. Revísalo antes de importar.",
+  "Atenção: o valor identificado é o total da compra, não o de uma parcela. Revise o valor antes de importar.": "Atención: el importe identificado es el total de la compra, no el de una cuota. Revisa el importe antes de importar.",
+  "Não foi possível confirmar se o valor é o total ou uma parcela. Revise antes de importar.": "No se pudo confirmar si el importe es el total o una cuota. Revisa antes de importar.",
+  "Esta importação não divide valores nem cria parcelas futuras automaticamente.": "Esta importación no divide importes ni crea cuotas futuras automáticamente.",
+  "A IA retornou um parcelamento inválido. Confira o comprovante e tente novamente.": "La IA devolvió información de cuotas no válida. Revisa el comprobante e inténtalo de nuevo."
 }

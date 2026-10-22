@@ -32,6 +32,7 @@ function load(file, mocks = {}, globals = {}) {
     if (name === '@/lib/savings') return load('lib/savings.ts')
     if (name === '@/lib/report-export') return load('lib/report-export.ts')
     if (name === '@/lib/invoice-document') return load('lib/invoice-document.ts')
+    if (name === '@/lib/receipt-photo') return load('lib/receipt-photo.ts')
     if (name === '@/lib/pro-benefits') return load('lib/pro-benefits.ts')
     if (name === '@/lib/use-currency') return { useCurrency: () => 'BRL' }
     if (name === '@/lib/currency') return load('lib/currency.ts')
@@ -827,7 +828,7 @@ test('fifth business day excludes weekends for every possible starting weekday',
   }
 })
 
-function invoiceRuntime({ responses = {}, extract, prepare, fetch: fetchMock, categories, categoryState, selectedMonth = { month: 10, year: 2026 } } = {}) {
+function invoiceRuntime({ responses = {}, extract, prepare, photo, fetch: fetchMock, categories, categoryState, selectedMonth = { month: 10, year: 2026 } } = {}) {
   const runtime = hooks(), db = database(responses), imported = []
   const pdf = load('lib/pdf-text-extract.ts', { 'pdfjs-dist': { version: 'test', GlobalWorkerOptions: {} } })
   const { ImportInvoiceDialog } = load('components/import-invoice-dialog.tsx', {
@@ -837,6 +838,7 @@ function invoiceRuntime({ responses = {}, extract, prepare, fetch: fetchMock, ca
     '@/lib/payment-date': load('lib/payment-date.ts'),
     '@/lib/spreadsheet-import': load('lib/spreadsheet-import.ts'),
     '@/lib/invoice-ai': load('lib/invoice-ai.ts'),
+    ...(photo ? { '@/lib/receipt-photo': { prepareReceiptPhoto: photo } } : {}),
     ...(categories ? { '@/lib/use-categories': { useCategories: () => ({ categories, loading: false, error: '' }) } } : {}),
     ...(categoryState ? { '@/lib/use-categories': { useCategories: () => categoryState } } : {}),
     '@/lib/pdf-text-extract': {
@@ -855,6 +857,63 @@ function invoiceRuntime({ responses = {}, extract, prepare, fetch: fetchMock, ca
   }
   return { runtime, db, imported, upload, ImportInvoiceDialog, props, PdfPasswordRequiredError: pdf.PdfPasswordRequiredError }
 }
+
+test('camera photo preparation resizes locally, encodes JPEG and releases object URLs on success and failure', async () => {
+  for (const broken of [false, true]) {
+    let revoked = 0, draws = 0
+    const qualities = []
+    const canvas = { width: 0, height: 0,
+      getContext: () => ({ fillRect() {}, drawImage() { draws++ } }),
+      toBlob: (callback, type, quality) => { qualities.push(quality); callback(new Blob([new Uint8Array(quality === 0.9 ? 3 * 1024 * 1024 + 1 : 100)], { type })) },
+    }
+    class Photo {
+      naturalWidth = 4000; naturalHeight = 3000
+      set src(_value) { if (broken) this.onerror(); else this.onload() }
+    }
+    const { prepareReceiptPhoto } = load('lib/receipt-photo.ts', {}, { File, Image: Photo, document: { createElement: () => canvas }, URL: { createObjectURL: () => 'blob:test', revokeObjectURL() { revoked++ } } })
+    const original = { name: 'camera.jpg', type: 'image/jpeg', size: 5 * 1024 * 1024 }
+    if (broken) await assert.rejects(prepareReceiptPhoto(original), /Não foi possível abrir a foto/)
+    else {
+      const result = await prepareReceiptPhoto(original)
+      assert.equal(result.type, 'image/jpeg')
+      assert.equal(result.name, 'comprovante.jpg')
+      assert.equal(result.size, 100)
+      assert.equal(canvas.width, 2400); assert.equal(canvas.height, 1800)
+      assert.equal(draws, 1); assert.deepEqual(qualities, [0.9, 0.75])
+    }
+    assert.equal(revoked, 1)
+    await assert.rejects(prepareReceiptPhoto({ type: 'image/heic', size: 10 }), /Formato da foto/)
+    await assert.rejects(prepareReceiptPhoto({ type: 'image/jpeg', size: 21 * 1024 * 1024 }), /20 MB/)
+    assert.equal(revoked, 1)
+  }
+})
+
+test('camera requires AI readiness, handles cancellation and sends only the prepared photo into review', async () => {
+  let processed = 0, requests = 0, clicked = 0
+  const invoice = invoiceRuntime({ photo: async () => { processed++; return new File(['prepared'], 'comprovante.jpg', { type: 'image/jpeg' }) }, fetch: async (_url, options) => {
+    requests++; assert.equal(options.body.get('file').name, 'comprovante.jpg')
+    return Response.json({ rows: [{ nome: 'Compra fotografada', valor: 42 }], warnings: [] })
+  } })
+  let tree = await invoice.runtime.flush()
+  assert.equal(find(tree, n => n.props.id === 'invoice-camera').props.disabled, true)
+  assert.equal(find(tree, n => n.props.id === 'invoice-pdf').props.capture, undefined)
+  find(tree, n => n.type === 'input' && n.props.type === 'checkbox').props.onChange({ target: { checked: true } })
+  tree = await invoice.runtime.flush()
+  const camera = find(tree, n => n.props.id === 'invoice-camera')
+  assert.equal(camera.props.capture, 'environment')
+  assert.equal(camera.props.disabled, false)
+  camera.props.ref.current = { click() { clicked++ } }
+  find(tree, n => n.type === 'Button' && n.props.children?.includes('Tirar foto do comprovante')).props.onClick()
+  assert.equal(clicked, 1)
+  await camera.props.onChange({ target: { files: [] } })
+  assert.equal(requests, 0)
+  const input = { files: [new File(['original'], 'camera.jpg', { type: 'image/jpeg' })], value: 'camera.jpg' }
+  await camera.props.onChange({ target: input })
+  tree = await invoice.runtime.flush()
+  assert.equal(processed, 1); assert.equal(requests, 1); assert.equal(input.value, '')
+  assert.equal(invoice.db.requests.length, 0)
+  find(tree, n => n.props.value === 'Compra fotografada')
+})
 
 test('AI import shows preparation, retry, ready and analysis states and enables upload only when ready', async () => {
   let retried = 0, finish
@@ -1984,6 +2043,48 @@ test('AI output rejects malformed expenses and preserves safe review warnings', 
   for (const valor of [-1, 0, Infinity, '10', 10000001]) assert.throws(() => validateAIInvoice({ rows: [{ nome: 'Compra', valor }], warnings: [] }))
   assert.throws(() => validateAIInvoice({ rows: [{ nome: '', valor: 10 }], warnings: [] }))
   assert.throws(() => validateAIInvoice({ rows: [], warnings: [42] }))
+})
+
+test('receipt installments validate counts, preserve values and survive repeated response validation', () => {
+  const { invoiceSchema, validateAIInvoice } = load('lib/invoice-ai.ts')
+  assert.equal(invoiceSchema([]).properties.rows.items.properties.installments, undefined)
+  assert.ok(invoiceSchema([], true).properties.rows.items.required.includes('installments'))
+  for (const [current, type] of [[3, 'installment'], [null, 'total'], [null, 'unknown']]) {
+    const value = { rows: [{ nome: 'Loja', valor: 1234.56, installments: { count: 10, current, amount_type: type } }], warnings: [] }
+    const once = validateAIInvoice(value)
+    assert.equal(once.rows[0].nome, current === null ? 'Loja (10x)' : 'Loja (3/10)')
+    assert.equal(once.rows[0].valor, 1234.56)
+    const twice = validateAIInvoice(once)
+    assert.equal(twice.rows[0].nome, once.rows[0].nome)
+    assert.equal(twice.rows[0].installments.amount_type, type)
+  }
+  for (const installments of [{ count: 0, current: null, amount_type: 'total' }, { count: 10, current: 11, amount_type: 'total' }, { count: 10.5, current: null, amount_type: 'total' }, { count: '10', current: null, amount_type: 'total' }, { count: 10, current: null, amount_type: 'guessed' }, { count: 121, current: null, amount_type: 'total' }]) {
+    assert.throws(() => validateAIInvoice({ rows: [{ nome: 'Loja', valor: 100, installments }], warnings: [] }), /parcelamento inválido/)
+  }
+  const cash = validateAIInvoice({ rows: [{ nome: 'À vista', valor: 10, installments: null }], warnings: [] })
+  assert.equal(cash.rows[0].nome, 'À vista')
+  assert.equal(cash.rows[0].installments, undefined)
+})
+
+test('receipt review shows detected installments and total warning and saves one reviewed expense', async () => {
+  const invoice = invoiceRuntime({ fetch: async () => Response.json({ rows: [{ nome: 'Loja', valor: 1000, installments: { count: 10, current: null, amount_type: 'total' } }], warnings: [] }) })
+  let tree = await invoice.runtime.flush()
+  find(tree, n => n.type === 'input' && n.props.type === 'checkbox').props.onChange({ target: { checked: true } })
+  tree = await invoice.upload(new File(['synthetic'], 'receipt.png', { type: 'image/png' }))
+  find(tree, n => n.props.children === 'Detectado no comprovante: 10 parcelas.')
+  find(tree, n => n.props.children === 'Atenção: o valor identificado é o total da compra, não o de uma parcela. Revise o valor antes de importar.')
+  find(tree, n => n.props.value === 'Loja (10x)')
+  assert.equal(invoice.db.requests.length, 0)
+  find(tree, n => n.props['aria-label'] === 'Valor da despesa 1').props.onChange({ target: { value: '100' } })
+  tree = await invoice.runtime.flush()
+  await find(tree, n => n.props.children === 'Importar 1 despesa(s)').props.onClick()
+  const inserts = invoice.db.requests.filter(request => request.table === 'expenses' && request.calls.some(([method]) => method === 'insert'))
+  assert.equal(inserts.length, 1)
+  const rows = inserts[0].calls.find(([method]) => method === 'insert')[1]
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].nome, 'Loja (10x)')
+  assert.equal(rows[0].valor, 100)
+  assert.equal(rows[0].data_pagamento, '2026-11-06')
 })
 
 test('AI categories accept only confident account categories and preserve conservative fallbacks', () => {

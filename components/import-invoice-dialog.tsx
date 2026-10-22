@@ -9,8 +9,9 @@ import { createClient } from '@/lib/supabase/client'
 import { parseInvoiceText, type ParsedExpense } from '@/lib/invoice-parser'
 import { fifthBusinessDayISO } from '@/lib/payment-date'
 import { readSpreadsheet, suggestColumns, mapSpreadsheet, MAX_IMPORT_BYTES, MAX_IMPORT_ROWS, type ImportSheet } from '@/lib/spreadsheet-import'
-import { validateAIInvoice } from '@/lib/invoice-ai'
+import { validateAIInvoice, type DetectedInstallments } from '@/lib/invoice-ai'
 import { useCategories } from '@/lib/use-categories'
+import { prepareReceiptPhoto } from '@/lib/receipt-photo'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -31,11 +32,11 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { LoaderCircle, Upload, X } from 'lucide-react'
+import { Camera, LoaderCircle, Upload, X } from 'lucide-react'
 import type { MonthYear } from '@/components/month-year-picker'
 
 type Board = { id: string; name: string }
-type InvoiceRow = Pick<ParsedExpense, 'nome' | 'valor'> & { category?: string }
+type InvoiceRow = Pick<ParsedExpense, 'nome' | 'valor'> & { category?: string; installments?: DetectedInstallments }
 
 export type ImportInvoiceDialogProps = {
   selected: MonthYear
@@ -100,6 +101,9 @@ export function ImportInvoiceDialog({
   const [pdfPassword, setPdfPassword] = useState('')
   const inFlight = useRef(false)
   const processingFile = useRef(false)
+  const cameraInput = useRef<HTMLInputElement>(null)
+  const preparingCamera = useRef(false)
+  const [preparingPhoto, setPreparingPhoto] = useState(false)
   const createdBoard = useRef<{ key: string; id: string } | null>(null)
   const [duplicateReview, setDuplicateReview] = useState<{ key: string; draft: string; warnings: DuplicateWarning[] } | null>(null)
   const [acceptedDuplicates, setAcceptedDuplicates] = useState('')
@@ -178,7 +182,7 @@ export function ImportInvoiceDialog({
         )
       }
 
-      setRows(parsed.map(({ nome, valor, category }) => ({ nome, valor, category: category ?? 'Sem categoria' })))
+      setRows(parsed.map(({ nome, valor, category, installments }) => ({ nome, valor, category: category ?? 'Sem categoria', ...(installments ? { installments } : {}) })))
       setStep('review')
       setNeedsPassword(false)
       setPdfPassword('')
@@ -199,6 +203,7 @@ export function ImportInvoiceDialog({
   }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    if (preparingCamera.current) return
     const file = e.target.files?.[0]
     if (!file) return
     setNeedsPassword(false)
@@ -206,6 +211,26 @@ export function ImportInvoiceDialog({
     setPendingFile(null)
     await processFile(file)
     e.target.value = ''
+  }
+
+  async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const input = e.target
+    const file = input.files?.[0]
+    if (!file || preparingCamera.current || processingFile.current) return
+    if (!useAI || categoriesLoading || categoriesError) return
+    preparingCamera.current = true
+    setPreparingPhoto(true)
+    setError('')
+    try {
+      const photo = await prepareReceiptPhoto(file)
+      await processFile(photo)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível preparar a foto. Tente novamente.')
+    } finally {
+      preparingCamera.current = false
+      setPreparingPhoto(false)
+      input.value = ''
+    }
   }
 
   function selectSheet(index: number, loaded = sheets) {
@@ -378,7 +403,7 @@ export function ImportInvoiceDialog({
     <Dialog
       open={open}
       onOpenChange={(isOpen) => {
-        if (parsing || inFlight.current) return
+        if (parsing || preparingCamera.current || inFlight.current) return
         setOpen(isOpen)
         if (!isOpen) reset()
       }}
@@ -405,22 +430,29 @@ export function ImportInvoiceDialog({
               type="file"
               accept=".pdf,.xlsx,.csv,.jpg,.jpeg,.png,.webp,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,image/jpeg,image/png,image/webp"
               onChange={handleFileChange}
-              disabled={parsing || (useAI && (categoriesLoading || !!categoriesError))}
+              disabled={parsing || preparingPhoto || (useAI && (categoriesLoading || !!categoriesError))}
             />
             <p className="text-sm text-muted-foreground">{t("Até 3 MB e 500 despesas por importação. PDFs e imagens compartilham a cota de 4 análises com IA por mês. A leitura padrão e as planilhas não usam essa cota. No Google Planilhas, baixe como Excel ou CSV.")}</p>
             <label className="flex items-start gap-3 rounded-2xl border p-4 text-sm">
-              <input type="checkbox" checked={useAI} disabled={parsing || needsPassword} onChange={(event) => setUseAI(event.target.checked)} className="mt-1" />
+              <input type="checkbox" checked={useAI} disabled={parsing || preparingPhoto || needsPassword} onChange={(event) => setUseAI(event.target.checked)} className="mt-1" />
               <span><span className="font-medium">{t("Ler PDF ou imagem com inteligência artificial")}</span><span className="mt-1 block text-muted-foreground">{t("Ao ativar a IA, o PDF ou a imagem será enviado à OpenAI para análise. PDFs com senha são abertos no navegador; a senha não é enviada. Até 20 páginas por PDF. Planilhas são lidas sem IA.")}</span></span>
             </label>
-            {useAI && <div className="rounded-xl border border-border bg-muted/50 p-3 text-sm" aria-live="polite" aria-busy={categoriesLoading || parsing}>
-              {parsing || categoriesLoading ? <p role="status" className="flex items-center gap-2 text-muted-foreground">
+            {useAI && <div className="rounded-xl border border-border bg-muted/50 p-3 text-sm" aria-live="polite" aria-busy={categoriesLoading || parsing || preparingPhoto}>
+              {parsing || preparingPhoto || categoriesLoading ? <p role="status" className="flex items-center gap-2 text-muted-foreground">
                 <LoaderCircle className="size-4 shrink-0 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-                {parsing ? t('Analisando o arquivo...') : t('Preparando a IA e carregando suas categorias...')}
+                {parsing ? t('Analisando o arquivo...') : preparingPhoto ? t('Preparando a foto...') : t('Preparando a IA e carregando suas categorias...')}
               </p> : categoriesError ? <div className="space-y-2">
                 <p role="alert" className="text-destructive">{t(categoriesError)}</p>
                 <Button type="button" variant="outline" size="sm" onClick={() => retryCategories?.()}>{t('Tentar novamente')}</Button>
               </div> : <p role="status" className="text-primary">{t('IA pronta. Selecione seu PDF ou imagem para analisar.')}</p>}
             </div>}
+            <div className="hidden space-y-2 [@media(pointer:coarse)]:block">
+              <input ref={cameraInput} id="invoice-camera" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" className="hidden" aria-label={t('Tirar foto do comprovante')} onChange={handlePhotoChange} disabled={!useAI || parsing || preparingPhoto || categoriesLoading || !!categoriesError} />
+              <Button type="button" variant="outline" className="w-full gap-2" disabled={!useAI || parsing || preparingPhoto || categoriesLoading || !!categoriesError} onClick={() => cameraInput.current?.click()}>
+                <Camera className="size-4" aria-hidden="true" />{t('Tirar foto do comprovante')}
+              </Button>
+              <p className="text-sm text-muted-foreground">{t('Ative a IA para fotografar. A câmera traseira será sugerida; as opções dependem do navegador. A foto é reduzida no aparelho antes do envio. Você revisa tudo antes de salvar.')}</p>
+            </div>
             <p className="text-sm text-muted-foreground">{t('Imagens: JPG, PNG ou WebP de notificações de cartão, comprovantes de maquininha ou cupons fiscais. Envie uma imagem nítida por vez e ative a IA. Cada comprovante gera uma despesa pelo total, sem detalhar produtos. Recorte dados pessoais desnecessários e revise tudo antes de salvar.')}</p>
             {parsing && !useAI && <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />{t("Lendo o arquivo...")}</p>}
 
@@ -524,6 +556,17 @@ export function ImportInvoiceDialog({
                           aria-label={t('Nome da despesa {number}', { number: index + 1 })}
                           disabled={saving}
                         />
+                        {row.installments && <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                          <p>{row.installments.current === null
+                            ? t('Detectado no comprovante: {count} parcelas.', { count: row.installments.count })
+                            : t('Detectado no comprovante: parcela {current} de {count}.', { current: row.installments.current, count: row.installments.count })}</p>
+                          <p>{t(row.installments.amount_type === 'installment'
+                            ? 'O valor identificado é de uma parcela. Confira antes de importar.'
+                            : row.installments.amount_type === 'total'
+                              ? 'Atenção: o valor identificado é o total da compra, não o de uma parcela. Revise o valor antes de importar.'
+                              : 'Não foi possível confirmar se o valor é o total ou uma parcela. Revise antes de importar.')}</p>
+                          <p>{t('Esta importação não divide valores nem cria parcelas futuras automaticamente.')}</p>
+                        </div>}
                       </TableCell>
                       <TableCell>
                         <time dateTime={paymentDate}>{paymentDateLabel}</time>

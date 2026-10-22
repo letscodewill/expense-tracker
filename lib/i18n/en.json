@@ -730,5 +730,22 @@
   "Não foi possível carregar categorias. Tente novamente.": "Could not load categories. Try again.",
   "O carregamento das categorias demorou demais. Tente novamente.": "Loading categories took too long. Try again.",
   "Carregando os quadros do mês selecionado...": "Loading boards for the selected month...",
-  "Não foi possível carregar os quadros deste mês. Tente novamente.": "Could not load boards for this month. Try again."
+  "Não foi possível carregar os quadros deste mês. Tente novamente.": "Could not load boards for this month. Try again.",
+  "Tirar foto do comprovante": "Take a receipt photo",
+  "Preparando a foto...": "Preparing the photo...",
+  "Ative a IA para fotografar. A câmera traseira será sugerida; as opções dependem do navegador. A foto é reduzida no aparelho antes do envio. Você revisa tudo antes de salvar.": "Enable AI to take a photo. The rear camera will be suggested; options depend on the browser. The photo is resized on your device before uploading. Review everything before saving.",
+  "Formato da foto não suportado. Use JPG, PNG ou WebP.": "Unsupported photo format. Use JPG, PNG or WebP.",
+  "A foto deve ter no máximo 20 MB antes da preparação.": "The photo must be no larger than 20 MB before preparation.",
+  "Não foi possível abrir a foto. Tire outra foto ou escolha uma imagem da galeria.": "Could not open the photo. Take another photo or choose an image from your gallery.",
+  "A resolução da foto é muito grande. Use uma resolução menor na câmera.": "The photo resolution is too large. Use a lower camera resolution.",
+  "Não foi possível preparar a foto neste navegador. Escolha uma imagem da galeria.": "Could not prepare the photo in this browser. Choose an image from your gallery.",
+  "A foto preparada excede 3 MB. Aproxime o comprovante ou reduza a resolução.": "The prepared photo exceeds 3 MB. Move closer to the receipt or lower the resolution.",
+  "Não foi possível preparar a foto. Tente novamente.": "Could not prepare the photo. Try again.",
+  "Detectado no comprovante: {count} parcelas.": "Detected on receipt: {count} installments.",
+  "Detectado no comprovante: parcela {current} de {count}.": "Detected on receipt: installment {current} of {count}.",
+  "O valor identificado é de uma parcela. Confira antes de importar.": "The detected amount is for one installment. Check before importing.",
+  "Atenção: o valor identificado é o total da compra, não o de uma parcela. Revise o valor antes de importar.": "Warning: the detected amount is the purchase total, not one installment. Review the amount before importing.",
+  "Não foi possível confirmar se o valor é o total ou uma parcela. Revise antes de importar.": "Could not confirm whether the amount is the total or one installment. Review before importing.",
+  "Esta importação não divide valores nem cria parcelas futuras automaticamente.": "This import does not split amounts or create future installments automatically.",
+  "A IA retornou um parcelamento inválido. Confira o comprovante e tente novamente.": "AI returned invalid installment information. Check the receipt and try again."
 }

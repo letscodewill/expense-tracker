@@ -2,6 +2,14 @@
 
 No modal de importação, ative **Ler PDF ou imagem com inteligência artificial** e escolha uma imagem JPG/JPEG, PNG ou WebP de até 3 MB. Envie uma imagem nítida por vez: notificação de cartão, comprovante de maquininha ou cupom fiscal. SVG, GIF e HEIC não são aceitos nesta versão.
 
+## Fotografar no celular
+
+Em dispositivos cujo apontador principal é de toque (`pointer: coarse`), o modal mostra **Tirar foto do comprovante**. Ative a IA e aguarde o preparo das categorias para liberar o botão. Ele aciona um seletor de imagem separado com `capture="environment"`, sugerindo a câmera traseira. A câmera efetivamente aberta e a possibilidade de escolher arquivos dependem do sistema/navegador. O seletor normal de arquivos continua disponível, sem captura obrigatória.
+
+A foto é preparada no navegador: aceita JPG/PNG/WebP de até 20 MB e até 50 milhões de pixels, reduz o lado maior a no máximo 2400 pixels, preserva proporções e gera um JPEG de até 3 MB. O original não é enviado pelo fluxo da câmera. Se a preparação falhar, o modal mostra o motivo e permite tirar outra foto. Cancelar a câmera não envia arquivo nem consome análise. O envio para IA continua sujeito à mesma cota de PDFs/imagens e sempre passa pela revisão antes de gravar.
+
+Os testes automatizados simulam a captura, a preparação e o provedor. A abertura da câmera e a legibilidade do JPEG precisam ser conferidas em aparelho físico; não foram testadas em Android/iOS reais nesta entrega.
+
 Ao ativar a IA, o modal mostra o preparo das categorias e só libera o seletor de arquivos após carregar os dados da conta. Ao concluir, mostra “IA pronta”; durante a análise, mostra o indicador de progresso. Se houver falha ou espera superior a 20 segundos nas categorias, mostra um erro e permite tentar novamente. Voltar do seletor de arquivos pode atualizar as categorias em segundo plano, mas não transforma categorias já carregadas em um novo bloqueio de carregamento. A leitura padrão e as planilhas continuam disponíveis sem IA.
 
 O arquivo é enviado à OpenAI para extração. Não há salvamento permanente do original pelo NoControle. A API usa `store: false`, que não significa retenção zero pelo provedor. Recorte dados pessoais desnecessários antes de enviar. A política de privacidade e o aviso no modal incluem imagens.
@@ -15,6 +23,8 @@ Ao trocar o mês de pagamento, o seletor busca os quadros da própria conta naqu
 - Comprovantes e cupons: uma despesa por total final pago, não uma despesa por produto.
 - Prints: compras aprovadas; notificações repetidas da mesma compra devem gerar um único lançamento.
 - Parcelamento: usar a parcela atual quando explícita; não dividir o total nem criar parcelas futuras automaticamente.
+- A IA procura indicações explícitas do parcelamento da transação em toda a imagem, desconsiderando propagandas (ex.: “até 12x”), códigos e datas. Quando a quantidade é legível, retorna quantidade total, parcela atual quando informada e se o valor é de uma parcela, do total ou ambíguo. Sem quantidade confirmada, não inventa o número de parcelas.
+- A revisão mostra essa detecção e sinaliza valores totais/ambíguos para conferência. O nome recebe `(3/10)` quando a parcela atual é conhecida, ou `(10x)` quando só a quantidade é conhecida. Essa indicação textual é salva com o lançamento e pode ser editada. Não há cronograma automático ou novos campos de parcelamento no banco nessa importação.
 - Dados ilegíveis, documentos sem compra ou moeda desconhecida/não BRL: orientar retorno vazio com aviso, sem conversão.
 - Não tratar saldo, limite, troco, pagamentos de fatura, estornos, compras recusadas ou créditos como despesas.
 - Imagens, categorias, QR codes e links são dados, não instruções a executar. Nenhum link ou QR code é aberto pelo sistema.
