@@ -29,6 +29,7 @@ function load(file, mocks = {}, globals = {}) {
   const localRequire = (name) => {
     if (Object.hasOwn(mocks, name)) return mocks[name]
     if (name === '@/lib/feature-tour') return load('lib/feature-tour.ts')
+    if (name === '@/lib/month-rollover') return load('lib/month-rollover.ts')
     if (name === '@/lib/savings') return load('lib/savings.ts')
     if (name === '@/lib/report-export') return load('lib/report-export.ts')
     if (name === '@/lib/invoice-document') return load('lib/invoice-document.ts')
@@ -144,6 +145,102 @@ const selected = { month: 9, year: 2026 }
 const expense = { id: 1, nome: 'Mercado', valor: 80, data_pagamento: '2026-10-03', status: 'Pendente', comentario: 'Compra', installment_group_id: null, recurring_group_id: null }
 const failure = { data: null, error: { message: 'offline' } }
 const success = (data) => ({ data, error: null })
+
+test('month start preference validates periods, advances December and respects the chosen default', () => {
+  const { initialMonth, followingMonth, monthPreference, mayOfferNextMonth, monthKey } = load('lib/month-rollover.ts')
+  const now = new Date(2026, 9, 30)
+  assert.equal(followingMonth('2026-12'), '2027-01')
+  assert.equal(followingMonth('9999-12'), null)
+  assert.equal(followingMonth('2026-13'), null)
+  assert.equal(monthKey(initialMonth('2026-11', now)), '2026-11')
+  assert.equal(monthKey(initialMonth('2026-09', now)), '2026-09')
+  assert.equal(monthKey(initialMonth('invalid', now)), '2026-10')
+  const preference = monthPreference({ home: '2026-11', answered: ['2026-10', 'bad', '2026-10'] })
+  assert.equal(preference.answered.length, 1)
+  assert.equal(mayOfferNextMonth('2026-10', preference, now), false)
+  assert.equal(mayOfferNextMonth('2026-11', preference, now), true)
+})
+
+test('month completion checks every board, paginates, accepts benefits and rejects empty or incomplete data', async () => {
+  const { isMonthSettled } = load('lib/month-rollover.ts')
+  for (const [pages, expected] of [
+    [[success([])], false], [[success([{ id: 1, status: 'Pago' }, { id: 2, status: 'VR/VA' }])], true],
+    [[success([{ id: 1, status: 'Pago' }, { id: 2, status: 'Pendente' }])], false],
+    [[success(Array.from({ length: 1000 }, (_, id) => ({ id, status: 'Pago' }))), success([{ id: 1001, status: 'Pendente' }])], false],
+  ]) {
+    const db = database({ expenses: pages })
+    assert.equal(await isMonthSettled(db.client, 'my-user', '2026-12'), expected)
+    for (const request of db.requests) {
+      assert.ok(request.calls.some(([method, key, value]) => method === 'eq' && key === 'user_id' && value === 'my-user'))
+      assert.ok(request.calls.some(([method, key, value]) => method === 'is' && key === 'represents_board_id' && value === null))
+      assert.ok(request.calls.some(([method, key, value]) => method === 'lt' && key === 'data_pagamento' && value === '2027-01-01'))
+    }
+  }
+  await assert.rejects(isMonthSettled(database({ expenses: [failure] }).client, 'u', '2026-10'), /verificar/)
+})
+
+test('month preference saves only the authenticated accounts choice after rechecking debts and can reset', async () => {
+  const { saveMonthChoice, MONTH_START_KEY, monthKey, followingMonth } = load('lib/month-rollover.ts')
+  const now = new Date(), key = monthKey({ year: now.getFullYear(), month: now.getMonth() })
+  const user = { id: 'my-user', user_metadata: { unrelated: 'kept' } }
+  const writes = [], db = database({ expenses: [success([{ status: 'Pago' }])] })
+  db.client.auth.getUser = async () => ({ data: { user } })
+  db.client.auth.updateUser = async ({ data }) => { writes.push(data); Object.assign(user.user_metadata, data); return { data: { user } } }
+  const saved = await saveMonthChoice(db.client, user.id, key, true)
+  assert.equal(saved.home, followingMonth(key))
+  assert.ok(saved.answered.includes(key))
+  assert.equal(user.user_metadata.unrelated, 'kept')
+  assert.deepEqual(Object.keys(writes[0]), [MONTH_START_KEY])
+  await assert.rejects(saveMonthChoice(db.client, 'another-user', null, false), /sessão mudou/)
+  assert.equal(writes.length, 1)
+  const reset = await saveMonthChoice(db.client, user.id, null, false)
+  assert.equal(reset.home, null)
+  assert.ok(reset.answered.includes(key))
+})
+
+test('month rollover asks once, waits for a successful account save and prevents duplicate clicks', async () => {
+  for (const advance of [false, true]) {
+    const runtime = hooks(), listeners = new Map(), changed = []
+    const now = new Date(), selectedMonth = { year: now.getFullYear(), month: now.getMonth() }
+    const user = { id: 'u', user_metadata: {} }
+    let writes = 0, failSave = true, refreshes = 0
+    const db = database({ expenses: Array.from({ length: 5 }, () => success([{ status: 'Pago' }])) })
+    db.client.auth.getUser = async () => ({ data: { user } })
+    db.client.auth.updateUser = async ({ data }) => { writes++; if (failSave) return { data: { user: null }, error: new Error('offline') }; Object.assign(user.user_metadata, data); return { data: { user } } }
+    const { MonthRolloverPrompt } = load('components/month-rollover-prompt.tsx', {
+      react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client },
+      'next/navigation': { useRouter: () => ({ refresh() { refreshes++ } }) },
+    }, { window: { addEventListener: (event, callback) => listeners.set(event, callback), removeEventListener() {} } })
+    let tree = runtime.render(MonthRolloverPrompt, { selected: selectedMonth, refreshKey: 0, onChange: value => changed.push(value) })
+    tree = await runtime.flush()
+    const label = advance ? 'Sim, usar o próximo mês' : 'Não, manter este mês'
+    const button = find(tree, n => n.props.children === label)
+    button.props.onClick(); button.props.onClick(); tree = await runtime.flush()
+    assert.equal(writes, 1); assert.equal(changed.length, 0); assert.equal(refreshes, 0)
+    find(tree, n => n.props.role === 'alert')
+    failSave = false
+    find(tree, n => n.props.children === label).props.onClick(); tree = await runtime.flush()
+    assert.equal(writes, 2); assert.equal(changed.length, 1)
+    if (!advance) assert.equal(changed[0].month, selectedMonth.month)
+    assert.equal(elements(tree, n => n.props.children === label).length, 0)
+    listeners.get('focus')(); tree = await runtime.flush()
+    assert.equal(elements(tree, n => n.props.children === label).length, 0)
+    if (advance) {
+      tree = runtime.render(MonthRolloverPrompt, { selected: changed[0], refreshKey: 0, onChange: value => changed.push(value) })
+      tree = await runtime.flush()
+      find(tree, n => n.props.children === 'Sim, usar o próximo mês')
+    }
+  }
+})
+
+test('new pending expenses block the month change even after the offer was displayed', async () => {
+  const { saveMonthChoice, monthKey } = load('lib/month-rollover.ts')
+  const now = new Date(), db = database({ expenses: [success([{ status: 'Pendente' }])] })
+  let writes = 0
+  db.client.auth.updateUser = async () => { writes++ }
+  await assert.rejects(saveMonthChoice(db.client, 'test-user', monthKey({ year: now.getFullYear(), month: now.getMonth() }), true), /pendências/)
+  assert.equal(writes, 0)
+})
 
 test('light and dark themes persist, synchronize tabs and survive blocked storage', () => {
   for (const blocked of [false, true]) {
@@ -2918,5 +3015,9 @@ test('home loads the tour preference from the verified account across devices', 
   assert.equal(presentation.props.dismissed, true)
   assert.equal(presentation.props.userId, 'user-a')
   assert.equal(presentation.props.signedInAt, 'login-1')
+  const dashboard = find(tree, node => node.type === 'ExpensesDashboard')
+  assert.notEqual(presentation.key, dashboard.key)
+  assert.equal(presentation.key, 'tour:user-a')
+  assert.equal(dashboard.key, 'dashboard:user-a')
   find(tree, node => node.type === 'FeatureTourLauncher')
 })

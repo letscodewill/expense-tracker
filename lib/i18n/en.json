@@ -747,5 +747,14 @@
   "Atenção: o valor identificado é o total da compra, não o de uma parcela. Revise o valor antes de importar.": "Warning: the detected amount is the purchase total, not one installment. Review the amount before importing.",
   "Não foi possível confirmar se o valor é o total ou uma parcela. Revise antes de importar.": "Could not confirm whether the amount is the total or one installment. Review before importing.",
   "Esta importação não divide valores nem cria parcelas futuras automaticamente.": "This import does not split amounts or create future installments automatically.",
-  "A IA retornou um parcelamento inválido. Confira o comprovante e tente novamente.": "AI returned invalid installment information. Check the receipt and try again."
+  "A IA retornou um parcelamento inválido. Confira o comprovante e tente novamente.": "AI returned invalid installment information. Check the receipt and try again.",
+  "Mês inicial do painel": "Dashboard starting month",
+  "Mês quitado!": "Month settled!",
+  "Todas as despesas de {month} estão resolvidas. Quer abrir o painel em {next} nos próximos acessos?": "All expenses for {month} are settled. Would you like the dashboard to open in {next} on your next visits?",
+  "A escolha fica salva na conta. Você pode consultar qualquer mês pelo seletor. Pago e VR/VA não deixam pendências.": "Your choice is saved to your account. You can view any month using the selector. Paid and meal benefits leave no pending balance.",
+  "Sim, usar o próximo mês": "Yes, use next month",
+  "Não, manter este mês": "No, keep this month",
+  "Voltar ao mês atual como padrão": "Use the current month as default again",
+  "Não foi possível verificar as pendências do mês. Tente novamente.": "Could not check pending expenses for the month. Try again.",
+  "O mês não está mais disponível para avanço. Atualize o painel e confira as pendências.": "This month can no longer be advanced. Refresh the dashboard and check pending expenses."
 }

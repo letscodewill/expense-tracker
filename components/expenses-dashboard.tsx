@@ -19,6 +19,8 @@ import Link from 'next/link'
 import { PwaInstallButton } from '@/components/pwa-install-button'
 import { QuickExpenseSearch } from '@/components/quick-expense-search'
 import { AppLoading } from '@/components/app-loading'
+import { MonthRolloverPrompt } from '@/components/month-rollover-prompt'
+import { initialMonth } from '@/lib/month-rollover'
 
 type Board = {
   id: string
@@ -38,7 +40,7 @@ function isCurrentMonth(selected: MonthYear): boolean {
 
 
 
-export function ExpensesDashboard({ navigationActions, notificationActions }: { navigationActions?: ReactNode; notificationActions?: ReactNode } = {}) {
+export function ExpensesDashboard({ navigationActions, notificationActions, homeMonth }: { navigationActions?: ReactNode; notificationActions?: ReactNode; homeMonth?: string | null } = {}) {
   const { t } = useLanguage()
 
   const supabase = createClient()
@@ -52,10 +54,7 @@ export function ExpensesDashboard({ navigationActions, notificationActions }: { 
   const [navigationOpen, setNavigationOpen] = useState(false)
 
 
-  const [selected, setSelected] = useState<MonthYear>(() => {
-    const now = new Date()
-    return { month: now.getMonth(), year: now.getFullYear() }
-  })
+  const [selected, setSelected] = useState<MonthYear>(() => initialMonth(homeMonth))
 
   const [mainPanelTotal, setMainPanelTotal] = useState(0)
 
@@ -190,6 +189,7 @@ export function ExpensesDashboard({ navigationActions, notificationActions }: { 
             <Button variant="outline" size="sm" onClick={handleGoToCurrentMonth}>{t("Mês atual")}</Button>
           )}
           <QuickExpenseSearch onNavigate={setSelected} />
+          <MonthRolloverPrompt selected={selected} refreshKey={mainPanelRefreshKey} onChange={setSelected} />
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3 lg:justify-end">
           <Link href="/reports" className="inline-flex items-center rounded-full border border-border px-4 py-2 text-sm font-medium hover:bg-accent">

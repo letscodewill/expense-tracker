@@ -15,6 +15,7 @@ import { AdminTicketNotifications } from '@/components/admin-ticket-notification
 import { LanguageSelector } from '@/components/language-selector'
 import { FeatureTour, FeatureTourLauncher } from '@/components/feature-tour'
 import { FEATURE_TOUR_METADATA_KEY, FEATURE_TOUR_VERSION } from '@/lib/feature-tour'
+import { MONTH_START_KEY, monthPreference } from '@/lib/month-rollover'
 
 export default async function HomePage() {
   const { t } = await getServerTranslation()
@@ -67,8 +68,8 @@ export default async function HomePage() {
         </div>
       </header>
       <main>
-        <FeatureTour key={user.id} userId={user.id} signedInAt={user.last_sign_in_at ?? ''} dismissed={user.user_metadata?.[FEATURE_TOUR_METADATA_KEY] === FEATURE_TOUR_VERSION} />
-        <ExpensesDashboard notificationActions={ticketAdmin ? <AdminTicketNotifications /> : undefined} navigationActions={<>
+        <FeatureTour key={`tour:${user.id}`} userId={user.id} signedInAt={user.last_sign_in_at ?? ''} dismissed={user.user_metadata?.[FEATURE_TOUR_METADATA_KEY] === FEATURE_TOUR_VERSION} />
+        <ExpensesDashboard key={`dashboard:${user.id}`} homeMonth={monthPreference(user.user_metadata?.[MONTH_START_KEY]).home} notificationActions={ticketAdmin ? <AdminTicketNotifications /> : undefined} navigationActions={<>
           <LanguageSelector />
           <ThemeSelector />
           <FeatureTourLauncher />

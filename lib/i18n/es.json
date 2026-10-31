@@ -747,5 +747,14 @@
   "Atenção: o valor identificado é o total da compra, não o de uma parcela. Revise o valor antes de importar.": "Atención: el importe identificado es el total de la compra, no el de una cuota. Revisa el importe antes de importar.",
   "Não foi possível confirmar se o valor é o total ou uma parcela. Revise antes de importar.": "No se pudo confirmar si el importe es el total o una cuota. Revisa antes de importar.",
   "Esta importação não divide valores nem cria parcelas futuras automaticamente.": "Esta importación no divide importes ni crea cuotas futuras automáticamente.",
-  "A IA retornou um parcelamento inválido. Confira o comprovante e tente novamente.": "La IA devolvió información de cuotas no válida. Revisa el comprobante e inténtalo de nuevo."
+  "A IA retornou um parcelamento inválido. Confira o comprovante e tente novamente.": "La IA devolvió información de cuotas no válida. Revisa el comprobante e inténtalo de nuevo.",
+  "Mês inicial do painel": "Mes inicial del panel",
+  "Mês quitado!": "¡Mes pagado!",
+  "Todas as despesas de {month} estão resolvidas. Quer abrir o painel em {next} nos próximos acessos?": "Todos los gastos de {month} están resueltos. ¿Quieres abrir el panel en {next} en tus próximos accesos?",
+  "A escolha fica salva na conta. Você pode consultar qualquer mês pelo seletor. Pago e VR/VA não deixam pendências.": "Tu elección se guarda en tu cuenta. Puedes consultar cualquier mes con el selector. Pagado y vales de alimentación no dejan pendientes.",
+  "Sim, usar o próximo mês": "Sí, usar el próximo mes",
+  "Não, manter este mês": "No, mantener este mes",
+  "Voltar ao mês atual como padrão": "Volver al mes actual como predeterminado",
+  "Não foi possível verificar as pendências do mês. Tente novamente.": "No se pudieron verificar los gastos pendientes del mes. Inténtalo de nuevo.",
+  "O mês não está mais disponível para avanço. Atualize o painel e confira as pendências.": "Este mes ya no está disponible para avanzar. Actualiza el panel y revisa los gastos pendientes."
 }
