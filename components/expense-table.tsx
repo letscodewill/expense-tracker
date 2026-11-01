@@ -27,6 +27,7 @@ type Expense = {
   recurring_group_id: string | null
   recurring_number: number | null
   category?: string
+  represents_board_id?: string | null
 }
 
 const statusColor: Record<Expense['status'], string> = {

@@ -3,7 +3,7 @@
 import { useCurrency } from '@/lib/use-currency'
 import { useLanguage } from '@/components/language-provider'
 import { z } from 'zod'
-import { useReducer, useState, useMemo, useRef } from 'react'
+import { useEffect, useReducer, useState, useMemo, useRef } from 'react'
 import { checkExpenseDuplicates, type DuplicateWarning } from '@/lib/expense-duplicates'
 import { DuplicateExpenseNotice } from '@/components/duplicate-expense-notice'
 import { createClient } from '@/lib/supabase/client'
@@ -44,6 +44,7 @@ type Expense = {
   recurring_group_id: string | null
   recurring_number: number | null
   category?: string
+  represents_board_id?: string | null
 }
 
 const MIN_INSTALLMENTS = 2
@@ -231,7 +232,7 @@ export function AddExpenseDialog({
     error, fieldErrors,
   } = formState
 
-  const supabase = createClient()
+  const [supabase] = useState(() => createClient())
   const { categories, loading: categoriesLoading, error: categoriesError } = useCategories()
 
   const [open, setOpen] = useState(!!expenseToEdit || !!forceOpen)
@@ -239,7 +240,20 @@ export function AddExpenseDialog({
   const inFlight = useRef(false)
   const [duplicateReview, setDuplicateReview] = useState<{ key: string; draft: string; warnings: DuplicateWarning[] } | null>(null)
   const [acceptedDuplicates, setAcceptedDuplicates] = useState('')
-  const draftKey = JSON.stringify([nome, dataPagamento, valor, status, comentario, category, isInstallment, installments, isRecurring, recurringMonths, boardId, boardName, destinationBoard, selected, expenseToEdit?.id])
+  const [editDestinationBoard, setEditDestinationBoard] = useState(initialBoardName ?? '')
+  const [editBoards, setEditBoards] = useState<{ key: string; names: string[]; error: string } | null>(null)
+  const [editBoardRetry, setEditBoardRetry] = useState(0)
+  const editBoardRequest = useRef(0)
+  const editPeriod = dataPagamento.slice(0, 7)
+  const editKey = `${expenseToEdit?.id}:${editPeriod}`
+  const canMoveExpense = !!expenseToEdit && !expenseToEdit.represents_board_id
+  const editBoardsLoading = canMoveExpense && editBoards?.key !== editKey
+  const editBoardsError = canMoveExpense && editBoards?.key === editKey ? editBoards.error : ''
+  const editNames = editBoards?.key === editKey ? editBoards.names : []
+  const matchingEditName = editNames.find(name => name.toLocaleLowerCase('pt-BR') === editDestinationBoard.toLocaleLowerCase('pt-BR'))
+  const editChoice = editDestinationBoard && !matchingEditName ? '__new__' : matchingEditName ?? ''
+  const editTargetName = editDestinationBoard === '__new__' ? newBoardName.trim() : (matchingEditName ?? editDestinationBoard).trim()
+  const draftKey = JSON.stringify([nome, dataPagamento, valor, status, comentario, category, isInstallment, installments, isRecurring, recurringMonths, boardId, boardName, destinationBoard, editDestinationBoard, newBoardName, selected, expenseToEdit?.id])
   const [previousExpense, setPreviousExpense] = useState<Expense | null | undefined>(undefined)
   const [previousForceOpen, setPreviousForceOpen] = useState(forceOpen)
 
@@ -249,6 +263,8 @@ export function AddExpenseDialog({
     setPreviousForceOpen(forceOpen)
     setOpen(!!expenseToEdit || !!forceOpen)
     if (expenseToEdit) {
+      setEditDestinationBoard(initialBoardName ?? '')
+      setNewBoardName('')
       dispatch({ type: 'SET_FIELD', field: 'nome', value: expenseToEdit.nome })
       dispatch({ type: 'SET_FIELD', field: 'dataPagamento', value: expenseToEdit.data_pagamento })
       dispatch({ type: 'SET_FIELD', field: 'valor', value: String(expenseToEdit.valor) })
@@ -257,6 +273,32 @@ export function AddExpenseDialog({
       dispatch({ type: 'SET_FIELD', field: 'category', value: expenseToEdit.category ?? 'Sem categoria' })
     }
   }
+
+  useEffect(() => {
+    const revision = ++editBoardRequest.current
+    if (!open || !canMoveExpense || !/^\d{4}-(0[1-9]|1[0-2])$/.test(editPeriod)) return
+    let active = true
+    async function loadEditBoards() {
+      try {
+        const user = await safeGetUser()
+        if (!user) throw new Error('session')
+        const names: string[] = []
+        for (let offset = 0; ; offset += 1000) {
+          const { data, error } = await supabase.from('boards').select('id,name').eq('user_id', user.id)
+            .eq('month', Number(editPeriod.slice(5)) - 1).eq('year', Number(editPeriod.slice(0, 4)))
+            .order('name').order('id').range(offset, offset + 999)
+          if (error || !data) throw new Error('boards')
+          names.push(...data.map(board => board.name.trim()))
+          if (data.length < 1000) break
+        }
+        if (active && revision === editBoardRequest.current) setEditBoards({ key: editKey, names: [...new Map(names.map(name => [name.toLocaleLowerCase('pt-BR'), name])).values()], error: '' })
+      } catch {
+        if (active && revision === editBoardRequest.current) setEditBoards({ key: editKey, names: [], error: 'Não foi possível carregar os quadros deste mês. Tente novamente.' })
+      }
+    }
+    void loadEditBoards()
+    return () => { active = false }
+  }, [open, canMoveExpense, editKey, editPeriod, editBoardRetry, supabase])
 
   const preview = useMemo(() => {
     if (!isInstallment || !dataPagamento) return null
@@ -285,6 +327,11 @@ export function AddExpenseDialog({
 
   async function handleSubmit() {
     if (inFlight.current) return
+    if (canMoveExpense && (editBoardsLoading || editBoardsError)) return
+    if (canMoveExpense && editChoice === '__new__' && !editTargetName) {
+      dispatch({ type: 'SET_ERROR', error: 'Informe o nome do quadro.' })
+      return
+    }
     if (categoriesLoading || categoriesError || !categories.includes(category)) {
       dispatch({ type: 'SET_ERROR', error: categoriesError || 'Escolha uma categoria disponível antes de salvar.' })
       return
@@ -341,12 +388,28 @@ export function AddExpenseDialog({
     const [paymentYear, paymentMonth] = firstPaymentDate.split('-').map(Number)
     const paymentPeriod = { year: paymentYear, month: paymentMonth - 1 }
     const boardPeriodMatches = initialSelected?.month === paymentPeriod.month && initialSelected?.year === paymentPeriod.year
-    const boardId = !expenseToEdit && boardName && (chooseDestination || (!isRecurring && initialBoardId && !boardPeriodMatches))
+    const moveInstallmentGroup = !!expenseToEdit?.installment_group_id && !expenseToEdit.represents_board_id
+      && editTargetName.toLocaleLowerCase('pt-BR') !== (initialBoardName ?? '').trim().toLocaleLowerCase('pt-BR')
+    const boardId = moveInstallmentGroup ? null : expenseToEdit
+      ? expenseToEdit.represents_board_id ? initialBoardId : editTargetName ? await getOrCreateBoardForMonth(supabase, user.id, editTargetName, paymentPeriod.month, paymentPeriod.year) : null
+      : boardName && (chooseDestination || (!isRecurring && initialBoardId && !boardPeriodMatches))
       ? await getOrCreateBoardForMonth(supabase, user.id, boardName, paymentPeriod.month, paymentPeriod.year)
       : initialBoardId
 
-    if (expenseToEdit) {
-      const { error: updateError } = await supabase
+    if (expenseToEdit && moveInstallmentGroup) {
+      const { data, error } = await supabase.rpc('move_installment_group', {
+        expense_id_input: expenseToEdit.id,
+        group_id_input: expenseToEdit.installment_group_id,
+        destination_name_input: editTargetName || null,
+        name_input: nome.trim(), payment_date_input: dataPagamento, amount_input: totalValor,
+        status_input: status, comment_input: comentario.trim() || null, category_input: category,
+      })
+      if (error || data?.expense_id !== expenseToEdit.id || !Number.isInteger(data?.updated) || data.updated < 1) {
+        dispatch({ type: 'SET_ERROR', error: 'Não foi possível confirmar a movimentação das parcelas. Atualize a página para verificar antes de tentar novamente.' })
+        return
+      }
+    } else if (expenseToEdit) {
+      let update = supabase
         .from('expenses')
         .update({
           category,
@@ -355,12 +418,16 @@ export function AddExpenseDialog({
           valor: totalValor,
           status,
           comentario: comentario.trim() || null,
+          ...(!expenseToEdit.represents_board_id ? { board_id: boardId } : {}),
         })
         .eq('id', expenseToEdit.id)
+        .eq('user_id', user.id)
+      update = expenseToEdit.represents_board_id ? update.eq('represents_board_id', expenseToEdit.represents_board_id) : update.is('represents_board_id', null)
+      const { data: updatedExpense, error: updateError } = await update.select('id').single()
 
       setLoading(false)
 
-      if (updateError) {
+      if (updateError || updatedExpense?.id !== expenseToEdit.id) {
         dispatch({ type: 'SET_ERROR', error: 'Não foi possível atualizar. Tente novamente.' })
         return
       }
@@ -549,6 +616,22 @@ export function AddExpenseDialog({
               </div>
             </div>
           )}
+          {expenseToEdit && <div className="space-y-2 rounded-2xl bg-secondary/50 p-4">
+            {canMoveExpense ? <>
+              <Label htmlFor="expense-edit-board">{t('Quadro de destino')}</Label>
+              <select id="expense-edit-board" className="h-10 w-full min-w-0 rounded-xl border border-input bg-background px-3 text-sm" value={editChoice} disabled={loading || editBoardsLoading || !!editBoardsError} onChange={event => { setEditDestinationBoard(event.target.value); if (event.target.value === '__new__') setNewBoardName('') }}>
+                <option value="">{t('Painel principal')}</option>
+                {editNames.map(name => <option key={name} value={name}>{name}</option>)}
+                <option value="__new__">{t('Outro quadro…')}</option>
+              </select>
+              {editChoice === '__new__' && !editBoardsLoading && <Input id="expense-edit-new-board" aria-label={t('Nome do quadro')} value={editDestinationBoard === '__new__' ? newBoardName : editDestinationBoard} onChange={event => { setEditDestinationBoard('__new__'); setNewBoardName(event.target.value) }} />}
+              {editBoardsLoading && <p role="status" className="text-xs text-muted-foreground">{t('Carregando os quadros do mês selecionado...')}</p>}
+              {editBoardsError && <><p role="alert" className="text-sm text-destructive">{t(editBoardsError)}</p><Button type="button" variant="outline" size="sm" onClick={() => { setEditBoards(null); setEditBoardRetry(value => value + 1) }}>{t('Tentar novamente')}</Button></>}
+              <p className="text-xs text-muted-foreground">{t('Os quadros correspondem ao mês da data de pagamento. Se o quadro não existir nesse mês, ele será criado ao salvar.')}</p>
+              {expenseToEdit.installment_group_id ? <p className="text-xs text-muted-foreground">{t('Ao trocar o quadro, todas as parcelas desta dívida serão movidas, inclusive as já pagas. O quadro será reutilizado ou criado em cada mês, mantendo as datas e os pagamentos das outras parcelas.')}</p>
+                : expenseToEdit.recurring_group_id && <p className="text-xs text-muted-foreground">{t('A mudança vale somente para esta despesa. Outras parcelas e recorrências não serão movidas.')}</p>}
+            </> : <p className="text-xs text-muted-foreground">{t('Este lançamento representa o total de um quadro. Para mover uma despesa, edite o lançamento dentro do quadro correspondente.')}</p>}
+          </div>}
           <div className="space-y-2">
             <Label htmlFor="nome">{t("Nome")}</Label>
             <Input
@@ -709,7 +792,7 @@ export function AddExpenseDialog({
         </fieldset>
 
         <DialogFooter>
-          <Button onClick={handleSubmit} disabled={loading}>
+          <Button onClick={handleSubmit} disabled={loading || editBoardsLoading || !!editBoardsError}>
             {loading ? t("Salvando...") : t("Salvar")}
           </Button>
         </DialogFooter>

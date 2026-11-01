@@ -756,5 +756,10 @@
   "Não, manter este mês": "No, mantener este mes",
   "Voltar ao mês atual como padrão": "Volver al mes actual como predeterminado",
   "Não foi possível verificar as pendências do mês. Tente novamente.": "No se pudieron verificar los gastos pendientes del mes. Inténtalo de nuevo.",
-  "O mês não está mais disponível para avanço. Atualize o painel e confira as pendências.": "Este mes ya no está disponible para avanzar. Actualiza el panel y revisa los gastos pendientes."
+  "O mês não está mais disponível para avanço. Atualize o painel e confira as pendências.": "Este mes ya no está disponible para avanzar. Actualiza el panel y revisa los gastos pendientes.",
+  "Os quadros correspondem ao mês da data de pagamento. Se o quadro não existir nesse mês, ele será criado ao salvar.": "Los tableros corresponden al mes de la fecha de pago. Si el tablero no existe en ese mes, se creará al guardar.",
+  "A mudança vale somente para esta despesa. Outras parcelas e recorrências não serão movidas.": "El cambio se aplica solo a este gasto. No se moverán otras cuotas ni movimientos recurrentes.",
+  "Este lançamento representa o total de um quadro. Para mover uma despesa, edite o lançamento dentro do quadro correspondente.": "Este movimiento representa el total de un tablero. Para mover un gasto, edita el movimiento dentro del tablero correspondiente.",
+  "Ao trocar o quadro, todas as parcelas desta dívida serão movidas, inclusive as já pagas. O quadro será reutilizado ou criado em cada mês, mantendo as datas e os pagamentos das outras parcelas.": "Al cambiar el tablero, se moverán todas las cuotas de esta deuda, incluidas las pagadas. El tablero se reutilizará o creará en cada mes, conservando las fechas y los estados de pago de las demás cuotas.",
+  "Não foi possível confirmar a movimentação das parcelas. Atualize a página para verificar antes de tentar novamente.": "No se pudo confirmar el cambio de las cuotas. Actualiza la página para verificar antes de volver a intentarlo."
 }

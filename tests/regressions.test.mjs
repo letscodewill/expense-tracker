@@ -612,7 +612,8 @@ test('board draft uses the current title when editing and preserves cancellation
 })
 
 test('dashboard loads boards after retry and stops after three failures', async () => {
-  for (const responses of [[failure, failure, success([{ id: 'board-1', name: 'Cartão', ...selected }])], [failure, failure, failure]]) {
+  const now = new Date()
+  for (const responses of [[failure, failure, success([{ id: 'board-1', name: 'Cartão', month: now.getMonth(), year: now.getFullYear() }])], [failure, failure, failure]]) {
     const runtime = hooks(), db = database({ boards: [...responses], expenses: [success([{ valor: 80 }])] })
     const { ExpensesDashboard } = load('components/expenses-dashboard.tsx', { react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client } })
     runtime.render(ExpensesDashboard, {})
@@ -666,6 +667,109 @@ test('expense dialog opens populated, switches editing target, closes and opens 
   tree = runtime.render(AddExpenseDialog, { ...props, expenseToEdit: null, forceOpen: true })
   assert.equal(tree.props.open, true)
   assert.equal(find(tree, (node) => node.props.id === 'nome').props.value, '')
+})
+
+test('editing moves a recurring occurrence between boards or principal with one owned update', async () => {
+  for (const target of ['', 'Itaú']) {
+    const runtime = hooks(), db = database({ boards: [success([{ id: 'itau', name: 'Itaú' }, { id: 'old', name: 'Santander' }]), success({ id: 'itau' })], expenses: [success([]), success({ id: expense.id })] })
+    let changed = 0
+    const { AddExpenseDialog } = load('components/add-expense-dialog.tsx', { react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client }, '@/lib/supabase/safe-get-user': { safeGetUser: async () => ({ id: 'test-user' }) } })
+    const row = { ...expense, status: 'Pago', recurring_group_id: 'recurring-group', recurring_number: 2 }
+    runtime.render(AddExpenseDialog, { selected, boardId: 'old', boardName: 'Santander', expenseToEdit: row, onAdded: () => changed++ })
+    let tree = await runtime.flush()
+    assert.equal(find(tree, n => n.props.id === 'expense-edit-board').props.value, 'Santander')
+    find(tree, n => n.props.id === 'expense-edit-board').props.onChange({ target: { value: target } })
+    tree = await runtime.flush()
+    await find(tree, n => n.props.children === 'Salvar').props.onClick()
+    const update = db.requests.find(request => request.table === 'expenses' && request.calls.some(([method]) => method === 'update'))
+    assert.ok(update)
+    const payload = update.calls.find(([method]) => method === 'update')[1]
+    assert.equal(payload.board_id, target ? 'itau' : null)
+    assert.equal(payload.status, 'Pago'); assert.equal(payload.data_pagamento, row.data_pagamento)
+    assert.equal(payload.installment_group_id, undefined)
+    assert.equal(payload.recurring_group_id, undefined)
+    assert.ok(update.calls.some(([method, column, value]) => method === 'eq' && column === 'id' && value === row.id))
+    assert.ok(update.calls.some(([method, column, value]) => method === 'eq' && column === 'user_id' && value === 'test-user'))
+    assert.equal(db.requests.filter(request => request.calls.some(([method]) => method === 'delete' || method === 'insert')).length, 0)
+    assert.equal(changed, 1)
+    assert.ok(db.requests[0].calls.some(([method, column, value]) => method === 'eq' && column === 'month' && value === 9))
+  }
+})
+
+test('moving installments uses one atomic call, including a new board and the principal, and keeps errors open', async () => {
+  for (const target of ['', 'Itaú', '__new__']) for (const fails of [false, true]) {
+    const runtime = hooks(), db = database({ boards: [success([{ id: 'itau', name: 'Itaú' }, { id: 'old', name: 'Santander' }])], expenses: [success([])] })
+    const calls = []; let changed = 0
+    db.client.rpc = async (name, args) => { calls.push({ name, args }); return fails ? failure : success({ expense_id: expense.id, updated: 4 }) }
+    const { AddExpenseDialog } = load('components/add-expense-dialog.tsx', { react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client }, '@/lib/supabase/safe-get-user': { safeGetUser: async () => ({ id: 'test-user' }) } })
+    const row = { ...expense, status: 'Pago', installment_group_id: 'group', installment_number: 2, installment_total: 4 }
+    runtime.render(AddExpenseDialog, { selected, boardId: 'old', boardName: 'Santander', expenseToEdit: row, onAdded: () => changed++ })
+    let tree = await runtime.flush()
+    find(tree, n => n.props.id === 'expense-edit-board').props.onChange({ target: { value: target } })
+    tree = await runtime.flush()
+    if (target === '__new__') { find(tree, n => n.props.id === 'expense-edit-new-board').props.onChange({ target: { value: 'Novo cartão' } }); tree = await runtime.flush() }
+    await find(tree, n => n.props.children === 'Salvar').props.onClick()
+    tree = await runtime.flush()
+    assert.equal(calls.length, 1); assert.equal(calls[0].name, 'move_installment_group')
+    assert.equal(calls[0].args.destination_name_input, target === '__new__' ? 'Novo cartão' : target || null)
+    assert.equal(calls[0].args.expense_id_input, row.id); assert.equal(calls[0].args.group_id_input, 'group')
+    assert.equal(calls[0].args.status_input, 'Pago'); assert.equal(calls[0].args.payment_date_input, row.data_pagamento)
+    assert.equal(db.requests.filter(r => r.calls.some(([m]) => ['insert', 'update', 'delete'].includes(m))).length, 0)
+    assert.equal(changed, fails ? 0 : 1)
+    if (fails) assert.equal(find(tree, n => n.type === 'Dialog').props.open, true)
+  }
+})
+
+test('editing uses the payment month for a new board and only updates the selected recurring entry', async () => {
+  const runtime = hooks(), db = database({ boards: [success([{ id: 'old', name: 'Santander' }]), success([{ id: 'other', name: 'Novembro' }]), success(null), success({ id: 'new-november' })], expenses: [success([]), success({ id: expense.id })] })
+  const { AddExpenseDialog } = load('components/add-expense-dialog.tsx', { react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client }, '@/lib/supabase/safe-get-user': { safeGetUser: async () => ({ id: 'test-user' }) } })
+  runtime.render(AddExpenseDialog, { selected, boardId: 'old', boardName: 'Santander', expenseToEdit: { ...expense, recurring_group_id: 'keep-group' }, onAdded() {} })
+  let tree = await runtime.flush()
+  find(tree, n => n.props.id === 'data').props.onChange({ target: { value: '2026-11-06' } })
+  tree = await runtime.flush()
+  assert.equal(elements(tree, n => n.type === 'option' && n.props.value === 'Santander').length, 0)
+  assert.equal(find(tree, n => n.props.id === 'expense-edit-new-board').props.value, 'Santander')
+  await find(tree, n => n.props.children === 'Salvar').props.onClick()
+  const board = db.requests.find(request => request.table === 'boards' && request.calls.some(([method]) => method === 'insert')).calls.find(([method]) => method === 'insert')[1]
+  assert.equal(board.month, 10); assert.equal(board.year, 2026)
+  const update = db.requests.find(request => request.table === 'expenses' && request.calls.some(([method]) => method === 'update'))
+  assert.equal(update.calls.find(([method]) => method === 'update')[1].board_id, 'new-november')
+  assert.equal(update.calls.find(([method]) => method === 'update')[1].data_pagamento, '2026-11-06')
+  assert.equal(update.calls.filter(([method, column]) => method === 'eq' && column === 'id').length, 1)
+})
+
+test('editing an installment without changing its board keeps other installments untouched', async () => {
+  const runtime = hooks(), db = database({ boards: [success([{ id: 'old', name: 'Santander' }]), success({ id: 'old' })], expenses: [success([]), success({ id: expense.id })] })
+  db.client.rpc = async () => { throw new Error('Unexpected group move') }
+  const { AddExpenseDialog } = load('components/add-expense-dialog.tsx', { react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client }, '@/lib/supabase/safe-get-user': { safeGetUser: async () => ({ id: 'test-user' }) } })
+  runtime.render(AddExpenseDialog, { selected, boardId: 'old', boardName: 'Santander', expenseToEdit: { ...expense, installment_group_id: 'group', installment_number: 2, installment_total: 4 }, onAdded() {} })
+  const tree = await runtime.flush()
+  await find(tree, n => n.props.children === 'Salvar').props.onClick()
+  const updates = db.requests.filter(r => r.calls.some(([method]) => method === 'update'))
+  assert.equal(updates.length, 1)
+  const payload = updates[0].calls.find(([method]) => method === 'update')[1]
+  assert.equal(payload.board_id, 'old'); assert.equal(payload.installment_group_id, undefined)
+})
+
+test('editing blocks summary moves, failed board lookups and unsuccessful expense updates', async () => {
+  for (const mode of ['summary', 'lookup', 'update']) {
+    const runtime = hooks(), db = database({ boards: [mode === 'lookup' ? failure : success([])], expenses: [success([]), failure] })
+    let changed = 0
+    const { AddExpenseDialog } = load('components/add-expense-dialog.tsx', { react: runtime.react, '@/lib/supabase/client': { createClient: () => db.client }, '@/lib/supabase/safe-get-user': { safeGetUser: async () => ({ id: 'test-user' }) } })
+    runtime.render(AddExpenseDialog, { selected, expenseToEdit: { ...expense, represents_board_id: mode === 'summary' ? 'summary-board' : null }, onAdded() { changed++ } })
+    let tree = await runtime.flush()
+    if (mode === 'summary') {
+      assert.equal(elements(tree, n => n.props.id === 'expense-edit-board').length, 0)
+      assert.equal(db.requests.length, 0)
+    } else {
+      if (mode === 'lookup') assert.equal(find(tree, n => n.props.children === 'Salvar').props.disabled, true)
+      await find(tree, n => n.props.children === 'Salvar').props.onClick()
+      tree = await runtime.flush()
+      assert.equal(changed, 0)
+      assert.equal(find(tree, n => n.type === 'Dialog').props.open, true)
+      if (mode === 'lookup') assert.equal(db.requests.filter(request => request.table === 'expenses').length, 0)
+    }
+  }
 })
 
 test('recurring expenses start at the selected month, preserve days and route each future board', async () => {

@@ -756,5 +756,10 @@
   "Não, manter este mês": "No, keep this month",
   "Voltar ao mês atual como padrão": "Use the current month as default again",
   "Não foi possível verificar as pendências do mês. Tente novamente.": "Could not check pending expenses for the month. Try again.",
-  "O mês não está mais disponível para avanço. Atualize o painel e confira as pendências.": "This month can no longer be advanced. Refresh the dashboard and check pending expenses."
+  "O mês não está mais disponível para avanço. Atualize o painel e confira as pendências.": "This month can no longer be advanced. Refresh the dashboard and check pending expenses.",
+  "Os quadros correspondem ao mês da data de pagamento. Se o quadro não existir nesse mês, ele será criado ao salvar.": "Boards correspond to the payment date month. If the board does not exist in that month, it will be created when saving.",
+  "A mudança vale somente para esta despesa. Outras parcelas e recorrências não serão movidas.": "This change applies only to this expense. Other installments and recurring entries will not be moved.",
+  "Este lançamento representa o total de um quadro. Para mover uma despesa, edite o lançamento dentro do quadro correspondente.": "This entry represents a board total. To move an expense, edit the entry inside its board.",
+  "Ao trocar o quadro, todas as parcelas desta dívida serão movidas, inclusive as já pagas. O quadro será reutilizado ou criado em cada mês, mantendo as datas e os pagamentos das outras parcelas.": "When changing the board, all installments of this debt will move, including paid ones. The board will be reused or created in each month, preserving the other installments dates and payment statuses.",
+  "Não foi possível confirmar a movimentação das parcelas. Atualize a página para verificar antes de tentar novamente.": "Could not confirm the installment move. Refresh the page to check before trying again."
 }
