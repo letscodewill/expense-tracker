@@ -11,11 +11,14 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { FeatureTourArtwork } from './feature-tour-artwork'
 
 const slides = [
-  { title: 'Cadastre suas despesas no mês certo', description: 'Use o botão +, escolha o mês de pagamento e o quadro. Se o quadro ainda não existir naquele mês, ele será criado ao salvar.' },
-  { title: 'Importe e confira suas faturas', description: 'Envie um PDF ou uma planilha Excel/CSV. Revise nomes, valores, categorias e o mês de pagamento antes de confirmar a importação.' },
+  { title: 'Cadastre suas despesas no mês certo', description: 'Use o botão + e escolha o mês de pagamento e o quadro. Ao trocar o quadro de uma dívida parcelada, todas as parcelas acompanham a mudança, cada uma no seu mês.' },
+  { title: 'Importe e confira suas faturas', description: 'Envie PDFs, planilhas ou imagens de comprovantes. No celular, você também pode tirar uma foto para análise por IA. Revise valores, categorias, parcelas e avisos de possível duplicidade antes de salvar. As análises com IA seguem os limites do seu plano.' },
   { title: 'Planeje seu orçamento', description: 'Crie categorias, defina limites mensais e acompanhe a comparação entre meses. Veja também os lembretes das contas próximas do vencimento.' },
-  { title: 'Encontre uma despesa em segundos', description: 'Toque na lupa ao lado do seletor de mês. Pesquise um nome ou valor para descobrir em qual quadro e mês a despesa está cadastrada.' },
-  { title: 'Seu painel, do seu jeito', description: 'Escolha temas claros ou escuros, sua paleta de cores e o idioma Português, English ou Español. Sua foto de perfil também pode ser alterada.' },
+  { title: 'Encontre uma despesa em segundos', description: 'Use a lupa ao lado do mês para buscar por nome ou valor, filtrar por data e pelas suas categorias e descobrir em qual quadro a despesa está cadastrada.' },
+  { title: 'Transforme seus planos em metas', description: 'Defina uma meta no cofrinho, registre valores guardados ou retirados e acompanhe a barra de progresso até conquistar o troféu. O Pro permite criar metas adicionais. O cofrinho não transfere dinheiro.' },
+  { title: 'Leve seus dados com você', description: 'Consulte seus lançamentos e exporte um CSV no Free. O Pro também oferece exportações PDF, TXT e Excel. A escolha BRL/USD/EUR nas despesas muda apenas a apresentação, sem converter os valores.' },
+  { title: 'Entenda seu plano e seus benefícios', description: 'Acesse Minha assinatura para comparar Free e Pro, escolher moeda e periodicidade da cobrança e gerenciar uma assinatura existente. Acesso master e cortesia já incluem Pro e não exigem outra compra.' },
+  { title: 'Seu painel, do seu jeito', description: 'Escolha temas claros ou escuros, sua paleta e o idioma. O botão de privacidade oculta o salário e o total das despesas. Você também pode instalar o NoControle na tela inicial do celular.' },
 ] as const
 
 export function FeatureTourLauncher() {

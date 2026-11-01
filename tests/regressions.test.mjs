@@ -38,8 +38,11 @@ function load(file, mocks = {}, globals = {}) {
     if (name === '@/lib/billing-offers') return load('lib/billing-offers.ts')
     if (name === '@/lib/use-currency') return { useCurrency: () => 'BRL' }
     if (name === '@/lib/currency') return load('lib/currency.ts')
+    if (name === '../currency') return load('lib/currency.ts')
+    if (name === '@/lib/regional-defaults' || name === '../regional-defaults') return load('lib/regional-defaults.ts')
     if (name === '@/lib/legal-content') return load('lib/legal-content.ts')
     if (name === '@/lib/password-recovery') return load('lib/password-recovery.ts')
+    if (name === '@/lib/signup-password') return load('lib/signup-password.ts')
     if (name === '@/lib/i18n') return languageModule()
     if (name === '@/components/language-provider') return { useLanguage: () => ({ language: 'pt-BR', locale: 'pt-BR', t: portugueseTranslation }) }
     if (name === '@/lib/i18n/server') return { getServerTranslation: async () => ({ language: 'pt-BR', locale: 'pt-BR', t: portugueseTranslation }) }
@@ -551,7 +554,7 @@ test('budget and reminders have a protected page and dashboard links without ren
   find(tree, node => node.type === 'Link' && node.props.href.startsWith('/planning?month='))
 })
 
-test('salary privacy masks only opted-in salary while expense and remaining values stay readable', () => {
+test('salary privacy masks salary and total expenses while individual and remaining values stay readable', () => {
   for (const hidden of [true, false]) {
     const { MaskedValue } = load('components/masked-value.tsx', {
       '@/context/visibility-context': { useValuesVisibility: () => ({ hidden }) },
@@ -564,6 +567,7 @@ test('salary privacy masks only opted-in salary while expense and remaining valu
   runtime.render(SalaryCard, { selected, totalExpenses: 80 })
   return runtime.flush().then(tree => {
     assert.equal(find(tree, node => node.type === 'MaskedValue' && node.props.value === 100).props.mask, true)
+    assert.equal(find(tree, node => node.type === 'MaskedValue' && node.props.value === 80).props.mask, true)
     assert.equal(find(tree, node => node.type === 'MaskedValue' && node.props.value === 20).props.mask, undefined)
   })
 })
@@ -2023,15 +2027,15 @@ test('Material login and recovery preserve field names, submission actions and a
     'next/navigation': { redirect: () => { throw new Error('unexpected redirect') } },
     '@/lib/supabase/server': { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: null }, error: null }) } }) },
   })
-  for (const mode of [undefined, 'recover']) {
+  for (const mode of ['email', 'recover']) {
     const tree = await LoginPage({ searchParams: Promise.resolve({ mode, message: 'Mensagem de autenticação' }) })
     find(tree, node => node.type === 'ThemeSelector')
     find(tree, node => node.type === 'Input' && node.props.name === 'email' && node.props.required)
-    if (mode) assert.equal(find(tree, node => node.type === 'RecoverySubmitButton').props.action, recoverPassword)
-    else assert.equal(find(tree, node => node.type === 'Button' && node.props.type === 'submit').props.formAction, login)
-    assert.equal(elements(tree, node => node.type === 'Input' && node.props.name === 'password').length, mode ? 0 : 1)
-    assert.equal(elements(tree, node => node.type === 'GoogleSignInButton').length, mode ? 0 : 1)
-    assert.equal(elements(tree, node => node.type === 'SignupDialog').length, mode ? 0 : 1)
+    if (mode === 'recover') assert.equal(find(tree, node => node.type === 'RecoverySubmitButton').props.action, recoverPassword)
+    else assert.equal(find(tree, node => node.type === 'form').props.action, login)
+    assert.equal(elements(tree, node => node.type === 'Input' && node.props.name === 'password').length, mode === 'recover' ? 0 : 1)
+    assert.equal(elements(tree, node => node.type === 'GoogleSignInButton').length, mode === 'recover' ? 0 : 1)
+    assert.equal(elements(tree, node => node.type === 'SignupDialog').length, 0)
     find(tree, node => node.props.role === 'alert' && node.props.children === 'Mensagem de autenticação')
   }
 })
@@ -2797,21 +2801,21 @@ test('initial language matches browser preferences, regional variants and qualit
   ]) assert.equal(detectLanguage(header), expected, String(header))
 })
 
-test('server language respects saved choices including Portuguese over browser detection', async () => {
+test('server language respects explicit saved choices and otherwise uses regional defaults', async () => {
   for (const saved of ['pt-BR', 'en', 'es', undefined, 'invalid']) {
     let headerReads = 0
     const { getServerTranslation } = load('lib/i18n/server.ts', {
       './index': languageModule(),
       'next/headers': {
-        cookies: async () => ({ get: () => saved === undefined ? undefined : { value: saved } }),
+        cookies: async () => ({ get: key => key === 'nocontrole-language-manual' ? {value:'1'} : key === 'nocontrole-language' && saved !== undefined ? { value: saved } : undefined }),
         headers: async () => { headerReads++; return { get: () => 'es-MX,en;q=0.8' } },
       },
     })
-    const expected = saved === 'pt-BR' || saved === 'en' || saved === 'es' ? saved : 'es'
+    const expected = saved === 'pt-BR' || saved === 'en' || saved === 'es' ? saved : 'en'
     const result = await getServerTranslation()
     assert.equal(result.language, expected)
     assert.equal(result.t('Pendente'), languageModule().translate('Pendente', expected))
-    assert.equal(headerReads, saved === expected ? 0 : 1)
+    assert.equal(headerReads, 1)
   }
 })
 
@@ -3044,7 +3048,7 @@ test('tour shows to existing users, navigates steps and closes without saving un
   runtime.render(FeatureTour, { userId: 'existing-user', signedInAt: 'login-1', dismissed: false })
   let tree = await runtime.flush()
   assert.equal(find(tree, node => node.type === 'Dialog').props.open, true)
-  find(tree, node => node.props['aria-label'] === 'Ir para etapa 5').props.onClick()
+  find(tree, node => node.props['aria-label'] === `Ir para etapa ${load('lib/feature-tour.ts').FEATURE_TOUR_STEPS.length}`).props.onClick()
   tree = await runtime.flush()
   find(tree, node => node.type === 'DialogTitle' && node.props.children === 'Seu painel, do seu jeito')
   await find(tree, node => node.props.children === 'Entendi').props.onClick()
@@ -3193,14 +3197,191 @@ test('plans page presents actual billing currency independently and prevents exi
     const runtime=hooks()
     const {PlansPanel}=load('components/plans-panel.tsx',{react:runtime.react,'next/navigation':{useRouter:()=>({refresh(){}})}})
     let tree=runtime.render(PlansPanel,{signedIn:true,plan:{plan:source==='default'?'free':'pro',source},billing:{has_customer:false},ready:true,initialCurrency:'brl'})
-    let button=find(tree,n=>n.type==='Button'&&['Assinar Pro','Pro ativo'].includes(n.props.children))
-    assert.equal(button.props.disabled,source!=='default')
+    if(source==='default') assert.equal(find(tree,n=>n.type==='Button'&&n.props.children==='Assinar Pro').props.disabled,false)
+    else { find(tree,n=>n.type==='Link'&&n.props.href==='/'&&n.props.children==='Voltar ao painel'); assert.equal(elements(tree,n=>n.type==='Button'&&n.props.children==='Assinar Pro').length,0) }
     const selects=elements(tree,n=>n.type==='select')
     selects[0].props.onChange({target:{value:'usd'}})
     tree=await runtime.flush()
     assert.equal(elements(tree,n=>n.type==='select')[0].props.value,'usd')
     assert.ok(elements(tree,n=>n.type==='p'&&Array.isArray(n.props.children)&&String(n.props.children[0]).includes('39,90')).length)
-    button=find(tree,n=>n.type==='Button'&&['Assinar Pro','Pro ativo'].includes(n.props.children))
-    assert.equal(button.props.disabled,source!=='default')
+    if(source==='default') assert.equal(find(tree,n=>n.type==='Button'&&n.props.children==='Assinar Pro').props.disabled,false)
+    else assert.equal(elements(tree,n=>n.type==='Button'&&n.props.children==='Assinar Pro').length,0)
+  }
+})
+
+
+test('signup enforces the same strong password on the server before contacting authentication', async () => {
+  let calls=0, received
+  const {signup}=load('app/login/actions.ts',{
+    '@/lib/supabase/server':{createClient:async()=>({auth:{signUp:async value=>{calls++;received=value;return{error:null}}}})},
+    '@/lib/env/base-url':{getBaseUrl:()=> 'https://app.test'},'next/cache':{revalidatePath(){}},
+    'next/navigation':{redirect(){throw Error('Unexpected redirect')}},
+  })
+  for(const password of ['short','abcdefghijk1!','ABCDEFGHIJK1!','Abcdefghijkl!','Abcdefghijkl1','Ab1!','A1!'+ 'a'.repeat(126)]){
+    const data=new FormData();data.set('name','Example');data.set('email','example@example.invalid');data.set('password',password)
+    assert.ok((await signup(data)).error)
+  }
+  assert.equal(calls,0)
+  const data=new FormData();data.set('name',' Example ');data.set('email',' example@example.invalid ');data.set('password',' StrongPhrase12! ')
+  assert.equal((await signup(data)).success,true)
+  assert.equal(calls,1);assert.equal(received.password,' StrongPhrase12! ');assert.equal(received.options.data.full_name,'Example')
+})
+
+test('signup closes and clears the modal only after success and prevents duplicate submissions', async () => {
+  const runtime=hooks();let resolve, calls=0, replaced=''
+  const pending=new Promise(done=>{resolve=done})
+  const {SignupDialog}=load('components/signup-dialog.tsx',{
+    react:runtime.react,'@/app/login/actions':{signup:async()=>{calls++;return pending}},
+    'next/navigation':{useRouter:()=>({replace:url=>{replaced=url},refresh(){}})},
+  },{FormData})
+  let tree=runtime.render(SignupDialog)
+  find(tree,n=>n.type==='Dialog').props.onOpenChange(true);tree=await runtime.flush()
+  for(const [id,value] of [['signup-name','Example'],['signup-email','example@example.invalid'],['signup-password','StrongPhrase12!'],['signup-confirm-password','StrongPhrase12!']]){find(tree,n=>n.props.id===id).props.onChange({target:{value}});tree=await runtime.flush()}
+  const form=find(tree,n=>n.type==='form');form.props.onSubmit({preventDefault(){}});form.props.onSubmit({preventDefault(){}})
+  tree=await runtime.flush();assert.equal(calls,1);assert.equal(find(tree,n=>n.type==='Dialog').props.open,true)
+  assert.equal(find(tree,n=>n.props.id==='signup-password').props['aria-describedby'],'signup-password-hint')
+  resolve({success:true});tree=await runtime.flush()
+  assert.equal(find(tree,n=>n.type==='Dialog').props.open,false)
+  assert.equal(find(tree,n=>n.props.id==='signup-password').props.value,'');assert.ok(replaced.includes('/login?message='))
+})
+
+test('signup keeps errors visible in the open modal and never submits a weak password', async () => {
+  for(const mode of ['weak','failure','network']){
+    const runtime=hooks();let calls=0
+    const {SignupDialog}=load('components/signup-dialog.tsx',{
+      react:runtime.react,'@/app/login/actions':{signup:async()=>{calls++;if(mode==='network')throw Error('offline');return{error:'Não foi possível cadastrar o usuário. Tente novamente.'}}},
+      'next/navigation':{useRouter:()=>({replace(){throw Error('Must not redirect')},refresh(){}})},
+    },{FormData})
+    let tree=runtime.render(SignupDialog);find(tree,n=>n.type==='Dialog').props.onOpenChange(true);tree=await runtime.flush()
+    const password=mode==='weak'?'abcdef':'StrongPhrase12!'
+    for(const [id,value] of [['signup-name','Example'],['signup-email','example@example.invalid'],['signup-password',password],['signup-confirm-password',password]]){find(tree,n=>n.props.id===id).props.onChange({target:{value}});tree=await runtime.flush()}
+    find(tree,n=>n.type==='form').props.onSubmit({preventDefault(){}});tree=await runtime.flush()
+    assert.equal(calls,mode==='weak'?0:1);assert.equal(find(tree,n=>n.type==='Dialog').props.open,true)
+    find(tree,n=>n.props.role==='alert');assert.equal(find(tree,n=>n.props.id==='signup-password').props.value,password)
+  }
+})
+
+
+test('public plans has no language selector and display settings can offer currency separately', async () => {
+  const {PageLanguageBar}=load('components/page-language-bar.tsx',{'next/navigation':{usePathname:()=>'/plans'}})
+  assert.equal(PageLanguageBar(),null)
+  const {default:PlansPage}=load('app/plans/page.tsx',{
+    '@/lib/supabase/server':{createClient:async()=>({auth:{getUser:async()=>({data:{user:null}})}})},
+    '@/lib/stripe':{billingReady:()=>true},
+  })
+  const page=await PlansPage(),selectors=elements(page,n=>n.type==='LanguageSelector')
+  assert.equal(selectors.length,0)
+  const {LanguageSelector}=load('components/language-selector.tsx',{
+    './language-provider':{useLanguage:()=>({language:'pt-BR'}),useRegionalDefaults:()=>({country:'BR'})},'next/navigation':{useRouter:()=>({refresh(){}})},
+  })
+  assert.equal(elements(LanguageSelector({showCurrency:false}),n=>n.type==='CurrencySelector').length,0)
+  assert.equal(elements(LanguageSelector({}),n=>n.type==='CurrencySelector').length,1)
+})
+
+test('active Pro has one clickable subscription-management action instead of a disabled purchase', async () => {
+  const runtime=hooks();let action, redirected
+  const {PlansPanel}=load('components/plans-panel.tsx',{
+    react:runtime.react,'next/navigation':{useRouter:()=>({refresh(){}})},
+  },{fetch:async(_url,options)=>{action=JSON.parse(options.body).action;return{ok:true,json:async()=>({url:'https://billing.stripe.com/test'})}},window:{location:{assign:url=>{redirected=url}}}})
+  const tree=runtime.render(PlansPanel,{signedIn:true,plan:{plan:'pro',source:'subscription'},billing:{has_customer:true},ready:true,initialCurrency:'brl'})
+  const buttons=elements(tree,n=>n.type==='Button'&&n.props.children==='Gerenciar assinatura')
+  assert.equal(buttons.length,1);assert.equal(buttons[0].props.disabled,false)
+  await buttons[0].props.onClick()
+  assert.equal(action,'portal');assert.equal(redirected,'https://billing.stripe.com/test')
+  assert.equal(elements(tree,n=>n.type==='Button'&&n.props.children==='Assinar Pro').length,0)
+})
+
+
+test('public login centers the presentation and keeps header access plus direct signup', async () => {
+  const login=async()=>{}
+  const {default:Page}=load('app/login/page.tsx',{
+    './actions':{login,recoverPassword:async()=>{}},'next/image':'Image',
+    '@/lib/supabase/server':{createClient:async()=>({auth:{getUser:async()=>({data:{user:null},error:null})}})},
+  })
+  for(const mode of [undefined,'signup']){
+    const page=await Page({searchParams:Promise.resolve({mode})})
+    find(page,n=>n.type==='LoginProductPreview')
+    assert.equal(find(page,n=>n.type==='LoginAccess').props.action,login)
+    assert.equal(find(page,n=>n.type==='SignupDialog').props.initialOpen,mode==='signup')
+    assert.equal(elements(page,n=>n.type==='Input'&&n.props.type==='password').length,0)
+  }
+})
+
+test('header login reveals email fields, preserves the action and clears credentials on close on desktop and mobile', async () => {
+  for(const mobile of [false,true]){
+    const runtime=hooks(),action=async()=>{}
+    const {LoginAccess}=load('components/login-access.tsx',{
+      react:{...runtime.react,useSyncExternalStore:()=>mobile},
+      '@base-ui/react/popover':{Popover:{Root:'PopoverRoot',Trigger:'PopoverTrigger',Portal:'PopoverPortal',Positioner:'PopoverPositioner',Popup:'PopoverPopup',Title:'PopoverTitle',Description:'PopoverDescription',Close:'PopoverClose'}},
+    })
+    let tree=runtime.render(LoginAccess,{action})
+    const rootType=mobile?'Dialog':'PopoverRoot'
+    find(tree,n=>n.type===rootType).props.onOpenChange(true);tree=await runtime.flush()
+    find(tree,n=>n.type==='GoogleSignInButton')
+    assert.equal(elements(tree,n=>n.type==='Input').length,0)
+    find(tree,n=>n.type==='Button'&&n.props.children?.includes?.('Entrar com e-mail')&&typeof n.props.onClick==='function').props.onClick()
+    tree=await runtime.flush()
+    assert.equal(find(tree,n=>n.type==='form').props.action,action)
+    assert.equal(find(tree,n=>n.props.id==='access-email').props.autoComplete,'email')
+    const password=find(tree,n=>n.props.id==='access-password');assert.equal(password.props.name,'password')
+    password.props.onChange({target:{value:'SyntheticPassword'}});tree=await runtime.flush()
+    assert.equal(find(tree,n=>n.props.id==='access-password').props.value,'SyntheticPassword')
+    find(tree,n=>n.type===rootType).props.onOpenChange(false);tree=await runtime.flush()
+    assert.equal(elements(tree,n=>n.type==='Input').length,0)
+    find(tree,n=>n.type===rootType).props.onOpenChange(true);tree=await runtime.flush()
+    find(tree,n=>n.type==='Button'&&n.props.children?.includes?.('Entrar com e-mail')&&typeof n.props.onClick==='function').props.onClick();tree=await runtime.flush()
+    assert.equal(find(tree,n=>n.props.id==='access-password').props.value,'')
+    find(tree,n=>n.type==='Link'&&n.props.href==='/login?mode=recover')
+  }
+})
+
+
+test('regional defaults use country before browser language and only the euro area gets EUR', () => {
+  const {regionalDefaults,currencyForLanguage}=load('lib/regional-defaults.ts')
+  for(const [country,language,currency] of [['BR','pt-BR','BRL'],['PT','pt-BR','EUR'],['DE','en','EUR'],['ES','en','EUR'],['BG','en','EUR'],['US','en','USD'],['GB','en','USD'],['CH','en','USD'],['SE','en','USD'],['MX','en','USD']]){
+    const result=regionalDefaults(country,'pt-BR,es;q=0.9');assert.equal(result.language,language);assert.equal(result.currency,currency)
+  }
+  assert.equal(regionalDefaults(null,'pt-PT,en;q=0.9').currency,'EUR')
+  assert.equal(regionalDefaults(null,null).language,'en')
+  assert.equal(currencyForLanguage('en','BR'),'USD');assert.equal(currencyForLanguage('pt-BR','BR'),'BRL');assert.equal(currencyForLanguage('pt-BR','PT'),'EUR')
+})
+
+test('server regional choices ignore old automatic cookies and honor explicit manual overrides', async () => {
+  for(const manual of [false,true]){
+    const values={'nocontrole-language':'es','nocontrole-currency':'USD',...(manual?{'nocontrole-language-manual':'1','nocontrole-currency-manual':'1'}:{})}
+    const {getServerTranslation}=load('lib/i18n/server.ts',{
+      './index':languageModule(),
+      'next/headers':{cookies:async()=>({get:key=>values[key]?{value:values[key]}:undefined}),headers:async()=>({get:key=>key==='x-vercel-ip-country'?'DE':'pt-BR'})},
+    })
+    const result=await getServerTranslation()
+    assert.equal(result.language,manual?'es':'en');assert.equal(result.currency,manual?'USD':'EUR')
+  }
+})
+
+test('automatic EUR presentation is available on first read and manual currency wins afterward', () => {
+  const target=new EventTarget(),data=new Map(),document={documentElement:{dataset:{currency:'EUR'}},cookie:''}
+  const store=load('lib/currency.ts',{}, {window:target,document,localStorage:{getItem:key=>data.get(key)??null,setItem:(key,value)=>data.set(key,value)},location:{protocol:'https:'},Event})
+  assert.equal(store.getCurrencySnapshot(),'EUR')
+  store.initializeCurrency('EUR');assert.equal(data.has(store.CURRENCY_MANUAL_KEY),false)
+  store.selectCurrency('USD');store.initializeCurrency('EUR');assert.equal(store.getCurrencySnapshot(),'USD')
+  const {MaskedValue}=load('components/masked-value.tsx',{'@/lib/use-currency':{useCurrency:()=> 'EUR'},'@/context/visibility-context':{useValuesVisibility:()=>({hidden:true})}})
+  assert.equal(MaskedValue({value:1234.56,mask:true}).props.children,'€ ••••')
+  assert.equal(MaskedValue({value:1234.56}).props.children,(1234.56).toLocaleString('pt-BR',{style:'currency',currency:'EUR',currencyDisplay:'narrowSymbol'}))
+})
+
+test('changing language suggests currency and public pages keep manual selectors inside private settings', () => {
+  let language,currency
+  const {LanguageSelector}=load('components/language-selector.tsx',{
+    './language-provider':{useLanguage:()=>({language:'en'}),useRegionalDefaults:()=>({country:'PT'})},
+    '@/lib/i18n':{normalizeLanguage:value=>value,selectLanguage:value=>{language=value}},
+    '@/lib/currency':{selectCurrency:value=>{currency=value}},
+    'next/navigation':{useRouter:()=>({refresh(){}})},
+  })
+  find(LanguageSelector({showCurrency:false}),n=>n.type==='select').props.onChange({target:{value:'pt-BR'}})
+  assert.equal(language,'pt-BR');assert.equal(currency,'EUR')
+  for(const path of ['/login','/plans','/privacypolicy','/termsofservice','/reports']){
+    const {PageLanguageBar}=load('components/page-language-bar.tsx',{'next/navigation':{usePathname:()=>path}})
+    if(path==='/reports')find(PageLanguageBar(),n=>n.type==='DisplaySettings')
+    else assert.equal(PageLanguageBar(),null)
   }
 })

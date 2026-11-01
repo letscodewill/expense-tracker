@@ -5,6 +5,8 @@ export type Language = 'pt-BR' | 'en' | 'es'
 export const LANGUAGE_STORAGE_KEY = 'nocontrole:language'
 export const LANGUAGE_COOKIE = 'nocontrole-language'
 export const LANGUAGE_EVENT = 'nocontrole:language-change'
+export const LANGUAGE_MANUAL_KEY = 'nocontrole:language-manual'
+export const LANGUAGE_MANUAL_COOKIE = 'nocontrole-language-manual'
 export function normalizeLanguage(value: unknown): Language {
   return value === 'en' || value === 'es' ? value : 'pt-BR'
 }
@@ -60,7 +62,12 @@ function applyLanguage(language: Language) {
   document.cookie = `${LANGUAGE_COOKIE}=${language}; Path=/; Max-Age=31536000; SameSite=Lax${location.protocol === 'https:' ? '; Secure' : ''}`
 }
 export function selectLanguage(language: Language) {
+  document.cookie = `${LANGUAGE_MANUAL_COOKIE}=1; Path=/; Max-Age=31536000; SameSite=Lax${location.protocol === 'https:' ? '; Secure' : ''}`
   applyLanguage(normalizeLanguage(language))
-  try { localStorage.setItem(LANGUAGE_STORAGE_KEY, normalizeLanguage(language)) } catch {}
+  try { localStorage.setItem(LANGUAGE_STORAGE_KEY, normalizeLanguage(language)); localStorage.setItem(LANGUAGE_MANUAL_KEY,'1') } catch {}
+  window.dispatchEvent(new Event(LANGUAGE_EVENT))
+}
+export function initializeLanguage(language: Language) {
+  applyLanguage(language)
   window.dispatchEvent(new Event(LANGUAGE_EVENT))
 }

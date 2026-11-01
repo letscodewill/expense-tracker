@@ -1,7 +1,7 @@
 'use client'
 
 import { useLanguage } from '@/components/language-provider'
-import { useState, useTransition } from 'react'
+import { useRef, useState, useTransition } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -15,9 +15,14 @@ import {
 } from '@/components/ui/dialog'
 import { signup } from '@/app/login/actions'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { isStrongSignupPassword, SIGNUP_PASSWORD_HINT } from '@/lib/signup-password'
 
-export function SignupDialog() {
+export function SignupDialog({ initialOpen = false, triggerClassName = 'w-full' }: { initialOpen?: boolean; triggerClassName?: string } = {}) {
   const { t } = useLanguage()
+  const router = useRouter()
+  const [open, setOpen] = useState(initialOpen)
+  const inFlight = useRef(false)
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -26,8 +31,13 @@ export function SignupDialog() {
   const [isPending, startTransition] = useTransition()
   const [name, setName] = useState('')
 
+  function reset() {
+    setName(''); setEmail(''); setPassword(''); setConfirmPassword(''); setError('')
+  }
+
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    if (inFlight.current) return
     setError('')
 
     if (!name.trim()) {
@@ -40,8 +50,8 @@ export function SignupDialog() {
       return
     }
 
-    if (password.length < 6) {
-      setError("A senha precisa ter pelo menos 6 caracteres.")
+    if (!isStrongSignupPassword(password)) {
+      setError(SIGNUP_PASSWORD_HINT)
       return
     }
 
@@ -50,26 +60,33 @@ export function SignupDialog() {
     formData.set('email', email)
     formData.set('password', password)
 
-    startTransition(() => {
-      signup(formData)
+    inFlight.current = true
+    startTransition(async () => {
+      try {
+        const result = await signup(formData)
+        if ('error' in result) { setError(result.error); return }
+        setOpen(false)
+        reset()
+        router.replace('/login?message=' + encodeURIComponent('Verifique seu email para continuar o processo de cadastro.'))
+        router.refresh()
+      } catch {
+        setError('Não foi possível cadastrar o usuário. Tente novamente.')
+      } finally { inFlight.current = false }
     })
   }
 
   return (
     <Dialog
+      open={open}
       onOpenChange={(isOpen) => {
-        if (!isOpen) {
-          setName('')
-          setEmail('')
-          setPassword('')
-          setConfirmPassword('')
-          setError('')
-        }
+        if (inFlight.current) return
+        setOpen(isOpen)
+        if (!isOpen) reset()
       }}
     >
       <DialogTrigger
         render={
-          <Button variant="outline" className="w-full">{t("Criar conta")}</Button>
+          <Button variant="outline" className={triggerClassName}>{t("Criar conta")}</Button>
         }
       />
       <DialogContent>
@@ -83,6 +100,9 @@ export function SignupDialog() {
             <Input
               id="signup-name"
               type="text"
+              autoComplete="name"
+              maxLength={100}
+              disabled={isPending}
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
@@ -93,6 +113,9 @@ export function SignupDialog() {
             <Input
               id="signup-email"
               type="email"
+              autoComplete="email"
+              maxLength={254}
+              disabled={isPending}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -103,23 +126,32 @@ export function SignupDialog() {
             <Input
               id="signup-password"
               type="password"
+              autoComplete="new-password"
+              minLength={12}
+              maxLength={128}
+              aria-describedby="signup-password-hint"
+              disabled={isPending}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
             />
+            <p id="signup-password-hint" className="text-xs leading-relaxed text-muted-foreground">{t(SIGNUP_PASSWORD_HINT)}</p>
           </div>
           <div className="flex flex-col gap-1">
             <Label htmlFor="signup-confirm-password">{t("Confirmar senha:")}</Label>
             <Input
               id="signup-confirm-password"
               type="password"
+              autoComplete="new-password"
+              maxLength={128}
+              disabled={isPending}
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
             />
           </div>
 
-          {error && <p className="text-sm text-red-600">{t(error)}</p>}
+          {error && <p role="alert" className="text-sm text-destructive">{t(error)}</p>}
           <p className="text-xs leading-relaxed text-muted-foreground">
             <Link href="/termsofservice" target="_blank" rel="noopener noreferrer" className="text-primary underline">{t("Termos de uso")}</Link>
             {' · '}

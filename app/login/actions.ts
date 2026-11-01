@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getBaseUrl } from '@/lib/env/base-url'
 import { recoveryErrorMessage } from '@/lib/password-recovery'
+import { isStrongSignupPassword, SIGNUP_PASSWORD_HINT } from '@/lib/signup-password'
 
 export async function login(formData: FormData) {
   const supabase = await createClient()
@@ -19,19 +20,21 @@ export async function login(formData: FormData) {
 
   if (error) {
     console.error(error)
-    return redirect('/login?message=Não foi possível autenticar o usuário.')
+    return redirect('/login?mode=email&message=' + encodeURIComponent('Não foi possível autenticar o usuário.'))
   }
 
   revalidatePath('/', 'layout')
   redirect('/')
 }
 
-export async function signup(formData: FormData) {
+export async function signup(formData: FormData): Promise<{ error: string } | { success: true }> {
+  const emailValue = formData.get('email'), nameValue = formData.get('name')
+  const password = formData.get('password')
+  if (typeof nameValue !== 'string' || !nameValue.trim() || nameValue.trim().length > 100) return { error: 'Informe seu nome.' }
+  if (typeof emailValue !== 'string' || emailValue.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailValue.trim())) return { error: 'Informe um e-mail válido.' }
+  if (!isStrongSignupPassword(password)) return { error: SIGNUP_PASSWORD_HINT }
   const supabase = await createClient()
-
-  const email = formData.get('email') as string
-  const password = formData.get('password') as string
-  const name = formData.get('name') as string
+  const email = emailValue.trim(), name = nameValue.trim()
 
   const { error } = await supabase.auth.signUp({
     email,
@@ -45,11 +48,11 @@ export async function signup(formData: FormData) {
   })
 
   if (error) {
-    return redirect('/login?message=Não foi possível cadastrar o usuário.')
+    return { error: error.code === 'weak_password' ? SIGNUP_PASSWORD_HINT : 'Não foi possível cadastrar o usuário. Tente novamente.' }
   }
 
   revalidatePath('/', 'layout')
-  return redirect('/login?message=Verifique seu email para continuar o processo de cadastro.')
+  return { success: true as const }
 }
 
 export async function recoverPassword(formData: FormData) {

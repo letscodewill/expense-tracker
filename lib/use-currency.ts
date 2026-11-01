@@ -2,9 +2,9 @@
 
 import { useSyncExternalStore } from 'react'
 import { getCurrencySnapshot, subscribeCurrency } from '@/lib/currency'
-
-const serverSnapshot = () => 'BRL' as const
+import { useRegionalDefaults } from '@/components/language-provider'
 
 export function useCurrency() {
-  return useSyncExternalStore(subscribeCurrency, getCurrencySnapshot, serverSnapshot)
+  const {initialCurrency}=useRegionalDefaults()
+  return useSyncExternalStore(subscribeCurrency, getCurrencySnapshot, ()=>initialCurrency)
 }

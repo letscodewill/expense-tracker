@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     const categories = ['Sem categoria', ...categoryResult.data.map(row => row.name)]
     const reservation = await supabase.rpc('reserve_invoice_ai')
     if (reservation.error || !reservation.data) return Response.json({ error: 'Não foi possível verificar seu limite mensal. Tente novamente.' }, { status: 503, headers })
-    if (!reservation.data.allowed) return Response.json({ error: reservation.data.reason === 'rate' ? 'Muitas tentativas. Aguarde antes de analisar outra fatura.' : reservation.data.lifetime ? 'Você já utilizou as 2 análises de demonstração. Conheça o Pro para analisar mais arquivos com IA.' : 'Seu limite é de 4 análises com IA por mês, compartilhadas entre PDFs e imagens. Aguarde o próximo mês ou utilize a leitura padrão ou uma planilha.' }, { status: 429, headers })
+    if (!reservation.data.allowed) return Response.json({ error: reservation.data.reason === 'rate' ? 'Muitas tentativas. Aguarde antes de analisar outra fatura.' : reservation.data.limit === 1 ? 'Você já utilizou a análise de IA deste mês no plano Free. O limite renova no próximo mês. Conheça o Pro para ter 4 análises mensais.' : 'Seu limite é de 4 análises com IA por mês, compartilhadas entre PDFs e imagens. Aguarde o próximo mês ou utilize a leitura padrão ou uma planilha.' }, { status: 429, headers })
     if (typeof reservation.data.token !== 'string') throw new Error('Reserva inválida.')
     reservationToken = reservation.data.token
     const response = await fetch('https://api.openai.com/v1/responses', {

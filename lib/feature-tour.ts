@@ -1,10 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 // Change deliberately when publishing a new presentation, not on every deploy.
-export const FEATURE_TOUR_VERSION = '2026-10-introduction'
+export const FEATURE_TOUR_VERSION = '2026-11-plans-and-savings'
 export const FEATURE_TOUR_METADATA_KEY = 'nocontrole_dismissed_tour'
 export const FEATURE_TOUR_OPEN_EVENT = 'nocontrole:open-feature-tour'
-export const FEATURE_TOUR_STEPS = ['expense', 'import', 'planning', 'search', 'appearance'] as const
+export const FEATURE_TOUR_STEPS = ['expense', 'import', 'planning', 'search', 'savings', 'reports', 'plans', 'appearance'] as const
 export type FeatureTourStep = typeof FEATURE_TOUR_STEPS[number]
 
 export function tourVisitKey(userId: string, signedInAt: string) {

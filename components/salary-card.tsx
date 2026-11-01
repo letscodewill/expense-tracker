@@ -135,7 +135,7 @@ export function SalaryCard({ selected, totalExpenses }: SalaryCardProps) {
             </div>
             <div className="rounded-xl border border-border/70 bg-card p-4 text-card-foreground">
               <p className="text-xs text-muted-foreground">{t("Total de despesas")}</p>
-              <p className="mt-3 text-xl font-medium tabular-nums sm:text-2xl"><MaskedValue value={totalExpenses} /></p>
+              <p className="mt-3 text-xl font-medium tabular-nums sm:text-2xl"><MaskedValue value={totalExpenses} mask /></p>
             </div>
             <div className="col-span-2 rounded-xl bg-secondary p-4 text-secondary-foreground lg:col-span-1">
               <p className="text-xs font-medium">{t("Vai sobrar")}</p>

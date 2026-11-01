@@ -68,7 +68,7 @@ export function BoardDialog({
     setLoading(false)
 
     if (insertError) {
-      setError(insertError.message === 'O plano Free permite até 2 quadros por mês. Conheça o Pro.' ? insertError.message : 'Não foi possível criar o quadro. Tente novamente.')
+      setError(insertError.message === 'O plano Free permite 1 quadro secundário por mês. Conheça o Pro.' ? insertError.message : 'Não foi possível criar o quadro. Tente novamente.')
       return
     }
 

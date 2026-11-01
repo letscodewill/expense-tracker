@@ -34,14 +34,16 @@ export async function generateMetadata(): Promise<Metadata> {
 export const viewport: Viewport = { width: 'device-width', initialScale: 1, themeColor: '#6750a4' };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
-  const { language } = await getServerTranslation()
+  const { language, currency, country } = await getServerTranslation()
   return (
     <html
       lang={language}
+      data-currency={currency}
+      data-country={country ?? ''}
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col font-sans"><Script id="dashboard-theme" strategy="beforeInteractive">{THEME_INIT_SCRIPT}</Script><LanguageProvider initialLanguage={language}><PwaSupport /><ActivityTracker /><PageLanguageBar /><VisibilityProvider>{children}</VisibilityProvider></LanguageProvider><WebAnalytics /></body>
+      <body className="min-h-full flex flex-col font-sans"><Script id="dashboard-theme" strategy="beforeInteractive">{THEME_INIT_SCRIPT}</Script><LanguageProvider initialLanguage={language} initialCurrency={currency} country={country}><PwaSupport /><ActivityTracker /><PageLanguageBar /><VisibilityProvider>{children}</VisibilityProvider></LanguageProvider><WebAnalytics /></body>
     </html>
   );
 }

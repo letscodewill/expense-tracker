@@ -1,6 +1,6 @@
 'use client'
 
-import { CalendarDays, Check, FileSpreadsheet, FileText, Moon, Palette, Plus, Search, Sun, WalletCards } from 'lucide-react'
+import { CalendarDays, Camera, Check, FileSpreadsheet, FileText, Moon, Palette, PiggyBank, Plus, Search, ShieldCheck, Sun, Trophy, WalletCards } from 'lucide-react'
 import { useCurrency } from '@/lib/use-currency'
 import { useLanguage } from '@/components/language-provider'
 import type { FeatureTourStep } from '@/lib/feature-tour'
@@ -17,7 +17,7 @@ export function FeatureTourArtwork({ step, label }: { step: FeatureTourStep; lab
         <div className="relative space-y-3 rounded-2xl border bg-card p-4 shadow-sm"><div className="flex items-center gap-2 text-sm font-medium"><WalletCards className="size-4 text-primary" />{t('Cartão de crédito')}</div>{row('Mercado', 80)}{row('Internet', 99)}<div className="flex items-center justify-between gap-2 text-xs"><span>{t('Restante a pagar')}</span><strong>{money(179)}</strong></div><span className="absolute -bottom-3 -right-1 flex size-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg"><Plus className="size-6" /></span></div>
       </>}
       {step === 'import' && <>
-        <div className="flex justify-center gap-3"><span className="flex items-center gap-2 rounded-xl bg-card px-4 py-2 text-sm"><FileText className="size-5 text-primary" />PDF</span><span className="flex items-center gap-2 rounded-xl bg-card px-4 py-2 text-sm"><FileSpreadsheet className="size-5 text-primary" />Excel / CSV</span></div>
+        <div className="flex flex-wrap justify-center gap-3"><span className="flex items-center gap-2 rounded-xl bg-card px-4 py-2 text-sm"><FileText className="size-5 text-primary" />PDF</span><span className="flex items-center gap-2 rounded-xl bg-card px-4 py-2 text-sm"><FileSpreadsheet className="size-5 text-primary" />Excel / CSV</span><span className="flex items-center gap-2 rounded-xl bg-card px-4 py-2 text-sm"><Camera className="size-5 text-primary" />{t('Foto')}</span></div>
         <div className="space-y-2 rounded-2xl border bg-card p-4 shadow-sm"><p className="mb-3 text-sm font-medium">{t('Conferir despesas')}</p>{row('Mercado', 80)}{row('Internet', 99)}<p className="flex items-center gap-2 pt-2 text-xs text-primary"><Check className="size-4 shrink-0" />{t('Revise antes de salvar')}</p></div>
       </>}
       {step === 'planning' && <>
@@ -28,6 +28,21 @@ export function FeatureTourArtwork({ step, label }: { step: FeatureTourStep; lab
         <div className="flex items-center gap-3 rounded-xl border border-primary/40 bg-card px-4 py-3 text-sm shadow-sm"><Search className="size-5 text-primary" />{t('Mercado')}<span className="ml-auto text-xs text-muted-foreground">{money(80)}</span></div>
         <div className="space-y-3 rounded-2xl border bg-card p-4 shadow-sm">{row('Mercado', 80)}<div className="flex flex-wrap gap-2 text-xs"><span className="rounded-full bg-secondary px-3 py-1">{t('Cartão de crédito')}</span><span className="rounded-full bg-muted px-3 py-1">{t('Novembro')} 2026</span></div><p className="text-xs font-medium text-primary">{t('Ver mês no painel')} →</p></div>
       </>}
+      {step === 'savings' && <div className="space-y-4 rounded-2xl border bg-card p-5 shadow-sm">
+        <div className="flex items-center justify-between gap-3"><span className="flex items-center gap-2 text-sm font-medium"><PiggyBank className="size-5 text-primary" />{t('Cofrinho')}</span><Trophy className="size-6 text-primary" /></div>
+        <p className="text-2xl font-semibold tabular-nums">{money(1200)} <span className="text-sm font-normal text-muted-foreground">/ {money(3000)}</span></p>
+        <div className="h-3 rounded-full bg-muted"><div className="h-full w-2/5 rounded-full bg-primary" /></div>
+        <div className="flex flex-wrap gap-2 text-xs"><span className="rounded-full bg-secondary px-3 py-2">+ {t('Adicionar valor')}</span><span className="rounded-full bg-muted px-3 py-2">{t('Retirar valor')}</span></div>
+      </div>}
+      {step === 'reports' && <div className="space-y-4 rounded-2xl border bg-card p-5 shadow-sm">
+        <p className="flex items-center gap-2 text-sm font-medium"><FileSpreadsheet className="size-5 text-primary" />{t('Relatório de Despesas')}</p>
+        {row('Mercado',80)}{row('Internet',99)}
+        <div className="flex flex-wrap justify-center gap-2">{['CSV','PDF','TXT','Excel'].map(format=><span key={format} className="rounded-xl border bg-secondary/50 px-3 py-2 text-xs font-medium">{format}</span>)}</div>
+      </div>}
+      {step === 'plans' && <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-3 rounded-2xl border bg-card p-4"><p className="text-lg font-semibold">Free</p><p className="text-xs text-muted-foreground">{t('Começar grátis')}</p><Check className="size-5 text-primary" /></div>
+        <div className="space-y-3 rounded-2xl border-2 border-primary bg-card p-4 shadow-sm"><p className="flex items-center justify-between text-lg font-semibold">Pro<ShieldCheck className="size-5 text-primary" /></p><p className="text-xs text-muted-foreground">{t('Mensal')} / {t('Anual')}</p><p className="text-xs font-medium text-primary">{t('Minha assinatura')}</p></div>
+      </div>}
       {step === 'appearance' && <>
         <div className="flex items-center gap-3 rounded-2xl border bg-card p-4 shadow-sm"><span className="flex size-11 items-center justify-center rounded-full bg-primary/15 text-sm font-semibold text-primary">NC</span><div><p className="text-sm font-medium">NoControle</p><p className="text-xs text-muted-foreground">{t('Seu painel, do seu jeito')}</p></div><Palette className="ml-auto size-6 text-primary" /></div>
         <div className="grid grid-cols-2 gap-3"><div className="flex items-center justify-center gap-2 rounded-xl bg-card p-3 text-xs"><Sun className="size-4 text-primary" />{t('Claro')}<Moon className="ml-1 size-4 text-primary" />{t('Escuro')}</div><div className="flex items-center justify-center gap-2 rounded-xl bg-card p-3 text-xs"><span>Português</span><span className="text-muted-foreground">/</span><span>English</span></div></div>

@@ -49,6 +49,8 @@ do $$ declare c record; r jsonb; begin
 end $$;
 reset role;
 update app_private.billing_subscriptions set status='past_due' where id='sub_BillingTest';
+insert into app_private.invoice_ai_reservations(user_id,period,state)
+select account,(date_trunc('month',now() at time zone 'America/Sao_Paulo')-interval '1 month')::date,'succeeded' from billing_test_context;
 set local role authenticated;
 do $$ declare c record; r jsonb; begin
   select * into c from billing_test_context;
@@ -60,23 +62,34 @@ do $$ declare c record; r jsonb; begin
   -- Downgrading preserves existing goals and balances.
   r:=public.savings_extra_action('read',c.goal);
   if (r->>'balance_cents')::integer<>486 then raise exception 'FAIL: downgrade lost savings'; end if;
-  insert into public.boards(user_id,name,month,year) values(c.account,'Synthetic one',0,2199),(c.account,'Synthetic two',0,2199);
+  insert into public.boards(user_id,name,month,year) values(c.account,'Synthetic one',0,2199);
   begin
-    insert into public.boards(user_id,name,month,year) values(c.account,'Blocked third',0,2199);
-    raise exception 'FAIL: free created third board' using errcode='XX000';
+    insert into public.boards(user_id,name,month,year) values(c.account,'Blocked second',0,2199);
+    raise exception 'FAIL: free created second board' using errcode='XX000';
   exception when check_violation then null; end;
   insert into public.boards(user_id,name,month,year) values(c.account,'Next month',1,2199);
-  r:=public.reserve_invoice_ai();perform public.finish_invoice_ai((r->>'token')::uuid,true);
-  r:=public.reserve_invoice_ai();perform public.finish_invoice_ai((r->>'token')::uuid,true);
   r:=public.reserve_invoice_ai();
-  if (r->>'allowed')::boolean or (r->>'limit')::integer<>2 or (r->>'lifetime')::boolean is not true then raise exception 'FAIL: free lifetime AI quota'; end if;
+  if (r->>'allowed')::boolean is not true then raise exception 'FAIL: previous month consumed current quota'; end if;
+  perform public.finish_invoice_ai((r->>'token')::uuid,false);
+  r:=public.reserve_invoice_ai();
+  if (r->>'allowed')::boolean is not true then raise exception 'FAIL: failed analysis consumed quota'; end if;
+  if (public.reserve_invoice_ai()->>'allowed')::boolean then raise exception 'FAIL: pending analysis did not reserve slot'; end if;
+  perform public.finish_invoice_ai((r->>'token')::uuid,true);
+  r:=public.reserve_invoice_ai();
+  if (r->>'allowed')::boolean or (r->>'limit')::integer<>1 or (r->>'lifetime')::boolean is not false then raise exception 'FAIL: free monthly AI quota'; end if;
 end $$;
 reset role;
 -- A valid courtesy remains Pro independently of subscription failures.
 insert into app_private.pro_courtesies(user_id,reason) select account,'Synthetic courtesy' from billing_test_context;
 set local role authenticated;
-do $$ begin
+do $$ declare r jsonb; begin
   if public.get_my_plan()->>'source'<>'courtesy' then raise exception 'FAIL: courtesy overwritten'; end if;
+  for i in 1..3 loop
+    r:=public.reserve_invoice_ai();
+    if (r->>'allowed')::boolean is not true or (r->>'limit')::integer<>4 then raise exception 'FAIL: Pro quota changed'; end if;
+    perform public.finish_invoice_ai((r->>'token')::uuid,true);
+  end loop;
+  if (public.reserve_invoice_ai()->>'allowed')::boolean then raise exception 'FAIL: Pro exceeded four analyses'; end if;
 end $$;
 reset role;
 select set_config('request.jwt.claim.sub',other::text,true) from billing_test_context;
@@ -95,4 +108,4 @@ do $$ begin
   if has_function_privilege('anon','public.get_my_billing()','execute') or has_function_privilege('authenticated','public.billing_commit(text,text,uuid,jsonb)','execute') then raise exception 'FAIL: billing grants'; end if;
 end $$;
 rollback;
-select 'PASS: subscription access, courtesy precedence, account isolation, duplicate and concurrent events, stale locks, free monthly boards, lifetime AI quota, multiple goals, duplicate deposits, overdraft and downgrade preservation' result;
+select 'PASS: subscription access, courtesy precedence, account isolation, duplicate and concurrent events, stale locks, free monthly board and AI limits, multiple goals, duplicate deposits, overdraft and downgrade preservation' result;

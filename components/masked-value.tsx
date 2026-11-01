@@ -17,7 +17,7 @@ export function MaskedValue({ value, className, mask = false }: MaskedValueProps
   const { hidden } = useValuesVisibility()
 
   if (mask && hidden) {
-    return <span className={className}>{currency === 'USD' ? 'US$ ••••' : 'R$ ••••'}</span>
+    return <span className={className}>{currency === 'EUR' ? '€ ••••' : currency === 'USD' ? 'US$ ••••' : 'R$ ••••'}</span>
   }
 
   return (

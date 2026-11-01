@@ -12,7 +12,7 @@ import { avatarPath, AVATAR_BUCKET, googlePhoto } from '@/lib/profile-photo'
 import { ProfilePhoto } from '@/components/profile-photo'
 import { ThemeSelector } from '@/components/theme-selector'
 import { AdminTicketNotifications } from '@/components/admin-ticket-notifications'
-import { LanguageSelector } from '@/components/language-selector'
+import { DisplaySettings } from '@/components/display-settings'
 import { FeatureTour, FeatureTourLauncher } from '@/components/feature-tour'
 import { FEATURE_TOUR_METADATA_KEY, FEATURE_TOUR_VERSION } from '@/lib/feature-tour'
 import { MONTH_START_KEY, monthPreference } from '@/lib/month-rollover'
@@ -71,7 +71,7 @@ export default async function HomePage() {
       <main>
         <FeatureTour key={`tour:${user.id}`} userId={user.id} signedInAt={user.last_sign_in_at ?? ''} dismissed={user.user_metadata?.[FEATURE_TOUR_METADATA_KEY] === FEATURE_TOUR_VERSION} />
         <ExpensesDashboard key={`dashboard:${user.id}`} homeMonth={monthPreference(user.user_metadata?.[MONTH_START_KEY]).home} notificationActions={ticketAdmin ? <AdminTicketNotifications /> : undefined} navigationActions={<>
-          <LanguageSelector />
+          <DisplaySettings />
           <ThemeSelector />
           <Link href="/plans" className="rounded-full border border-border px-4 py-2 text-sm font-medium text-primary hover:bg-accent">{t('Minha assinatura')}</Link>
           <FeatureTourLauncher />

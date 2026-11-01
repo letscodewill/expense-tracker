@@ -42,7 +42,7 @@ export function PlansPanel({ signedIn, plan, billing, ready, initialCurrency }: 
       {billing?.subscriptions?.some(s=>s.cancel_at_period_end) && <p className="text-sm">{t('Cancelamento agendado. Seu acesso continua até o fim do período pago.')}</p>}
       <p className="text-sm text-muted-foreground">{t('Já concluiu o pagamento? Atualize a situação para consultar a confirmação da Stripe.')}</p>
       <div className="flex flex-wrap gap-3">
-        {billing?.has_customer && <Button variant="outline" onClick={()=>act('portal')} disabled={busy||!ready}>{t('Gerenciar assinatura')}</Button>}
+        {billing?.has_customer && !pro && <Button variant="outline" onClick={()=>act('portal')} disabled={busy||!ready}>{t('Gerenciar assinatura')}</Button>}
         {billing?.has_customer && <Button variant="outline" onClick={()=>act('refresh')} disabled={busy||!ready}>{t('Atualizar situação')}</Button>}
       </div>
     </section>}
@@ -51,7 +51,7 @@ export function PlansPanel({ signedIn, plan, billing, ready, initialCurrency }: 
     <div className="grid gap-5 md:grid-cols-2">
       <section className="space-y-5 rounded-3xl border bg-card p-6 sm:p-8">
         <h2 className="text-xl font-semibold">Free</h2><p className="text-3xl font-semibold">{t('Grátis')}</p>
-        <ul className="space-y-3 text-sm"><li>{t('Lançamentos manuais ilimitados')}</li><li>{t('Até 2 quadros secundários por mês')}</li><li>{t('Categorias e orçamento')}</li><li>{t('2 análises com IA para experimentar, por conta')}</li><li>{t('Exportação básica dos seus dados')}</li><li>{t('1 meta no cofrinho')}</li></ul>
+        <ul className="space-y-3 text-sm"><li>{t('Lançamentos manuais ilimitados')}</li><li>{t('1 quadro secundário por mês, além do principal')}</li><li>{t('Categorias e orçamento')}</li><li>{t('1 análise com IA por mês, entre PDF e imagem')}</li><li>{t('Exportação básica dos seus dados')}</li><li>{t('1 meta no cofrinho')}</li></ul>
         <Link href={signedIn?'/':'/login'} className="inline-flex rounded-full border px-5 py-3 text-sm font-medium">{t(signedIn?'Voltar ao painel':'Começar grátis')}</Link>
       </section>
       <section className="space-y-5 rounded-3xl border-2 border-primary bg-card p-6 sm:p-8">
@@ -60,7 +60,11 @@ export function PlansPanel({ signedIn, plan, billing, ready, initialCurrency }: 
         {interval==='year' && <p className="text-sm text-muted-foreground">{t('Cobrado de uma vez por ano. Renovação automática anual.')}</p>}
         {interval==='month' && <p className="text-sm text-muted-foreground">{t('Renovação automática mensal.')}</p>}
         <ul className="space-y-3 text-sm"><li>{t('Tudo do Free')}</li><li>{t('Quadros secundários ilimitados')}</li><li>{t('4 análises com IA por mês, entre PDFs e imagens')}</li><li>{t('Relatórios completos e exportação PDF, TXT, CSV e Excel')}</li><li>{t('Várias metas no cofrinho')}</li></ul>
-        {signedIn ? <Button onClick={()=>act('checkout')} disabled={busy||!ready||pro} className="w-full">{t(busy?'Aguarde...':pro?'Pro ativo':'Assinar Pro')}</Button>
+        {signedIn && pro ? <div className="space-y-3">
+          <p className="text-sm font-medium text-primary">{t('Pro ativo')}</p>
+          <p className="text-sm text-muted-foreground">{t(plan?.source==='master' ? 'Seu acesso master já inclui todos os recursos Pro. Não é necessário contratar uma assinatura.' : plan?.source==='courtesy' ? 'Sua conta já tem Pro por cortesia. Não é necessário contratar uma assinatura enquanto o benefício estiver ativo.' : 'Sua assinatura Pro já está ativa. Você pode consultar os pagamentos e o cancelamento no portal.')}</p>
+          {billing?.has_customer ? <Button onClick={()=>act('portal')} disabled={busy||!ready} className="w-full">{t('Gerenciar assinatura')}</Button> : <Link href="/" className="inline-flex w-full items-center justify-center rounded-full bg-primary px-5 py-3 text-sm font-medium text-primary-foreground">{t('Voltar ao painel')}</Link>}
+        </div> : signedIn ? <Button onClick={()=>act('checkout')} disabled={busy||!ready} className="w-full">{t(busy?'Aguarde...':'Assinar Pro')}</Button>
           : <Link href="/login" className="inline-flex rounded-full bg-primary px-5 py-3 text-sm font-medium text-primary-foreground">{t('Entre ou crie sua conta para assinar')}</Link>}
         <p className="text-xs text-muted-foreground">{t('Cancele a renovação pelo portal da assinatura. Cancelar não apaga suas despesas. Reembolsos podem ser solicitados ao suporte, conforme os termos e a legislação aplicável.')}</p>
       </section>
