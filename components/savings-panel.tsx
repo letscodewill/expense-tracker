@@ -16,7 +16,7 @@ type Attempt = { action: Action; cents: number; id: string }
 const initialAccount: SavingsAccount = { balance_cents: 0, goal_cents: null }
 const safeErrors = new Set(['O valor da retirada é maior que o saldo do cofrinho.', 'O saldo ultrapassaria o limite permitido.'])
 
-export function SavingsPanel() {
+export function SavingsPanel({ goalId }: { goalId?: string } = {}) {
   const { t, locale } = useLanguage()
   const currency = useCurrency()
   const client = createClient()
@@ -38,14 +38,14 @@ export function SavingsPanel() {
 
   const load = useCallback(async () => {
     try {
-      const { data, error } = await client.rpc('savings_account_action', { action_input: 'read' })
+      const { data, error } = await client.rpc(goalId ? 'savings_extra_action' : 'savings_account_action', { action_input: 'read', ...(goalId ? { goal_input: goalId } : {}) })
       if (error || !data) throw new Error('load')
       setLoadFailed(false); setError('')
       setAccount(data)
       setGoal(data.goal_cents ? (data.goal_cents / 100).toFixed(2) : '')
     } catch { setLoadFailed(true); setError('Não foi possível carregar o cofrinho. Tente novamente.') }
     finally { setLoading(false) }
-  }, [client])
+  }, [client,goalId])
 
   useEffect(() => { startTransition(() => { void load() }) }, [load])
 
@@ -60,7 +60,8 @@ export function SavingsPanel() {
       // already committed it. All forms remain locked until the retry resolves.
       const current = attempt.current ?? { action, cents: cents!, id: crypto.randomUUID() }
       attempt.current = current
-      const { data, error } = await client.rpc('savings_account_action', {
+      const { data, error } = await client.rpc(goalId ? 'savings_extra_action' : 'savings_account_action', {
+        ...(goalId ? { goal_input: goalId } : {}),
         action_input: current.action, amount_input: current.cents, request_input: current.id,
       })
       if (error || !data) {

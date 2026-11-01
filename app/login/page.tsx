@@ -78,6 +78,7 @@ export default async function LoginPage({
             : <div className="mt-6 space-y-4">
               <p className="text-center text-sm text-muted-foreground">{t("Ainda não tem uma conta?")}</p>
               <div className="text-center"><SignupDialog /></div>
+              <div className="text-center"><Link href="/plans" className="text-sm font-medium text-primary hover:underline">{t('Conheça os planos Free e Pro')}</Link></div>
               <div className="flex justify-center"><PwaInstallButton /></div>
             </div>}
           {params?.message && <p role="alert" className="mt-5 rounded-2xl bg-destructive/10 p-3 text-center text-sm text-destructive">{t(params.message)}</p>}

@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { Download } from 'lucide-react'
+import Link from 'next/link'
 import { downloadReport, reportCsv, reportTxt, type ReportExport } from '@/lib/report-export'
 
 type CheckboxProps = {
@@ -65,7 +66,7 @@ function firstDayOfMonthISO(): string {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
 }
 
-export function ReportsView() {
+export function ReportsView({ advancedExports = true }: { advancedExports?: boolean } = {}) {
   const { t, locale } = useLanguage()
   const currency = useCurrency()
 
@@ -199,6 +200,7 @@ export function ReportsView() {
     }
 
     async function handleExportFile(format: 'txt' | 'csv' | 'xlsx') {
+        if (!advancedExports && format !== 'csv') return
         if (exportingRef.current || !hasSearched || loading) return
         exportingRef.current = true
         setExporting(true)
@@ -228,6 +230,7 @@ export function ReportsView() {
     }
 
     function handleExportPdf() {
+        if (!advancedExports) return
         const doc = new jsPDF({ orientation: 'landscape' })
         doc.setFontSize(16)
         doc.text(t("Relatório de Despesas"), 14, 18)
@@ -348,9 +351,10 @@ export function ReportsView() {
             {hasSearched && !loading && (
                 <div className="flex flex-wrap items-center justify-end gap-3">
                     <p className="mr-auto text-sm text-muted-foreground">{t("Período carregado: ")}{parseISODate(period.from).toLocaleDateString(locale, { timeZone: 'UTC' })}{t(" até ")}{parseISODate(period.to).toLocaleDateString(locale, { timeZone: 'UTC' })}</p>
-                    <Button variant="outline" size="sm" onClick={handleExportPdf}>
+                    {!advancedExports && <Link href="/plans" className="text-sm text-primary underline">{t('Conheça o Pro para exportar PDF, TXT e Excel.')}</Link>}
+                    <Button variant="outline" size="sm" disabled={!advancedExports} onClick={handleExportPdf}>
                         <Download className="h-4 w-4 mr-1" />{t("Exportar PDF ")}</Button>
-                    {(['txt', 'csv', 'xlsx'] as const).map(format => <Button key={format} variant="outline" size="sm" disabled={exporting} onClick={() => handleExportFile(format)}>
+                    {(['txt', 'csv', 'xlsx'] as const).map(format => <Button key={format} variant="outline" size="sm" disabled={exporting || (!advancedExports && format !== 'csv')} onClick={() => handleExportFile(format)}>
                         <Download className="h-4 w-4 mr-1" />{format === 'xlsx' ? t('Exportar Excel') : format === 'csv' ? t('Exportar CSV') : t('Exportar TXT')}
                     </Button>)}
                     <p className="w-full text-sm text-muted-foreground">{t('A lista exportada respeita os filtros. TXT e Excel incluem totais e orçamento; CSV contém os lançamentos. A moeda é apenas de exibição, sem conversão.')}</p>

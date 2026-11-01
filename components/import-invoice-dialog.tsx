@@ -355,7 +355,7 @@ export function ImportInvoiceDialog({
 
       if (boardError || !newBoard) {
         console.error('Erro ao criar quadro:', boardError)
-        setError("Não foi possível criar o novo quadro.")
+        setError(boardError?.message === 'O plano Free permite até 2 quadros por mês. Conheça o Pro.' ? boardError.message : 'Não foi possível criar o novo quadro.')
         setSaving(false)
         return
       }

@@ -1,5 +1,7 @@
 # Pro cortesia e acesso master
 
+**Atualização de 01/11/2026:** a integração Stripe foi implementada compondo master, cortesia e assinatura ativa, sem substituir benefícios. Consulte [STRIPE-CONFIGURACAO.md](STRIPE-CONFIGURACAO.md) para preços, limites, validação e estado de ativação. As referências abaixo à ausência de checkout descrevem a entrega original das cortesias.
+
 ## Onde acessar
 
 Depois de publicar a interface, abrir **Menu → Planos e benefícios** ou **Painel administrativo → Planos e benefícios** (`/admin/benefits`). A página e suas operações exigem a conta confirmada `williansantos38@gmail.com` e a propriedade registrada em `support_owner`.

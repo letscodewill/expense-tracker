@@ -35,6 +35,7 @@ function load(file, mocks = {}, globals = {}) {
     if (name === '@/lib/invoice-document') return load('lib/invoice-document.ts')
     if (name === '@/lib/receipt-photo') return load('lib/receipt-photo.ts')
     if (name === '@/lib/pro-benefits') return load('lib/pro-benefits.ts')
+    if (name === '@/lib/billing-offers') return load('lib/billing-offers.ts')
     if (name === '@/lib/use-currency') return { useCurrency: () => 'BRL' }
     if (name === '@/lib/currency') return load('lib/currency.ts')
     if (name === '@/lib/legal-content') return load('lib/legal-content.ts')
@@ -2777,10 +2778,10 @@ test('savings double clicks and uncertain retries reuse one operation ID', async
 test('savings page redirects anonymous users and renders for authenticated accounts', async () => {
   for (const signedIn of [true, false]) {
     const { default: Page } = load('app/savings/page.tsx', {
-      '@/lib/supabase/server': { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: signedIn ? { id: 'test-user' } : null } }) } }) },
+      '@/lib/supabase/server': { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: signedIn ? { id: 'test-user' } : null } }) }, rpc: async name => success(name === 'get_my_plan' ? {plan:'free'} : []) }) },
       'next/navigation': { redirect: url => { throw Object.assign(new Error('redirect'), { url }) } },
     })
-    if (signedIn) find(await Page(), n => n.type === 'SavingsPanel')
+    if (signedIn) find(await Page(), n => n.type === 'SavingsHub')
     else await assert.rejects(Page(), error => error.url === '/login')
   }
 })
@@ -3124,4 +3125,82 @@ test('home loads the tour preference from the verified account across devices', 
   assert.equal(presentation.key, 'tour:user-a')
   assert.equal(dashboard.key, 'dashboard:user-a')
   find(tree, node => node.type === 'FeatureTourLauncher')
+})
+
+
+test('billing offers reject arbitrary identifiers and subscription snapshots deny unexpected items', () => {
+  const { billingOffer, subscriptionSnapshot } = load('lib/billing-offers.ts')
+  for (const value of ['__proto__', 'price_arbitrary', null, {}, 'constructor']) assert.equal(billingOffer(value), null)
+  assert.equal(billingOffer('brl_year'), 'brl_year')
+  const item = { quantity: 1, current_period_end: 2000000000, price: { id: 'price_allowed' } }
+  const sub = { id: 'sub_test', status: 'active', cancel_at_period_end: true, items: { has_more: false, data: [item] } }
+  assert.equal(subscriptionSnapshot(sub, ['price_allowed']).status, 'active')
+  for (const items of [{has_more:true,data:[item]},{has_more:false,data:[]},{has_more:false,data:[item,item]},{has_more:false,data:[{...item,quantity:2}]}]) assert.equal(subscriptionSnapshot({...sub,items}, ['price_allowed']).status,'unsupported')
+  assert.equal(subscriptionSnapshot(sub, ['price_other']).status,'unsupported')
+})
+
+test('Stripe webhook requires the original body, valid recent signature and matching mode, and retries failed synchronization', async () => {
+  const Stripe = nodeRequire('stripe')
+  const stripe = new Stripe('sk_test_synthetic'), secret='whsec_synthetic_test_only'
+  let synchronized=0, broken=false
+  const { POST }=load('app/api/stripe/webhook/route.ts', {
+    '@/lib/stripe':{stripeClient:()=>stripe,billingHeaders:{}},
+    '@/lib/billing-sync':{syncCustomer:async()=>{synchronized++;if(broken)throw Error('retry')}},
+  },{Response,Buffer,process:{env:{STRIPE_WEBHOOK_SECRET:secret,STRIPE_SECRET_KEY:'sk_test_synthetic'}}})
+  const event={id:'evt_synthetic',type:'customer.subscription.updated',livemode:false,data:{object:{customer:'cus_synthetic'}}}
+  const payload=JSON.stringify(event), signature=stripe.webhooks.generateTestHeaderString({payload,secret})
+  const request=(body,signature)=>new Request('https://app.test/api/stripe/webhook',{method:'POST',headers:{'stripe-signature':signature},body})
+  assert.equal((await POST(request(payload,'invalid'))).status,400)
+  assert.equal((await POST(request(payload+' ',signature))).status,400)
+  assert.equal((await POST(request(payload,stripe.webhooks.generateTestHeaderString({payload,secret,timestamp:1})))).status,400)
+  assert.equal(synchronized,0)
+  assert.equal((await POST(request(payload,signature))).status,200);assert.equal(synchronized,1)
+  broken=true;assert.equal((await POST(request(payload,signature))).status,503)
+  const live=JSON.stringify({...event,livemode:true})
+  assert.equal((await POST(request(live,stripe.webhooks.generateTestHeaderString({payload:live,secret})))).status,400)
+})
+
+test('billing checkout binds the verified user, rejects unapproved prices and reuses pending sessions', async () => {
+  for(const mode of ['new','reuse','subscribed','invalid','anonymous','origin']) {
+    let created=0, released=0, saved=0, payload
+    const customer='cus_bound', knownUser={id:'verified-user',email:'synthetic@example.invalid',email_confirmed_at:'2026-01-01'}
+    const db={auth:{getUser:async()=>({data:{user:mode==='anonymous'?null:knownUser}})},rpc:async()=>success({plan:'free'})}
+    const admin={rpc:async(name,args)=>{
+      if(name==='billing_customer'){assert.equal(args.user_input,knownUser.id);return success({customer})}
+      if(name==='billing_claim')return success({token:'lease',session:mode==='reuse'?'cs_previous':null})
+      if(name==='billing_save_session'){saved++;return success(true)}
+      if(name==='billing_release'){released++;return success(true)}
+      throw Error('Unexpected billing write')
+    }}
+    const stripe={subscriptions:{list:async function*(){if(mode==='subscribed')yield{status:'active'}}},checkout:{sessions:{
+      retrieve:async()=>({status:'open',line_items:{data:[{price:{id:'price_approved'}}]},url:'https://checkout.stripe.com/previous'}),
+      create:async value=>{created++;payload=value;return{id:'cs_new',url:'https://checkout.stripe.com/new'}},
+    }}}
+    const {POST}=load('app/api/billing/route.ts',{
+      '@/lib/supabase/server':{createClient:async()=>db},
+      '@/lib/stripe':{billingReady:()=>true,billingAdmin:()=>admin,stripeClient:()=>stripe,billingOrigin:()=> 'https://app.test',verifiedPrice:async()=> 'price_approved',billingHeaders:{}},
+      '@/lib/billing-sync':{syncCustomer:async()=>{}},
+    },{Response,process:{env:{}},Date})
+    const response=await POST(new Request('https://app.test/api/billing',{method:'POST',headers:{origin:mode==='origin'?'https://evil.test':'https://app.test','content-type':'application/json'},body:JSON.stringify({action:'checkout',offer:mode==='invalid'?'price_arbitrary':'brl_month',user_id:'forged',price:'price_forged'})}))
+    if(mode==='new'){assert.equal(response.status,200);assert.equal(created,1);assert.equal(saved,1);assert.equal(payload.customer,customer);assert.equal(payload.client_reference_id,knownUser.id);assert.equal(payload.line_items[0].price,'price_approved');assert.equal(released,1)}
+    else {assert.equal(created,0);assert.equal(response.status,mode==='reuse'?200:mode==='subscribed'?409:mode==='anonymous'?401:mode==='origin'?403:400)}
+  }
+})
+
+
+test('plans page presents actual billing currency independently and prevents existing Pro from buying again', async () => {
+  for(const source of ['default','courtesy','master','subscription']) {
+    const runtime=hooks()
+    const {PlansPanel}=load('components/plans-panel.tsx',{react:runtime.react,'next/navigation':{useRouter:()=>({refresh(){}})}})
+    let tree=runtime.render(PlansPanel,{signedIn:true,plan:{plan:source==='default'?'free':'pro',source},billing:{has_customer:false},ready:true,initialCurrency:'brl'})
+    let button=find(tree,n=>n.type==='Button'&&['Assinar Pro','Pro ativo'].includes(n.props.children))
+    assert.equal(button.props.disabled,source!=='default')
+    const selects=elements(tree,n=>n.type==='select')
+    selects[0].props.onChange({target:{value:'usd'}})
+    tree=await runtime.flush()
+    assert.equal(elements(tree,n=>n.type==='select')[0].props.value,'usd')
+    assert.ok(elements(tree,n=>n.type==='p'&&Array.isArray(n.props.children)&&String(n.props.children[0]).includes('39,90')).length)
+    button=find(tree,n=>n.type==='Button'&&['Assinar Pro','Pro ativo'].includes(n.props.children))
+    assert.equal(button.props.disabled,source!=='default')
+  }
 })

@@ -180,6 +180,7 @@ async function getOrCreateBoardForMonth(
     .single()
 
   if (createError || !created) {
+    if (createError?.message === 'O plano Free permite até 2 quadros por mês. Conheça o Pro.') throw new Error(createError.message)
     throw createError ?? new Error("Falha ao criar quadro para o mês.")
   }
 
@@ -405,7 +406,7 @@ export function AddExpenseDialog({
         status_input: status, comment_input: comentario.trim() || null, category_input: category,
       })
       if (error || data?.expense_id !== expenseToEdit.id || !Number.isInteger(data?.updated) || data.updated < 1) {
-        dispatch({ type: 'SET_ERROR', error: 'Não foi possível confirmar a movimentação das parcelas. Atualize a página para verificar antes de tentar novamente.' })
+        dispatch({ type: 'SET_ERROR', error: error?.message === 'O plano Free permite até 2 quadros por mês. Conheça o Pro.' ? error.message : 'Não foi possível confirmar a movimentação das parcelas. Atualize a página para verificar antes de tentar novamente.' })
         return
       }
     } else if (expenseToEdit) {
@@ -482,7 +483,7 @@ export function AddExpenseDialog({
       } catch (err) {
         setLoading(false)
         console.error('Erro ao processar parcelas:', err)
-        dispatch({ type: 'SET_ERROR', error: 'Não foi possível criar os quadros para as parcelas futuras.' })
+        dispatch({ type: 'SET_ERROR', error: err instanceof Error && err.message === 'O plano Free permite até 2 quadros por mês. Conheça o Pro.' ? err.message : 'Não foi possível criar os quadros para as parcelas futuras.' })
         return
       }
     } else if (isRecurring) {
@@ -532,7 +533,7 @@ export function AddExpenseDialog({
       } catch (err) {
         setLoading(false)
         console.error('Erro ao processar recorrência:', err)
-        dispatch({ type: 'SET_ERROR', error: 'Não foi possível criar os quadros para os meses seguintes.' })
+        dispatch({ type: 'SET_ERROR', error: err instanceof Error && err.message === 'O plano Free permite até 2 quadros por mês. Conheça o Pro.' ? err.message : 'Não foi possível criar os quadros para os meses seguintes.' })
         return
       }
     } else {

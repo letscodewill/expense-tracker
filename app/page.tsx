@@ -61,6 +61,7 @@ export default async function HomePage() {
           <h1 className="mt-1 text-xl font-medium tracking-tight sm:text-2xl">{t("Despesas")}</h1>
           {plan?.source === 'master' && <p className="mt-1 text-xs font-medium text-primary">{t('Master · Pro permanente')}</p>}
           {plan?.source === 'courtesy' && <p className="mt-1 text-xs font-medium text-primary">{t('Pro cortesia')}</p>}
+          {plan?.source === 'subscription' && <p className="mt-1 text-xs font-medium text-primary">{t('Pro ativo')}</p>}
         </div>
         <div className="ml-auto flex min-w-0 items-center gap-3">
           <ProfilePhoto name={displayName} photo={profilePhoto} custom={!!customPhoto} hasGooglePhoto={!!providerPhoto} />
@@ -72,6 +73,7 @@ export default async function HomePage() {
         <ExpensesDashboard key={`dashboard:${user.id}`} homeMonth={monthPreference(user.user_metadata?.[MONTH_START_KEY]).home} notificationActions={ticketAdmin ? <AdminTicketNotifications /> : undefined} navigationActions={<>
           <LanguageSelector />
           <ThemeSelector />
+          <Link href="/plans" className="rounded-full border border-border px-4 py-2 text-sm font-medium text-primary hover:bg-accent">{t('Minha assinatura')}</Link>
           <FeatureTourLauncher />
           <ChangePasswordButton />
           <ReportDialog />

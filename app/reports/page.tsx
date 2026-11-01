@@ -24,6 +24,8 @@ export default async function ReportsPage() {
     redirect('/login')
   }
 
+  const [plan,billing] = await Promise.all([supabase.rpc('get_my_plan'),supabase.rpc('get_my_billing')])
+  const advancedExports = !plan.error && plan.data?.plan === 'pro' || !billing.error && billing.data?.limits_enabled === false
   return (
     <div className="container mx-auto p-4 md:p-8">
       <header className="flex items-center gap-4 mb-8">
@@ -34,7 +36,7 @@ export default async function ReportsPage() {
         <h1 className="text-2xl sm:text-3xl font-bold">{t("Relatórios")}</h1>
       </header>
       <main>
-        <ReportsView />
+        <ReportsView advancedExports={advancedExports} />
       </main>
     </div>
   )

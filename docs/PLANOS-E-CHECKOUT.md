@@ -1,5 +1,7 @@
 # Planos e checkout — decisões e implementação seguinte
 
+**Atualização de 01/11/2026:** produto, preços, portal, checkout, confirmação de assinaturas e permissões Free/Pro implementados. A ativação comercial depende da validação no sandbox e da publicação/configuração na Vercel. Estado e instruções atuais em [STRIPE-CONFIGURACAO.md](STRIPE-CONFIGURACAO.md). As notas abaixo registram o planejamento anterior.
+
 **Base implementada:** gestão de [Pro cortesia](PRO-CORTESIA.md) e identificação de master permanente. O checkout deve utilizar essa fonte de permissões e compor a assinatura paga sem substituir ou cancelar benefícios ativos. Nenhum checkout ou cobrança foi ativado.
 
 ## Decisões de 19/10/2026
