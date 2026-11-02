@@ -74,7 +74,7 @@ export async function POST(request: Request) {
       mode: 'subscription', customer, client_reference_id: user.id,
       line_items: [{ price, quantity: 1 }], allowed_payment_method_types: ['card'],
       subscription_data: { metadata: { nocontrole_user_id: user.id, app: 'nocontrole' } },
-      success_url: `${billingOrigin()}/plans?checkout=success`, cancel_url: `${billingOrigin()}/plans?checkout=cancelled`,
+      success_url: `${billingOrigin()}/plans?checkout=success&session_id={CHECKOUT_SESSION_ID}`, cancel_url: `${billingOrigin()}/plans?checkout=cancelled`,
       expires_at: Math.floor(Date.now()/1000) + 1800,
     }, { idempotencyKey: `nocontrole-checkout-${token}` })
     const saved = await admin.rpc('billing_save_session', { token_input: token, session_input: session.id })

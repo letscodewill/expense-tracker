@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useLanguage } from '@/components/language-provider'
 import { BILLING_OFFERS, type BillingOffer } from '@/lib/billing-offers'
 import { Button } from '@/components/ui/button'
+import { trackMarketingEvent } from '@/lib/meta-marketing'
 
 type Plan = { plan?: string; source?: string; expires_at?: string | null } | null
 type Billing = { has_customer?: boolean; subscriptions?: { status: string; period_end: string | null; cancel_at_period_end: boolean }[]; limits_enabled?: boolean } | null
@@ -25,6 +26,7 @@ export function PlansPanel({ signedIn, plan, billing, ready, initialCurrency }: 
       if(action==='refresh') {router.refresh();return}
       const url = new URL(data.url)
       if(url.protocol!=='https:' || !['checkout.stripe.com','billing.stripe.com'].includes(url.hostname)) throw new Error('Invalid checkout')
+      if(action==='checkout') trackMarketingEvent('InitiateCheckout',{value:offer.amount/100,currency:offer.currency.toUpperCase()})
       window.location.assign(url.href)
     }catch{setError('Não foi possível concluir a operação. Tente novamente.')}
     finally{inFlight.current=false;setBusy(false)}

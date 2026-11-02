@@ -10,6 +10,7 @@ import { LanguageProvider } from '@/components/language-provider'
 import { PageLanguageBar } from '@/components/page-language-bar'
 import { getServerTranslation } from '@/lib/i18n/server'
 import { WebAnalytics } from '@/components/web-analytics'
+import { MetaMarketing } from '@/components/meta-marketing'
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -43,7 +44,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col font-sans"><Script id="dashboard-theme" strategy="beforeInteractive">{THEME_INIT_SCRIPT}</Script><LanguageProvider initialLanguage={language} initialCurrency={currency} country={country}><PwaSupport /><ActivityTracker /><PageLanguageBar /><VisibilityProvider>{children}</VisibilityProvider></LanguageProvider><WebAnalytics /></body>
+      <body className="min-h-full flex flex-col font-sans"><Script id="dashboard-theme" strategy="beforeInteractive">{THEME_INIT_SCRIPT}</Script><LanguageProvider initialLanguage={language} initialCurrency={currency} country={country}><PwaSupport /><MetaMarketing /><ActivityTracker /><PageLanguageBar /><VisibilityProvider>{children}</VisibilityProvider></LanguageProvider><WebAnalytics /></body>
     </html>
   );
 }

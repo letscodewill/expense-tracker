@@ -1,7 +1,7 @@
 import type { BeforeSendEvent } from '@vercel/analytics/next'
 
 const pages = new Set([
-  '/', '/login', '/planning', '/reports', '/tickets', '/savings', '/plans',
+  '/', '/welcome', '/login', '/planning', '/reports', '/tickets', '/savings', '/plans',
   '/admin', '/admin/administrators', '/admin/tickets', '/admin/benefits', '/auth/update-password',
   '/privacypolicy', '/termsofservice', '/privacy', '/terms',
 ])

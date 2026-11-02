@@ -28,6 +28,7 @@ function load(file, mocks = {}, globals = {}) {
   const loadedModule = { exports: {} }
   const localRequire = (name) => {
     if (Object.hasOwn(mocks, name)) return mocks[name]
+    if (name === '@/lib/meta-marketing') return load('lib/meta-marketing.ts')
     if (name === '@/lib/feature-tour') return load('lib/feature-tour.ts')
     if (name === '@/lib/month-rollover') return load('lib/month-rollover.ts')
     if (name === '@/lib/savings') return load('lib/savings.ts')
