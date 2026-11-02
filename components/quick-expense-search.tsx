@@ -81,7 +81,7 @@ export function QuickExpenseSearch({ onNavigate }: { onNavigate: (period: MonthY
             const period = { year, month: month - 1 }
             const mismatched = row.board_month !== null && (row.board_month !== period.month || row.board_year !== period.year)
             return <li key={row.id} className="rounded-2xl border bg-card p-4">
-              <div className="flex flex-wrap items-start justify-between gap-2"><p className="min-w-0 break-words font-medium">{row.nome}</p><p className="font-medium text-primary">{Number(row.valor).toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })}</p></div>
+              <div className="flex flex-wrap items-start justify-between gap-2"><p className="min-w-0 break-words font-medium">{row.nome}</p><p className="font-medium text-primary">{Number(row.valor).toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol', minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p></div>
               <p className="mt-2 break-words text-sm">{row.board_id === null ? t(row.board_name) : row.board_name} · {monthLabel(period.month, period.year)}</p>
               <p className="mt-1 text-xs text-muted-foreground">{t("Pagamento: ")}{dateLabel(row.data_pagamento)} · {t(row.status)}</p>
               {row.category && <p className="mt-1 break-words text-xs text-muted-foreground">{t("Categoria")}: {row.category === 'Sem categoria' ? t(row.category) : row.category}</p>}

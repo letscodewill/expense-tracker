@@ -1,5 +1,6 @@
 'use client'
 
+import { currencySymbol } from '@/lib/currency'
 import { useCurrency } from '@/lib/use-currency'
 import { useLanguage } from '@/components/language-provider'
 
@@ -17,12 +18,12 @@ export function MaskedValue({ value, className, mask = false }: MaskedValueProps
   const { hidden } = useValuesVisibility()
 
   if (mask && hidden) {
-    return <span className={className}>{currency === 'EUR' ? '€ ••••' : currency === 'USD' ? 'US$ ••••' : 'R$ ••••'}</span>
+    return <span className={className}>{currencySymbol(currency, locale) + ' ••••'}</span>
   }
 
   return (
     <span className={className}>
-      {value.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })}
+      {value.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
     </span>
   )
 }

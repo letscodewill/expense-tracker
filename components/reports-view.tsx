@@ -173,7 +173,8 @@ export function ReportsView({ advancedExports = true }: { advancedExports?: bool
     const totalPago = sumFiltered('Pago')
     const totalPendente = sumFiltered('Pendente')
     const totalBenefits = sumFiltered('VR/VA')
-    const money = (value: number) => value.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })
+    // PDF base fonts cannot render every currency glyph; ISO codes keep exports legible.
+    const money = (value: number) => value.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: ['BRL','USD','EUR'].includes(currency) ? 'narrowSymbol' : 'code', minimumFractionDigits: 2, maximumFractionDigits: 2 })
     const summary: string[][] = []
     if (period.from) {
         const cursor = parseISODate(`${period.from.slice(0, 7)}-01`)
@@ -351,7 +352,7 @@ export function ReportsView({ advancedExports = true }: { advancedExports?: bool
             {hasSearched && !loading && (
                 <div className="flex flex-wrap items-center justify-end gap-3">
                     <p className="mr-auto text-sm text-muted-foreground">{t("Período carregado: ")}{parseISODate(period.from).toLocaleDateString(locale, { timeZone: 'UTC' })}{t(" até ")}{parseISODate(period.to).toLocaleDateString(locale, { timeZone: 'UTC' })}</p>
-                    {!advancedExports && <Link href="/plans" className="text-sm text-primary underline">{t('Conheça o Pro para exportar PDF, TXT e Excel.')}</Link>}
+                    {!advancedExports && <Link href="/plans" className="text-sm text-primary underline">{t('Conheça o Total para exportar PDF, TXT e Excel.')}</Link>}
                     <Button variant="outline" size="sm" disabled={!advancedExports} onClick={handleExportPdf}>
                         <Download className="h-4 w-4 mr-1" />{t("Exportar PDF ")}</Button>
                     {(['txt', 'csv', 'xlsx'] as const).map(format => <Button key={format} variant="outline" size="sm" disabled={exporting || (!advancedExports && format !== 'csv')} onClick={() => handleExportFile(format)}>
@@ -406,7 +407,7 @@ export function ReportsView({ advancedExports = true }: { advancedExports?: bool
                                                 {expense.valor.toLocaleString(locale, {
                                                     style: 'currency',
                                                     currency,
-                                                    currencyDisplay: 'narrowSymbol',
+                                                    currencyDisplay: 'narrowSymbol', minimumFractionDigits: 2, maximumFractionDigits: 2,
                                                 })}
                                             </TableCell>
                                             <TableCell>
@@ -421,21 +422,21 @@ export function ReportsView({ advancedExports = true }: { advancedExports?: bool
                                     <TableRow>
                                         <TableCell colSpan={3}>{t("Total do período")}</TableCell>
                                         <TableCell>
-                                            {total.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })}
+                                            {total.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </TableCell>
                                         <TableCell colSpan={2}></TableCell>
                                     </TableRow>
                                     <TableRow>
                                         <TableCell colSpan={3}>{t("Total pago")}</TableCell>
                                         <TableCell>
-                                            {totalPago.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })}
+                                            {totalPago.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </TableCell>
                                         <TableCell colSpan={2}></TableCell>
                                     </TableRow>
                                     <TableRow>
                                         <TableCell colSpan={3}>{t("Total pendente")}</TableCell>
                                         <TableCell>
-                                            {totalPendente.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })}
+                                            {totalPendente.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </TableCell>
                                         <TableCell colSpan={2}></TableCell>
                                     </TableRow>

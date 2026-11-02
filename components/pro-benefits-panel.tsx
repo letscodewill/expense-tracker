@@ -61,7 +61,7 @@ export function ProBenefitsPanel({ overview, search, offset }: { overview: Benef
         else { pending.current = null; setUncertain(false); setConfirmation(null) }
         return
       }
-      setMessage(action==='grant' ? 'Pro cortesia atualizado.' : 'Cortesia revogada.')
+      setMessage(action==='grant' ? 'Total cortesia atualizado.' : 'Cortesia revogada.')
       setSelected(null); setConfirmation(null); pending.current = null; setUncertain(false); router.refresh()
     } catch { setError('Não foi possível confirmar a alteração do benefício. Tente novamente.'); setUncertain(pending.current !== null) }
     finally { locked.current = false; setBusy(false) }
@@ -90,15 +90,15 @@ export function ProBenefitsPanel({ overview, search, offset }: { overview: Benef
       <div className="space-y-2"><Label htmlFor="benefit-reason">{t('Motivo do benefício ou da alteração')}</Label><Input id="benefit-reason" maxLength={300} value={reason} disabled={busy || uncertain} onChange={event => setReason(event.target.value)} /></div>
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={permanent} disabled={busy || uncertain} onChange={event => setPermanent(event.target.checked)} />{t('Sem vencimento')}</label>
       {!permanent && <div className="space-y-2"><Label htmlFor="benefit-until">{t('Válido até')}</Label><Input id="benefit-until" type="datetime-local" value={until} disabled={busy || uncertain} onChange={event => setUntil(event.target.value)} /><p className="text-xs text-muted-foreground">{t('Data e hora no fuso do seu dispositivo.')}</p></div>}
-      <p className="text-xs text-muted-foreground">{t('Pro cortesia não concede acesso administrativo e não gera cobrança.')}</p>
-      <div className="flex flex-wrap gap-3"><Button disabled={busy || uncertain} onClick={() => review('grant')}>{t('Conceder ou prorrogar Pro')}</Button>{selected.courtesy && !selected.courtesy.revoked_at && <Button variant="destructive" disabled={busy || uncertain} onClick={() => review('revoke')}>{t('Revogar cortesia')}</Button>}<Button variant="outline" disabled={busy || uncertain} onClick={() => setSelected(null)}>{t('Cancelar')}</Button></div>
+      <p className="text-xs text-muted-foreground">{t('Total cortesia não concede acesso administrativo e não gera cobrança.')}</p>
+      <div className="flex flex-wrap gap-3"><Button disabled={busy || uncertain} onClick={() => review('grant')}>{t('Conceder ou prorrogar Total')}</Button>{selected.courtesy && !selected.courtesy.revoked_at && <Button variant="destructive" disabled={busy || uncertain} onClick={() => review('revoke')}>{t('Revogar cortesia')}</Button>}<Button variant="outline" disabled={busy || uncertain} onClick={() => setSelected(null)}>{t('Cancelar')}</Button></div>
     </section>}
     <section className="space-y-3"><h2 className="text-xl font-medium">{t('Histórico de benefícios')}</h2><p className="text-sm text-muted-foreground">{t('Últimas 20 alterações que correspondem à busca.')}</p>
-      <ul className="space-y-3">{overview.history.map(event => <li key={event.id} className="space-y-1 rounded-xl border p-4 text-sm"><p className="break-all font-medium">{event.user_email ?? t('Conta removida')} · {event.action==='grant' ? t('Pro cortesia atualizado.') : t('Cortesia revogada.')}</p><p className="text-muted-foreground">{fmt(event.created_at)} · {t('Por')}: {event.actor_email ?? t('Conta removida')}</p><p className="break-words">{event.after_value.reason}</p><p>{t('Validade anterior')}: {event.before_value ? fmt(event.before_value.expires_at) : '—'} · {t('Nova validade')}: {event.action==='revoke' ? t('Revogada') : fmt(event.after_value.expires_at)}</p></li>)}</ul>
+      <ul className="space-y-3">{overview.history.map(event => <li key={event.id} className="space-y-1 rounded-xl border p-4 text-sm"><p className="break-all font-medium">{event.user_email ?? t('Conta removida')} · {event.action==='grant' ? t('Total cortesia atualizado.') : t('Cortesia revogada.')}</p><p className="text-muted-foreground">{fmt(event.created_at)} · {t('Por')}: {event.actor_email ?? t('Conta removida')}</p><p className="break-words">{event.after_value.reason}</p><p>{t('Validade anterior')}: {event.before_value ? fmt(event.before_value.expires_at) : '—'} · {t('Nova validade')}: {event.action==='revoke' ? t('Revogada') : fmt(event.after_value.expires_at)}</p></li>)}</ul>
       {overview.history.length===0 && <p className="text-sm text-muted-foreground">{t('Nenhuma alteração registrada.')}</p>}
     </section>
     <Dialog open={confirmation !== null} onOpenChange={open => { if (!open && !busy && !uncertain) setConfirmation(null) }}>
-      <DialogContent><DialogHeader><DialogTitle>{confirmation==='revoke' ? t('Revogar cortesia') : t('Confirmar Pro cortesia')}</DialogTitle><DialogDescription>{t('Confira a conta e a validade antes de confirmar.')}</DialogDescription></DialogHeader>
+      <DialogContent><DialogHeader><DialogTitle>{confirmation==='revoke' ? t('Revogar cortesia') : t('Confirmar Total cortesia')}</DialogTitle><DialogDescription>{t('Confira a conta e a validade antes de confirmar.')}</DialogDescription></DialogHeader>
         <p className="break-all font-medium">{selected?.email}</p>
         {confirmation==='grant' && <p>{t('Validade')}: {permanent ? t('Sem vencimento') : (until ? fmt(new Date(until).toISOString()) : '—')}</p>}
         <p className="break-words text-sm">{reason}</p>

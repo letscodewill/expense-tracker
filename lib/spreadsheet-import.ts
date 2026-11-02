@@ -4,7 +4,7 @@ export const MAX_IMPORT_ROWS = 500
 export const MAX_IMPORT_BYTES = 3 * 1024 * 1024
 
 export function parseCurrency(value: string): number | null {
-  let clean = value.trim().replace(/R\$\s*/gi, '').replace(/\s/g, '')
+  let clean = value.trim().replace(/^(?:R\$|US\$|USD|BRL|EUR|MXN|ARS|CLP|COP|PEN|[$€])\s*/i, '').replace(/\s/g, '')
   const negative = /^\(.*\)$/.test(clean)
   if (negative) clean = clean.slice(1, -1)
   if (!/^-?\d+(?:[.,]\d+)*$/.test(clean)) return null
@@ -91,5 +91,49 @@ export async function readSpreadsheet(file: File): Promise<ImportSheet[]> {
       cells.push(values)
     })
     return { name: sheet.name, cells }
-  }).filter((sheet) => sheet.cells.length > 0)
+  }).filter((sheet) => sheet.cells.some(row => row.some(value => value.trim())))
+}
+
+const normalizedCell = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase()
+const nameHeading = /^(nome|descricao|descripcion|despesa|estabelecimento|historico|description|merchant|concepto|detalle|comercio|expense)$/
+const amountHeading = /^(valor(?:\s*\([^)]*\))?|valor da compra|valor total|amount|importe|monto|total|valor pago)$/
+const summaryHeading = /^(total(?:\s+geral|\s+do mes|\s+de despesas)?|subtotal|saldo(?:\s+.*)?|balance|grand total|total general)$/
+const isDescription = (value: string) => /[a-zA-Z\u00c0-\u024f]/.test(value) && value.trim().length <= 200 && !/^\d{4}-\d{2}-\d{2}/.test(value) && !/^\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}/.test(value)
+
+/** Detect table structure locally; never guess between equally plausible columns. */
+export function analyzeSpreadsheet(cells: string[][]) {
+  const failure = () => new Error('Não foi possível identificar as despesas com segurança. Use títulos como Descrição e Valor e envie a planilha novamente.')
+  let start = 0, name = -1, amount = -1
+  for (let i = 0; i < Math.min(cells.length, 25); i++) {
+    const headers = cells[i].map(normalizedCell)
+    const names = headers.flatMap((v, j) => nameHeading.test(v) ? [j] : [])
+    const amounts = headers.flatMap((v, j) => amountHeading.test(v) ? [j] : [])
+    if (names.length && amounts.length) {
+      // A specific amount heading takes precedence over a generic total column.
+      const specific = amounts.filter(j => headers[j] !== 'total')
+      const candidates = specific.length ? specific : amounts
+      if (names.length !== 1 || candidates.length !== 1) throw failure()
+      name = names[0]; amount = candidates[0]; start = i + 1; break
+    }
+  }
+  if (name < 0) {
+    const sample = cells.filter(row => row.some(v => v.trim())).slice(0, 100)
+    const width = Math.max(0, ...sample.map(row => row.length))
+    const amounts: number[] = [], names: number[] = []
+    for (let j = 0; j < width; j++) {
+      const values = sample.map(row => (row[j] ?? '').trim()).filter(Boolean)
+      if (!values.length) continue
+      if (values.filter(v => { const n = parseCurrency(v); return n !== null && n > 0 }).length / values.length >= 0.8) amounts.push(j)
+      if (values.filter(isDescription).length / values.length >= 0.8) names.push(j)
+    }
+    if (amounts.length !== 1 || names.length !== 1 || amounts[0] === names[0]) throw failure()
+    name = names[0]; amount = amounts[0]
+  }
+  const filtered = cells.slice(start).filter(row => {
+    const description = normalizedCell(row[name] ?? '')
+    return !summaryHeading.test(description) && !(nameHeading.test(description) && amountHeading.test(normalizedCell(row[amount] ?? '')))
+  })
+  const result = mapSpreadsheet(filtered, name, amount, false)
+  if (!result.rows.length) throw failure()
+  return result
 }

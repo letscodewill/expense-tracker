@@ -20,8 +20,8 @@ export default async function BenefitsPage({ searchParams }: { searchParams: Pro
   const offset = Number.isSafeInteger(parsed) && parsed >= 0 && parsed <= 100000 ? parsed : 0
   const result = await client.rpc('admin_pro_overview', { search_input: search, offset_input: offset })
   return <main className="container mx-auto max-w-6xl space-y-6 p-4 md:p-8">
-    <header className="flex flex-wrap items-center justify-between gap-4"><div><h1 className="text-2xl font-semibold sm:text-3xl">{t('Planos e benefícios')}</h1><p className="mt-2 text-sm text-muted-foreground">{t('Conceda Pro cortesia sem cobrança e acompanhe cada alteração.')}</p></div><Link href="/admin" className="rounded-full border px-4 py-2 text-sm hover:bg-accent">{t('Painel administrativo')}</Link></header>
-    <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm">{t('Sua conta é master: acesso Pro permanente e gestão exclusiva dos benefícios.')}</div>
+    <header className="flex flex-wrap items-center justify-between gap-4"><div><h1 className="text-2xl font-semibold sm:text-3xl">{t('Planos e benefícios')}</h1><p className="mt-2 text-sm text-muted-foreground">{t('Conceda Total cortesia sem cobrança e acompanhe cada alteração.')}</p></div><Link href="/admin" className="rounded-full border px-4 py-2 text-sm hover:bg-accent">{t('Painel administrativo')}</Link></header>
+    <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm">{t('Sua conta é master: acesso Total permanente e gestão exclusiva dos benefícios.')}</div>
     {result.error || !result.data ? <p role="alert" className="text-destructive">{t('Não foi possível carregar os benefícios. Atualize a página para tentar novamente.')}</p> : <ProBenefitsPanel key={`${search}:${offset}`} overview={result.data as BenefitsOverview} search={search} offset={offset} />}
   </main>
 }

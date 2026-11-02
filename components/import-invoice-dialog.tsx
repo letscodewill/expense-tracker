@@ -8,7 +8,8 @@ import { DuplicateExpenseNotice } from '@/components/duplicate-expense-notice'
 import { createClient } from '@/lib/supabase/client'
 import { parseInvoiceText, type ParsedExpense } from '@/lib/invoice-parser'
 import { fifthBusinessDayISO } from '@/lib/payment-date'
-import { readSpreadsheet, suggestColumns, mapSpreadsheet, MAX_IMPORT_BYTES, MAX_IMPORT_ROWS, type ImportSheet } from '@/lib/spreadsheet-import'
+import { readSpreadsheet, analyzeSpreadsheet, MAX_IMPORT_BYTES, MAX_IMPORT_ROWS, type ImportSheet } from '@/lib/spreadsheet-import'
+import { validateAISheet } from '@/lib/spreadsheet-ai'
 import { validateAIInvoice, type DetectedInstallments } from '@/lib/invoice-ai'
 import { useCategories } from '@/lib/use-categories'
 import { prepareReceiptPhoto } from '@/lib/receipt-photo'
@@ -75,9 +76,7 @@ export function ImportInvoiceDialog({
   const [warnings, setWarnings] = useState<string[]>([])
   const [sheets, setSheets] = useState<ImportSheet[]>([])
   const [sheetIndex, setSheetIndex] = useState(0)
-  const [nameColumn, setNameColumn] = useState(0)
-  const [amountColumn, setAmountColumn] = useState(1)
-  const [hasHeader, setHasHeader] = useState(true)
+  const [ambiguousSheet, setAmbiguousSheet] = useState<ImportSheet | null>(null)
   const [parsing, setParsing] = useState(false)
   const [rows, setRows] = useState<InvoiceRow[]>([])
   const [paymentMonth, setPaymentMonth] = useState<MonthYear | null>(null)
@@ -135,6 +134,7 @@ export function ImportInvoiceDialog({
     processingFile.current = true
     setParsing(true)
     setProcessedWithAI(false)
+    setAmbiguousSheet(null)
     setError('')
 
     try {
@@ -143,10 +143,11 @@ export function ImportInvoiceDialog({
         const loaded = await readSpreadsheet(file)
         if (!loaded.length) throw new Error("A planilha está vazia.")
         setSheets(loaded)
-        selectSheet(0, loaded)
+        setSheetIndex(0)
         setWarnings([])
         setNeedsPassword(false)
-        setStep('mapping')
+        if (loaded.length === 1) reviewSpreadsheet(loaded[0])
+        else setStep('mapping')
         return
       }
       const isImage = /\.(jpe?g|png|webp)$/i.test(file.name)
@@ -233,23 +234,46 @@ export function ImportInvoiceDialog({
     }
   }
 
-  function selectSheet(index: number, loaded = sheets) {
-    setSheetIndex(index)
-    const suggested = suggestColumns(loaded[index].cells)
-    setNameColumn(suggested.name)
-    setAmountColumn(suggested.amount)
-    setHasHeader(suggested.header)
-  }
-
-  function reviewSpreadsheet() {
+  function reviewSpreadsheet(sheet = sheets[sheetIndex]) {
     try {
-      const result = mapSpreadsheet(sheets[sheetIndex].cells, nameColumn, amountColumn, hasHeader)
-      if (!result.rows.length) throw new Error("Nenhuma despesa válida. Confira as colunas selecionadas.")
+      const result = analyzeSpreadsheet(sheet.cells)
+      setAmbiguousSheet(null)
       setRows(result.rows)
       setWarnings(result.warnings)
       setError('')
       setStep('review')
-    } catch (err) { setError(err instanceof Error ? err.message : "Não foi possível ler as colunas.") }
+    } catch (err) {
+      setAmbiguousSheet(sheet)
+      setError(err instanceof Error ? err.message : 'Não foi possível ler este arquivo. Verifique o formato e tente novamente.')
+      setRows([])
+      setStep('review')
+    }
+  }
+
+  async function analyzeSheetWithAI() {
+    if (!ambiguousSheet || processingFile.current || categoriesLoading || categoriesError) return
+    processingFile.current = true
+    setParsing(true)
+    setError('')
+    try {
+      const sheet = validateAISheet(ambiguousSheet)
+      const form = new FormData()
+      form.append('kind', 'spreadsheet')
+      form.append('file', new File([JSON.stringify(sheet)], 'selected-sheet.json', { type: 'application/json' }))
+      const response = await fetch('/api/invoices/analyze', { method: 'POST', body: form })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Não foi possível analisar a fatura.')
+      const analyzed = validateAIInvoice(result, categories)
+      setRows(analyzed.rows)
+      setWarnings(analyzed.warnings)
+      setProcessedWithAI(true)
+      if (analyzed.rows.length) setAmbiguousSheet(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível concluir a leitura por IA. Tente novamente ou use a leitura padrão.')
+    } finally {
+      processingFile.current = false
+      setParsing(false)
+    }
   }
 
   async function handleSubmitPassword() {
@@ -272,6 +296,8 @@ export function ImportInvoiceDialog({
     setNeedsPassword(false)
     setPdfPassword('')
     setSheets([])
+    setAmbiguousSheet(null)
+    setProcessedWithAI(false)
     setWarnings([])
     setUseAI(false)
   }
@@ -291,7 +317,8 @@ export function ImportInvoiceDialog({
   }
 
   function addEmptyRow() {
-    if (rows.length >= MAX_IMPORT_ROWS) return
+    if (parsing || rows.length >= MAX_IMPORT_ROWS) return
+    setAmbiguousSheet(null)
     setRows((prev) => [...prev, { nome: '', valor: 0 }])
   }
 
@@ -432,7 +459,7 @@ export function ImportInvoiceDialog({
               onChange={handleFileChange}
               disabled={parsing || preparingPhoto || (useAI && (categoriesLoading || !!categoriesError))}
             />
-            <p className="text-sm text-muted-foreground">{t("Até 3 MB e 500 despesas por importação. PDFs e imagens compartilham a cota de 4 análises com IA por mês. A leitura padrão e as planilhas não usam essa cota. No Google Planilhas, baixe como Excel ou CSV.")}</p>
+            <p className="text-sm text-muted-foreground">{t("Até 3 MB e 500 despesas por importação. A IA compartilha a cota entre PDFs, imagens e planilhas: 1 análise mensal no Essencial e 10 no Total. A leitura padrão de planilhas não usa a cota. No Google Planilhas, baixe como Excel ou CSV.")}</p>
             <label className="flex items-start gap-3 rounded-2xl border p-4 text-sm">
               <input type="checkbox" checked={useAI} disabled={parsing || preparingPhoto || needsPassword} onChange={(event) => setUseAI(event.target.checked)} className="mt-1" />
               <span><span className="font-medium">{t("Ler PDF ou imagem com inteligência artificial")}</span><span className="mt-1 block text-muted-foreground">{t("Ao ativar a IA, o PDF ou a imagem será enviado à OpenAI para análise. PDFs com senha são abertos no navegador; a senha não é enviada. Até 20 páginas por PDF. Planilhas são lidas sem IA.")}</span></span>
@@ -480,30 +507,28 @@ export function ImportInvoiceDialog({
 
         {step === 'mapping' && <div className="space-y-4 py-4">
           <div className="space-y-2"><Label htmlFor="import-sheet">{t("Aba da planilha")}</Label>
-            <select id="import-sheet" className="w-full rounded-xl border bg-background p-3" value={sheetIndex} onChange={(event) => selectSheet(Number(event.target.value))}>
+            <select id="import-sheet" className="w-full rounded-xl border bg-background p-3" value={sheetIndex} onChange={(event) => setSheetIndex(Number(event.target.value))}>
               {sheets.map((sheet, index) => <option key={index} value={index}>{sheet.name}</option>)}
             </select>
           </div>
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={hasHeader} onChange={(event) => setHasHeader(event.target.checked)} />{t("A primeira linha contém os títulos das colunas")}</label>
-          <div className="grid gap-4 sm:grid-cols-2">
-            {([{ label: t("Coluna do nome"), id: 'import-name-column', value: nameColumn, update: setNameColumn }, { label: t("Coluna do valor"), id: 'import-amount-column', value: amountColumn, update: setAmountColumn }]).map((field) => <div key={field.id} className="space-y-2">
-              <Label htmlFor={field.id}>{t(field.label)}</Label>
-              <select id={field.id} className="w-full rounded-xl border bg-background p-3" value={field.value} onChange={(event) => field.update(Number(event.target.value))}>
-                {Array.from({ length: Math.max(...sheets[sheetIndex].cells.map((cell) => cell.length)) }, (_, index) => <option key={index} value={index}>{t("Coluna ")}{index + 1}{hasHeader ? ` — ${sheets[sheetIndex].cells[0]?.[index] || t("Sem título")}` : ''}</option>)}
-              </select>
-            </div>)}
-          </div>
-          <div className="max-h-48 overflow-auto rounded-xl border"><Table><TableHeader><TableRow>{sheets[sheetIndex].cells[0]?.map((_, index) => <TableHead key={index}>{t("Coluna ")}{index + 1}</TableHead>)}</TableRow></TableHeader><TableBody>{sheets[sheetIndex].cells.slice(0, 5).map((cell, index) => <TableRow key={index}>{cell.map((value, column) => <TableCell key={column}>{value}</TableCell>)}</TableRow>)}</TableBody></Table></div>
+          <p className="text-sm text-muted-foreground">{t('Escolha a aba que deseja importar. Identificaremos as despesas automaticamente para você revisar.')}</p>
           {error && <p role="alert" className="text-sm text-destructive">{t(error)}</p>}
-          <Button onClick={reviewSpreadsheet}>{t("Conferir despesas")}</Button>
+          <Button onClick={() => reviewSpreadsheet()}>{t("Conferir despesas")}</Button>
         </div>}
 
         {step === 'review' && (
           <div className="invoice-review-body flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
+            {ambiguousSheet && <div className="space-y-3 rounded-2xl border border-primary/30 bg-secondary/40 p-4">
+              <p className="text-sm font-medium">{t('Não reconhecemos a estrutura desta aba. Você pode tentar com IA.')}</p>
+              <p className="text-sm text-muted-foreground">{t('Somente a aba selecionada será enviada à OpenAI. Uma análise bem-sucedida usa a cota mensal compartilhada: 1 no Essencial e 10 no Total. Você revisará antes de salvar.')}</p>
+              <Button type="button" onClick={analyzeSheetWithAI} disabled={parsing || saving || categoriesLoading || !!categoriesError}>{parsing ? <><LoaderCircle className="size-4 animate-spin" aria-hidden="true" />{t('Analisando...')}</> : t('Analisar com IA')}</Button>
+              {categoriesLoading && <p role="status" className="text-xs text-muted-foreground">{t('Carregando categorias...')}</p>}
+              {categoriesError && <Button type="button" variant="outline" onClick={retryCategories}>{t('Tentar novamente')}</Button>}
+            </div>}
             {duplicateReview?.draft === draftKey && <DuplicateExpenseNotice warnings={duplicateReview.warnings} confirmed={acceptedDuplicates === duplicateReview.key} onConfirm={value => setAcceptedDuplicates(value ? duplicateReview.key : '')} />}
             {error && <p className="text-sm text-red-600">{t(error)}</p>}
             {warnings.length > 0 && <details className="rounded-xl border p-3 text-sm"><summary className="cursor-pointer font-medium">{warnings.length}{t(" aviso(s) na leitura — confira antes de importar")}</summary><ul className="mt-2 list-disc space-y-1 pl-5">{warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></details>}
-            <p className="text-sm font-medium">{t("Total das despesas: ")}{rows.reduce((sum, row) => sum + row.valor, 0).toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })}{t(". Confira com a fatura; créditos e estornos não são importados como despesas.")}</p>
+            <p className="text-sm font-medium">{t("Total das despesas: ")}{rows.reduce((sum, row) => sum + row.valor, 0).toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol', minimumFractionDigits: 2, maximumFractionDigits: 2 })}{t(". Confira com a fatura; créditos e estornos não são importados como despesas.")}</p>
             {processedWithAI && <p className="rounded-xl bg-muted p-3 text-sm text-muted-foreground">{t("A IA sugeriu categorias da sua conta. Confira e altere antes de importar. Descrições incertas ficam em “Sem categoria”.")}</p>}
 
             <div className="flex flex-wrap items-end gap-4 rounded-2xl bg-muted p-4">
@@ -594,11 +619,11 @@ export function ImportInvoiceDialog({
               </Table>
             </div>
 
-            <Button variant="outline" size="sm" onClick={addEmptyRow} disabled={saving || rows.length >= MAX_IMPORT_ROWS} className="self-start">{t("Adicionar linha manualmente")}</Button>
+            <Button variant="outline" size="sm" onClick={addEmptyRow} disabled={saving || parsing || rows.length >= MAX_IMPORT_ROWS} className="self-start">{t("Adicionar linha manualmente")}</Button>
 
             <div className="space-y-2 pt-2 border-t">
               <Label>{t("Adicionar despesas em:")}</Label>
-              <Select value={destination} onValueChange={(value) => setDestination(value ?? MAIN_PANEL_VALUE)} disabled={saving || loadingBoardOptions || !!boardOptionsError}>
+              <Select value={destination} onValueChange={(value) => setDestination(value ?? MAIN_PANEL_VALUE)} disabled={saving || parsing || !rows.length || loadingBoardOptions || !!boardOptionsError}>
                 <SelectTrigger>
                   <SelectValue>{destination === MAIN_PANEL_VALUE ? t("Painel principal") : destination === NEW_BOARD_VALUE ? t("+ Criar novo quadro") : boardOptions.find((board) => board.id === destination)?.name}</SelectValue>
                 </SelectTrigger>

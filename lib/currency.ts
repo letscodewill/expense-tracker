@@ -1,4 +1,21 @@
-export type DisplayCurrency = 'BRL' | 'USD' | 'EUR'
+import regions from './currency-regions.json'
+
+export type DisplayCurrency = string
+export const DISPLAY_CURRENCIES: readonly string[] = regions.currencies
+const supportedCurrencies = new Set(DISPLAY_CURRENCIES)
+export function isDisplayCurrency(value: unknown): value is DisplayCurrency {
+  return typeof value === 'string' && supportedCurrencies.has(value)
+}
+export function currencyForCountry(country: string | null): DisplayCurrency {
+  return country ? (regions.countries as Record<string,string>)[country.toUpperCase()] ?? 'USD' : 'USD'
+}
+export function currencySymbol(currency: DisplayCurrency, locale = 'en-US'): string {
+  if (currency === 'BRL') return 'R$'
+  if (currency === 'USD') return 'US$'
+  if (currency === 'EUR') return '€'
+  const symbol = new Intl.NumberFormat(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' }).formatToParts(0).find(part => part.type === 'currency')?.value ?? currency
+  return symbol === currency ? currency : currency + ' ' + symbol
+}
 export const CURRENCY_STORAGE_KEY = 'nocontrole:display-currency'
 export const CURRENCY_EVENT = 'nocontrole:currency-change'
 export const CURRENCY_COOKIE = 'nocontrole-currency'
@@ -8,7 +25,7 @@ let memoryCurrency: DisplayCurrency = 'BRL'
 let storageUnavailable = false
 
 export function normalizeCurrency(value: unknown): DisplayCurrency {
-  return value === 'USD' || value === 'EUR' ? value : 'BRL'
+  return isDisplayCurrency(value) ? value : 'BRL'
 }
 
 export function getCurrencySnapshot(): DisplayCurrency {

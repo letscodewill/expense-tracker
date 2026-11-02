@@ -14,7 +14,7 @@ export function DuplicateExpenseNotice({ warnings, confirmed, onConfirm }: {
     <p className="font-medium">{warnings.length}{t(" lançamento(s) com possível duplicidade")}</p>
     <p>{t("Encontramos o mesmo nome, valor e mês de pagamento. Confira as linhas antes de salvar; compras iguais podem ser legítimas.")}</p>
     <ul className="max-h-48 space-y-2 overflow-auto">
-      {warnings.map(warning => <li key={warning.index}>{t("Linha ")}{warning.index + 1}: {warning.nome} — {warning.valor.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })} — {warning.month.split('-').reverse().join('/')}. {warning.existingIds.length > 0 ? t("Já existe na sua conta. ") : ''}{warning.repeatedInBatch ? t("Repetido nesta importação.") : ''}</li>)}
+      {warnings.map(warning => <li key={warning.index}>{t("Linha ")}{warning.index + 1}: {warning.nome} — {warning.valor.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol', minimumFractionDigits: 2, maximumFractionDigits: 2 })} — {warning.month.split('-').reverse().join('/')}. {warning.existingIds.length > 0 ? t("Já existe na sua conta. ") : ''}{warning.repeatedInBatch ? t("Repetido nesta importação.") : ''}</li>)}
     </ul>
     <label className="flex items-start gap-2"><input type="checkbox" checked={confirmed} onChange={event => onConfirm(event.target.checked)} />{t("Revisei e quero salvar mesmo com estas possíveis duplicidades.")}</label>
   </div>

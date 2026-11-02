@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input'
 export function BudgetReminders({ selected, refreshKey }: { selected: MonthYear; refreshKey: number }) {
   const { t, locale } = useLanguage()
   const currency = useCurrency()
-  const money = (value: number) => value.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })
+  const money = (value: number) => value.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol', minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   const client = createClient()
   const { categories, loading: categoriesLoading, error: categoriesError } = useCategories()

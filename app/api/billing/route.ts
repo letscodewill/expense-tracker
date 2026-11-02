@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     phase = 'plan lookup'
     const plan = await client.rpc('get_my_plan')
     if (plan.error) throw new Error('plan')
-    if (plan.data?.plan === 'pro') return fail('Sua conta já possui acesso Pro. Gerencie sua assinatura ou benefício.', 409)
+    if (plan.data?.plan === 'pro') return fail('Sua conta já possui acesso Total. Gerencie sua assinatura ou benefício.', 409)
     phase = 'checkout lock'
     const claimed = await admin.rpc('billing_claim', { customer_input: customer, event_input: null })
     token = claimed.data?.token ?? null

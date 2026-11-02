@@ -32,11 +32,14 @@ function load(file, mocks = {}, globals = {}) {
     if (name === '@/lib/month-rollover') return load('lib/month-rollover.ts')
     if (name === '@/lib/savings') return load('lib/savings.ts')
     if (name === '@/lib/report-export') return load('lib/report-export.ts')
+    if (name === '@/lib/spreadsheet-ai') return load('lib/spreadsheet-ai.ts')
     if (name === '@/lib/invoice-document') return load('lib/invoice-document.ts')
     if (name === '@/lib/receipt-photo') return load('lib/receipt-photo.ts')
     if (name === '@/lib/pro-benefits') return load('lib/pro-benefits.ts')
     if (name === '@/lib/billing-offers') return load('lib/billing-offers.ts')
     if (name === '@/lib/use-currency') return { useCurrency: () => 'BRL' }
+    if (name === './currency-regions.json') return JSON.parse(fs.readFileSync(path.join(root, 'lib/currency-regions.json'), 'utf8'))
+    if (name === './currency') return load('lib/currency.ts')
     if (name === '@/lib/currency') return load('lib/currency.ts')
     if (name === '../currency') return load('lib/currency.ts')
     if (name === '@/lib/regional-defaults' || name === '../regional-defaults') return load('lib/regional-defaults.ts')
@@ -1052,7 +1055,7 @@ function invoiceRuntime({ responses = {}, extract, prepare, photo, fetch: fetchM
       extractPdfText: extract ?? (async () => '03/10 Mercado 80,00\n20/09 Restaurante 50,00'),
       preparePdfForAI: prepare ?? (async (file) => file),
     },
-  }, { FormData, fetch: fetchMock })
+  }, { FormData, File, fetch: fetchMock })
   const props = { selected: selectedMonth, boards: [{ id: 'existing-board', name: 'Cartão' }], onImported: (period) => imported.push(period) }
   let tree = runtime.render(ImportInvoiceDialog, props)
   tree.props.onOpenChange(true)
@@ -2461,14 +2464,14 @@ test('AI local limiter prevents overlapping analyses and expires hourly attempts
   assert.equal(typeof reserveInvoiceAnalysis('u', 3601000), 'function')
 })
 
-test('AI monthly quota stops the fifth invoice before OpenAI and never exposes reservation tokens', async () => {
+test('AI monthly quota stops the eleventh invoice before OpenAI and never exposes reservation tokens', async () => {
   let used = 0, calls = 0, reserved = false
   const { POST } = load('app/api/invoices/analyze/route.ts', {
     '@/lib/supabase/server': { createClient: async () => ({
       auth: { getUser: async () => ({ data: { user: { id: 'monthly-user' } }, error: null }) },
       from: database({}).client.from,
       rpc: async (name, args) => {
-        if (name === 'reserve_invoice_ai') { if (used >= 4) return success({ allowed: false }); reserved = true; return success({ allowed: true, token: 'secret-reservation' }) }
+        if (name === 'reserve_invoice_ai') { if (used >= 10) return success({ allowed: false }); reserved = true; return success({ allowed: true, token: 'secret-reservation' }) }
         assert.equal(args.reservation_token, 'secret-reservation')
         assert.equal(reserved, true); reserved = false
         if (args.succeeded) used++
@@ -2479,11 +2482,11 @@ test('AI monthly quota stops the fifth invoice before OpenAI and never exposes r
   }, { Response, Request, File, Buffer, AbortSignal, process: { env: { OPENAI_API_KEY: 'test' } }, fetch: async () => { calls++; return Response.json({ status: 'completed', output: [{ content: [{ type: 'output_text', text: JSON.stringify({ rows: [{ nome: 'Mercado', valor: 10 }], warnings: [] }) }] }] }) } })
   let uploads = 0
   const request = () => { const form = new FormData(); const image = uploads++ % 2 === 1; form.append('file', image ? new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], 'compra.png', { type: 'image/png' }) : new File(['%PDF-1.7 test'], 'fatura.pdf', { type: 'application/pdf' })); return new Request('https://test/api/invoices/analyze', { method: 'POST', headers: { origin: 'https://test' }, body: form }) }
-  for (let index = 0; index < 4; index++) {
+  for (let index = 0; index < 10; index++) {
     const response = await POST(request()); assert.equal(response.status, 200); assert.ok(!(await response.text()).includes('secret-reservation'))
   }
   const response = await POST(request()); assert.equal(response.status, 429)
-  assert.equal(used, 4); assert.equal(calls, 4); assert.equal(reserved, false)
+  assert.equal(used, 10); assert.equal(calls, 10); assert.equal(reserved, false)
 })
 
 test('AI failures and empty invoices release the reserved slot; quota outages fail closed', async () => {
@@ -2505,13 +2508,10 @@ test('AI failures and empty invoices release the reserved slot; quota outages fa
   }
 })
 
-test('spreadsheet mapping flows into invoice review and saves only on confirmation with fifth business day', async () => {
+test('spreadsheet automatic detection goes directly to review and saves only on confirmation with fifth business day', async () => {
   const invoice = invoiceRuntime()
   let tree = await invoice.upload({ name: 'export-google.csv', size: 100, text: async () => 'Valor;Descrição\n123,45;Mercado\n50,00;Parcela 1/3\n-10,00;Estorno' })
-  assert.equal(find(tree, (node) => node.props.id === 'import-name-column').props.value, 1)
-  assert.equal(invoice.db.requests.length, 0)
-  find(tree, (node) => node.props.children === 'Conferir despesas').props.onClick()
-  tree = await invoice.runtime.flush()
+  assert.equal(elements(tree, (node) => node.props.id === 'import-name-column' || node.props.id === 'import-sheet').length, 0)
   find(tree, (node) => node.type === 'DialogContent' && node.props.className === 'invoice-review-dialog')
   assert.equal(invoice.db.requests.length, 0)
   await find(tree, (node) => node.props.children === 'Importar 2 despesa(s)').props.onClick()
@@ -2635,7 +2635,7 @@ test('courtesy validation and expiration use account grants rather than editable
   for (const patch of [{ reason: '' },{ reason: 'x'.repeat(301) },{ revision: -1 },{ revision: 0.5 },{ userId: 'bad' },{ requestId: '' },{ action: 'promote' },{ expiresAt: 'bad-date' }]) assert.ok(validateCourtesy({ ...input, ...patch }))
   assert.equal(courtesyStatus({ is_master: true, courtesy: null }), 'Master')
   assert.equal(courtesyStatus({ is_master: false, courtesy: null }), 'Sem cortesia')
-  assert.equal(courtesyStatus({ is_master: false, courtesy: { revoked_at: null, expires_at: null } }), 'Pro cortesia')
+  assert.equal(courtesyStatus({ is_master: false, courtesy: { revoked_at: null, expires_at: null } }), 'Total cortesia')
   assert.equal(courtesyStatus({ is_master: false, courtesy: { revoked_at: null, expires_at: '2026-01-01T00:00:00Z' } }, Date.parse('2026-02-01T00:00:00Z')), 'Expirada')
   assert.equal(courtesyStatus({ is_master: false, courtesy: { revoked_at: '2026-01-01T00:00:00Z', expires_at: null } }), 'Revogada')
 })
@@ -2694,7 +2694,7 @@ test('benefit UI requires review, makes one write on double click and retains a 
   find(tree,n=>n.props.id==='benefit-reason').props.onChange({ target: { value: 'Tester' } })
   find(tree,n=>n.type==='input' && n.props.type==='checkbox').props.onChange({ target: { checked: true } })
   tree = runtime.render()
-  find(tree,n=>n.type==='Button' && n.props.children==='Conceder ou prorrogar Pro').props.onClick()
+  find(tree,n=>n.type==='Button' && n.props.children==='Conceder ou prorrogar Total').props.onClick()
   tree = runtime.render()
   assert.equal(find(tree,n=>n.type==='Dialog').props.open,true)
   assert.equal(calls.length,0)
@@ -2811,7 +2811,7 @@ test('server language respects explicit saved choices and otherwise uses regiona
         headers: async () => { headerReads++; return { get: () => 'es-MX,en;q=0.8' } },
       },
     })
-    const expected = saved === 'pt-BR' || saved === 'en' || saved === 'es' ? saved : 'en'
+    const expected = saved === 'pt-BR' || saved === 'en' || saved === 'es' ? saved : 'es'
     const result = await getServerTranslation()
     assert.equal(result.language, expected)
     assert.equal(result.t('Pendente'), languageModule().translate('Pendente', expected))
@@ -3192,20 +3192,20 @@ test('billing checkout binds the verified user, rejects unapproved prices and re
 })
 
 
-test('plans page presents actual billing currency independently and prevents existing Pro from buying again', async () => {
+test('plans page presents actual billing currency independently and prevents existing Total from buying again', async () => {
   for(const source of ['default','courtesy','master','subscription']) {
     const runtime=hooks()
     const {PlansPanel}=load('components/plans-panel.tsx',{react:runtime.react,'next/navigation':{useRouter:()=>({refresh(){}})}})
     let tree=runtime.render(PlansPanel,{signedIn:true,plan:{plan:source==='default'?'free':'pro',source},billing:{has_customer:false},ready:true,initialCurrency:'brl'})
-    if(source==='default') assert.equal(find(tree,n=>n.type==='Button'&&n.props.children==='Assinar Pro').props.disabled,false)
-    else { find(tree,n=>n.type==='Link'&&n.props.href==='/'&&n.props.children==='Voltar ao painel'); assert.equal(elements(tree,n=>n.type==='Button'&&n.props.children==='Assinar Pro').length,0) }
+    if(source==='default') assert.equal(find(tree,n=>n.type==='Button'&&n.props.children==='Assinar Total').props.disabled,false)
+    else { find(tree,n=>n.type==='Link'&&n.props.href==='/'&&n.props.children==='Voltar ao painel'); assert.equal(elements(tree,n=>n.type==='Button'&&n.props.children==='Assinar Total').length,0) }
     const selects=elements(tree,n=>n.type==='select')
     selects[0].props.onChange({target:{value:'usd'}})
     tree=await runtime.flush()
     assert.equal(elements(tree,n=>n.type==='select')[0].props.value,'usd')
     assert.ok(elements(tree,n=>n.type==='p'&&Array.isArray(n.props.children)&&String(n.props.children[0]).includes('39,90')).length)
-    if(source==='default') assert.equal(find(tree,n=>n.type==='Button'&&n.props.children==='Assinar Pro').props.disabled,false)
-    else assert.equal(elements(tree,n=>n.type==='Button'&&n.props.children==='Assinar Pro').length,0)
+    if(source==='default') assert.equal(find(tree,n=>n.type==='Button'&&n.props.children==='Assinar Total').props.disabled,false)
+    else assert.equal(elements(tree,n=>n.type==='Button'&&n.props.children==='Assinar Total').length,0)
   }
 })
 
@@ -3278,7 +3278,7 @@ test('public plans has no language selector and display settings can offer curre
   assert.equal(elements(LanguageSelector({}),n=>n.type==='CurrencySelector').length,1)
 })
 
-test('active Pro has one clickable subscription-management action instead of a disabled purchase', async () => {
+test('active Total has one clickable subscription-management action instead of a disabled purchase', async () => {
   const runtime=hooks();let action, redirected
   const {PlansPanel}=load('components/plans-panel.tsx',{
     react:runtime.react,'next/navigation':{useRouter:()=>({refresh(){}})},
@@ -3288,7 +3288,7 @@ test('active Pro has one clickable subscription-management action instead of a d
   assert.equal(buttons.length,1);assert.equal(buttons[0].props.disabled,false)
   await buttons[0].props.onClick()
   assert.equal(action,'portal');assert.equal(redirected,'https://billing.stripe.com/test')
-  assert.equal(elements(tree,n=>n.type==='Button'&&n.props.children==='Assinar Pro').length,0)
+  assert.equal(elements(tree,n=>n.type==='Button'&&n.props.children==='Assinar Total').length,0)
 })
 
 
@@ -3338,12 +3338,17 @@ test('header login reveals email fields, preserves the action and clears credent
 
 test('regional defaults use country before browser language and only the euro area gets EUR', () => {
   const {regionalDefaults,currencyForLanguage}=load('lib/regional-defaults.ts')
-  for(const [country,language,currency] of [['BR','pt-BR','BRL'],['PT','pt-BR','EUR'],['DE','en','EUR'],['ES','en','EUR'],['BG','en','EUR'],['US','en','USD'],['GB','en','USD'],['CH','en','USD'],['SE','en','USD'],['MX','en','USD']]){
+  for(const [country,language,currency] of [['BR','pt-BR','BRL'],['PT','pt-BR','EUR'],['DE','en','EUR'],['ES','en','EUR'],['BG','en','EUR'],['US','en','USD'],['GB','en','GBP'],['CH','en','CHF'],['SE','en','SEK'],['MX','es','MXN']]){
     const result=regionalDefaults(country,'pt-BR,es;q=0.9');assert.equal(result.language,language);assert.equal(result.currency,currency)
   }
+  for(const country of ['AR','BO','CL','CO','CR','CU','DO','EC','SV','GT','HN','MX','NI','PA','PY','PE','PR','UY','VE']){
+    const result=regionalDefaults(country,'en-US');assert.equal(result.language,'es');assert.equal(result.currency,load('lib/currency.ts').currencyForCountry(country))
+  }
+  for(const country of ['BZ','GY','SR','HT']) assert.equal(regionalDefaults(country,'es-MX').language,'en')
+  assert.equal(regionalDefaults(null,'es-MX,en;q=0.9').language,'es')
   assert.equal(regionalDefaults(null,'pt-PT,en;q=0.9').currency,'EUR')
   assert.equal(regionalDefaults(null,null).language,'en')
-  assert.equal(currencyForLanguage('en','BR'),'USD');assert.equal(currencyForLanguage('pt-BR','BR'),'BRL');assert.equal(currencyForLanguage('pt-BR','PT'),'EUR')
+  assert.equal(currencyForLanguage('en','BR'),'BRL');assert.equal(currencyForLanguage('pt-BR','BR'),'BRL');assert.equal(currencyForLanguage('pt-BR','PT'),'EUR')
 })
 
 test('server regional choices ignore old automatic cookies and honor explicit manual overrides', async () => {
@@ -3384,4 +3389,131 @@ test('changing language suggests currency and public pages keep manual selectors
     if(path==='/reports')find(PageLanguageBar(),n=>n.type==='DisplaySettings')
     else assert.equal(PageLanguageBar(),null)
   }
+})
+
+test('automatic spreadsheets detect multilingual headers below titles, reordered fields and summaries without double counting', () => {
+  const {analyzeSpreadsheet}=load('lib/spreadsheet-import.ts')
+  const result=analyzeSpreadsheet([['Gastos de noviembre'],[],['Fecha','Importe','Descripción'],['2026-11-03','US$ 82.41','Mercado'],['2026-11-04','15,00','Internet'],['','97.41','Total'],['Fecha','Importe','Descripción'],['2026-11-05','-2','Estorno']])
+  assert.equal(result.rows.length,2)
+  assert.equal(result.rows[0].nome,'Mercado');assert.equal(result.rows[0].valor,82.41)
+  assert.equal(result.warnings.length,1)
+  assert.equal(analyzeSpreadsheet([['Mercado','82,41'],['Internet','15,00']]).rows.length,2)
+  assert.throws(()=>analyzeSpreadsheet([['Mercado','82','2'],['Internet','15','3']]),/segurança/)
+  assert.throws(()=>analyzeSpreadsheet([['Descrição','Valor','Amount'],['Mercado','82','90']]),/segurança/)
+  assert.throws(()=>analyzeSpreadsheet([['Descrição','Valor'],...Array(501).fill(['Compra','1'])]),/500/)
+})
+
+test('multiple populated spreadsheet tabs ask only which sheet before automatic review and never save during analysis', async () => {
+  const ExcelJS=nodeRequire('exceljs'), workbook=new ExcelJS.Workbook()
+  workbook.addWorksheet('Vazia')
+  workbook.addWorksheet('Novembro').addRows([['Descrição','Valor'],['Mercado',12]])
+  workbook.addWorksheet('Dezembro').addRows([['Amount','Description'],[45,'Internet']])
+  const bytes=await workbook.xlsx.writeBuffer(), invoice=invoiceRuntime()
+  let tree=await invoice.upload({name:'gastos.xlsx',size:bytes.length,arrayBuffer:async()=>bytes})
+  const selector=find(tree,n=>n.props.id==='import-sheet')
+  assert.equal(elements(selector,n=>n.type==='option').length,2)
+  assert.equal(elements(tree,n=>n.props.id==='import-name-column'||n.props.id==='import-amount-column').length,0)
+  selector.props.onChange({target:{value:'1'}})
+  tree=await invoice.runtime.flush()
+  find(tree,n=>n.props.children==='Conferir despesas').props.onClick()
+  tree=await invoice.runtime.flush()
+  find(tree,n=>n.type==='Input'&&n.props.value==='Internet')
+  assert.equal(invoice.db.requests.length,0)
+})
+
+test('ambiguous spreadsheets offer AI explicitly and send only the chosen sheet without saving', async () => {
+  const ExcelJS=nodeRequire('exceljs'), workbook=new ExcelJS.Workbook()
+  workbook.addWorksheet('Privada').addRows([['Não enviar',999]])
+  workbook.addWorksheet('Selecionada').addRows([['Loja','Valor A','Valor B'],['Mercado',12,10]])
+  const bytes=await workbook.xlsx.writeBuffer();let calls=0
+  const invoice=invoiceRuntime({fetch:async (_url,options)=>{
+    calls++
+    assert.equal(options.body.get('kind'),'spreadsheet')
+    const data=JSON.parse(await options.body.get('file').text())
+    assert.equal(data.name,'Selecionada');assert.equal(data.cells[1][0],'Mercado')
+    assert.equal(JSON.stringify(data).includes('Não enviar'),false)
+    return Response.json({rows:[{nome:'Mercado',valor:12,category:'Categoria não permitida',category_confident:true}],warnings:['Confira o valor']})
+  }})
+  let tree=await invoice.upload({name:'gastos.xlsx',size:bytes.length,arrayBuffer:async()=>bytes})
+  find(tree,n=>n.props.id==='import-sheet').props.onChange({target:{value:'1'}})
+  tree=await invoice.runtime.flush()
+  find(tree,n=>n.props.children==='Conferir despesas').props.onClick()
+  tree=await invoice.runtime.flush()
+  assert.equal(calls,0);assert.equal(invoice.db.requests.length,0)
+  await find(tree,n=>n.props.children==='Analisar com IA').props.onClick()
+  tree=await invoice.runtime.flush()
+  assert.equal(calls,1);assert.equal(invoice.db.requests.length,0)
+  find(tree,n=>n.props.value==='Mercado')
+  assert.equal(elements(tree,n=>n.props.children==='Analisar com IA').length,0)
+})
+
+test('spreadsheet AI payload validates shape and size and strips extra sheets before any provider use', () => {
+  const {validateAISheet}=load('lib/spreadsheet-ai.ts')
+  const safe=validateAISheet({name:'Selecionada',cells:[['Compra','10']],otherSheets:['private']})
+  assert.equal(Object.hasOwn(safe,'otherSheets'),false)
+  for(const value of [null,{}, {name:'A',cells:[]},{name:'A',cells:[[10]]},{name:'A',cells:[[' ']]},{name:'A',cells:[['x'.repeat(2001)]]},{name:'A',cells:[Array(101).fill('a')]},{name:'A',cells:Array(5001).fill(['a'])},{name:'A',cells:Array(121).fill(['x'.repeat(1000)])}]) assert.throws(()=>validateAISheet(value),/inválida/)
+})
+
+test('spreadsheet AI shares monthly reservation and releases failures without exposing tokens', async () => {
+  for(const outcome of ['success','invalid','empty','failed','limit']){
+    let reserved=0,calls=0;const finishes=[]
+    const {POST}=load('app/api/invoices/analyze/route.ts',{
+      '@/lib/supabase/server':{createClient:async()=>({
+        auth:{getUser:async()=>({data:{user:{id:'sheet-owner'}}})},from:database({}).client.from,
+        rpc:async(name,args)=>{if(name==='reserve_invoice_ai'){reserved++;return success(outcome==='limit'?{allowed:false,limit:1}:{allowed:true,token:'private-sheet-token'})}finishes.push(args);return success(true)},
+      })},'@/lib/invoice-ai':load('lib/invoice-ai.ts'),'@/lib/invoice-ai-limit':load('lib/invoice-ai-limit.ts'),
+    },{Response,Request,File,Buffer,AbortSignal,process:{env:{OPENAI_API_KEY:'synthetic'}},fetch:async(_url,options)=>{
+      calls++;const body=JSON.parse(options.body)
+      assert.equal(body.store,false);assert.equal(body.text.format.strict,true)
+      assert.equal(body.input[0].content[0].type,'input_text')
+      assert.equal(JSON.parse(body.input[0].content[0].text).name,'Escolhida')
+      assert.ok(body.instructions.includes('Não invente'))
+      if(outcome==='failed')return new Response('',{status:502})
+      return Response.json({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify({rows:outcome==='empty'?[]:[{nome:'Mercado',valor:12}],warnings:[]})}]}]})
+    }})
+    const form=new FormData();form.append('kind','spreadsheet');form.append('file',new File([JSON.stringify(outcome==='invalid'?{name:'A',cells:[[123]]}:{name:'Escolhida',cells:[['Gasto','Valor'],['Mercado','12']],otherSheets:['private']})],'sheet.json',{type:'application/json'}))
+    const response=await POST(new Request('https://test/api/invoices/analyze',{method:'POST',headers:{origin:'https://test'},body:form}))
+    assert.equal(response.status,outcome==='invalid'?400:outcome==='limit'?429:outcome==='failed'?502:200)
+    assert.equal((await response.text()).includes('private-sheet-token'),false)
+    assert.equal(reserved,outcome==='invalid'?0:1);assert.equal(calls,['invalid','limit'].includes(outcome)?0:1)
+    if(!['invalid','limit'].includes(outcome)){assert.equal(finishes.length,1);assert.equal(finishes[0].succeeded,outcome==='success')}
+  }
+})
+
+test('global display currencies cover Latin America and preserve decimals without exchange conversion', () => {
+  const {DISPLAY_CURRENCIES,currencyForCountry,isDisplayCurrency,normalizeCurrency,currencySymbol}=load('lib/currency.ts')
+  for(const [country,code]of [['MX','MXN'],['AR','ARS'],['CL','CLP'],['CO','COP'],['PE','PEN'],['PY','PYG'],['UY','UYU'],['BO','BOB'],['CR','CRC'],['GB','GBP'],['JP','JPY'],['IN','INR'],['BG','EUR']]){
+    assert.equal(currencyForCountry(country),code);assert.equal(isDisplayCurrency(code),true);assert.equal(normalizeCurrency(code),code)
+  }
+  assert.ok(DISPLAY_CURRENCIES.length>150);assert.equal(isDisplayCurrency('ZZZ'),false);assert.equal(normalizeCurrency('ZZZ'),'BRL')
+  assert.equal(currencyForCountry(null),'USD');assert.ok(currencySymbol('MXN').includes('MXN'))
+  for(const currency of DISPLAY_CURRENCIES){
+    const {MaskedValue}=load('components/masked-value.tsx',{'@/lib/use-currency':{useCurrency:()=>currency},'@/context/visibility-context':{useValuesVisibility:()=>({hidden:false})}})
+    const value=MaskedValue({value:1234.56}).props.children
+    const parts=new Intl.NumberFormat('pt-BR',{style:'currency',currency,currencyDisplay:'narrowSymbol',minimumFractionDigits:2,maximumFractionDigits:2}).formatToParts(1234.56)
+    assert.equal(value,parts.map(part=>part.value).join(''))
+    assert.equal(parts.find(part=>part.type==='fraction').value,'56')
+  }
+})
+
+test('manual local currency survives server rendering and language changes', async () => {
+  const {getServerTranslation}=load('lib/i18n/server.ts',{'./index':languageModule(),'next/headers':{cookies:async()=>({get:key=>({'nocontrole-currency':{value:'MXN'},'nocontrole-currency-manual':{value:'1'}}[key])}),headers:async()=>({get:key=>key==='x-vercel-ip-country'?'BR':'pt-BR'})}})
+  assert.equal((await getServerTranslation()).currency,'MXN')
+  let selected=false
+  const {LanguageSelector}=load('components/language-selector.tsx',{'./language-provider':{useLanguage:()=>({language:'es'}),useRegionalDefaults:()=>({country:'MX'})},'@/lib/currency':{CURRENCY_MANUAL_KEY:'manual',selectCurrency:()=>{selected=true}},'@/lib/i18n':{normalizeLanguage:value=>value,selectLanguage(){}},'next/navigation':{useRouter:()=>({refresh(){}})}},{localStorage:{getItem:()=> '1'}})
+  find(LanguageSelector({showCurrency:false}),n=>n.type==='select').props.onChange({target:{value:'en'}})
+  assert.equal(selected,false)
+})
+
+test('commercial plan names are localized without changing internal billing identifiers or user content', () => {
+  const {translate}=languageModule()
+  assert.equal(translate('NoControle Essencial','pt-BR'),'NoControle Essencial')
+  assert.equal(translate('NoControle Essencial','en'),'NoControle Essential')
+  assert.equal(translate('NoControle Essencial','es'),'NoControle Esencial')
+  for(const lang of ['pt-BR','en','es']) assert.equal(translate('NoControle Total',lang),'NoControle Total')
+  assert.equal(translate('O plano Free permite 1 quadro secundário por mês. Conheça o Pro.','pt-BR'),'O plano Essencial permite 1 quadro secundário por mês. Conheça o Total.')
+  assert.equal(translate('Meu quadro Pro','pt-BR'),'Meu quadro Pro')
+  const {BILLING_OFFERS}=load('lib/billing-offers.ts')
+  assert.equal(BILLING_OFFERS.usd_month.lookup,'nocontrole_pro_usd_month_v1')
+  assert.equal(BILLING_OFFERS.usd_month.amount,399)
 })

@@ -1,8 +1,9 @@
+<!-- Nomes comerciais: NoControle Essencial e NoControle Total. Identificadores técnicos free/pro e IDs Stripe preservados. -->
 # Stripe: configuração e ativação
 
 ## Estado desta entrega
 
-O produto real **NoControle Pro** foi criado com os preços recorrentes aprovados:
+O produto real **NoControle Total** foi criado com os preços recorrentes aprovados:
 
 | Oferta | Cobrança | ID real |
 | --- | --- | --- |
@@ -39,7 +40,7 @@ A chave restrita de execução precisa de leitura/escrita de Clientes, Checkout 
 2. Executar o build: `npm run build -- --webpack`.
 3. Executar `node scripts/stripe/smoke-test.mjs`.
 
-O teste recusa chaves reais, cria/reutiliza o catálogo no sandbox, inicia um servidor local separado na porta 3187 e cria uma conta temporária de autenticação com domínio inválido. Não envia e-mails. Usa a forma de pagamento fictícia da Stripe, valida checkout, moeda, valor, repetição, troca de oferta, confirmação assinada, Pro, portal e cancelamento. Remove a conta temporária, cliente e checkouts ao terminar. Catálogo e histórico financeiro de teste da Stripe podem permanecer no sandbox. Nenhum usuário ou dado financeiro real é editado.
+O teste recusa chaves reais, cria/reutiliza o catálogo no sandbox, inicia um servidor local separado na porta 3187 e cria uma conta temporária de autenticação com domínio inválido. Não envia e-mails. Usa a forma de pagamento fictícia da Stripe, valida checkout, moeda, valor, repetição, troca de oferta, confirmação assinada, Total, portal e cancelamento. Remove a conta temporária, cliente e checkouts ao terminar. Catálogo e histórico financeiro de teste da Stripe podem permanecer no sandbox. Nenhum usuário ou dado financeiro real é editado.
 
 Os testes automatizados de assinatura do webhook usam dados sintéticos. `tests/billing-integration.sql` testa regras do banco com usuários sintéticos e rollback, incluindo quotas, isolamento, cortesia, eventos repetidos/concomitantes e metas adicionais.
 
@@ -59,11 +60,11 @@ Até concluir essa ordem, a entrega da Stripe e as novas cotas de quadros/IA fic
 
 - Contratação após login e e-mail confirmado. A associação usa o UUID autenticado; e-mail ou UUID enviados pelo navegador não concedem plano.
 - A moeda BRL/USD de cobrança é escolhida explicitamente na tela de planos, independente do idioma e da moeda visual das despesas. Não há conversão de valores existentes.
-- Mesmo Pro nas duas moedas e periodicidades. Anual cobrado integralmente a cada ano, com renovação automática.
-- Master OU cortesia válida OU assinatura ativa com período vigente concedem Pro. Revogar cortesia não cancela assinatura. Atraso, cancelamento imediato ou expiração retiram somente a origem paga; cancelamento ao final do período preserva o acesso vigente.
+- Mesmo Total nas duas moedas e periodicidades. Anual cobrado integralmente a cada ano, com renovação automática.
+- Master OU cortesia válida OU assinatura ativa com período vigente concedem Total. Revogar cortesia não cancela assinatura. Atraso, cancelamento imediato ou expiração retiram somente a origem paga; cancelamento ao final do período preserva o acesso vigente.
 - O webhook verifica corpo original, assinatura, validade temporal e modo teste/real. Eventos duplicados não são reaplicados. Para eventos fora de ordem, busca o estado atual da Stripe sob uma trava por cliente, com prazo e token, antes de atualizar o banco atomicamente.
 - Uma conta tem um cliente Stripe. Checkouts abertos são reutilizados; trocar de oferta expira o anterior. Assinaturas já existentes impedem nova contratação pelo aplicativo.
-- O plano Free mantém lançamentos ilimitados, categorias/orçamento, um quadro secundário por mês, uma análise IA por mês, CSV básico e a meta original do cofrinho. O Pro libera quadros, exportações avançadas, metas adicionais e quatro análises IA mensais. PDF e imagens compartilham a mesma quota. O master mantém a exceção operacional para testar IA.
+- O plano Essencial mantém lançamentos ilimitados, categorias/orçamento, um quadro secundário por mês, uma análise IA por mês, CSV básico e a meta original do cofrinho. O Total libera quadros, exportações avançadas, metas adicionais e dez análises IA mensais. PDF, imagens e análises opcionais de planilhas compartilham a mesma quota. A leitura padrão de planilhas continua sem consumir quota. O master mantém a exceção operacional para testar IA.
 - Os limites de quadros e IA são aplicados no banco, inclusive em gravações diretas e criação de quadros por importação. Dados que excedem os limites após downgrade continuam existentes; não há exclusão automática. Metas já criadas continuam acessíveis e o CSV preserva a saída básica dos dados.
 - Reembolsos e disputas exigem atendimento administrativo na Stripe. Um reembolso isolado não cancela automaticamente uma assinatura; regularizar também o contrato quando necessário. Esta versão não tem automação específica de suspensão por disputa.
 

@@ -34,7 +34,7 @@ export type TranslationValues = Record<string, string | number>
 export function translate(text: string, language: Language, values?: TranslationValues): string {
   const dictionary = (language === 'es' ? spanish : english) as Record<string, string>
   const trimmed = text.trim()
-  const localized = language === 'pt-BR' ? text : dictionary[text] ?? (dictionary[trimmed] ? text.replace(trimmed, dictionary[trimmed]) : text)
+  const localized = language === 'pt-BR' ? (text === 'O plano Free permite 1 quadro secundário por mês. Conheça o Pro.' ? 'O plano Essencial permite 1 quadro secundário por mês. Conheça o Total.' : text) : dictionary[text] ?? (dictionary[trimmed] ? text.replace(trimmed, dictionary[trimmed]) : text)
   return values ? localized.replace(/\{(\w+)\}/g, (token, key: string) => values[key] === undefined ? token : String(values[key])) : localized
 }
 export function getLanguageSnapshot(): Language {

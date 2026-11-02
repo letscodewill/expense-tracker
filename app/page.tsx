@@ -59,9 +59,9 @@ export default async function HomePage() {
         <div className="min-w-0">
           <p className="text-xs font-semibold tracking-wide text-primary">NoControle</p>
           <h1 className="mt-1 text-xl font-medium tracking-tight sm:text-2xl">{t("Despesas")}</h1>
-          {plan?.source === 'master' && <p className="mt-1 text-xs font-medium text-primary">{t('Master · Pro permanente')}</p>}
-          {plan?.source === 'courtesy' && <p className="mt-1 text-xs font-medium text-primary">{t('Pro cortesia')}</p>}
-          {plan?.source === 'subscription' && <p className="mt-1 text-xs font-medium text-primary">{t('Pro ativo')}</p>}
+          {plan?.source === 'master' && <p className="mt-1 text-xs font-medium text-primary">{t('Master · Total permanente')}</p>}
+          {plan?.source === 'courtesy' && <p className="mt-1 text-xs font-medium text-primary">{t('Total cortesia')}</p>}
+          {plan?.source === 'subscription' && <p className="mt-1 text-xs font-medium text-primary">{t('Total ativo')}</p>}
         </div>
         <div className="ml-auto flex min-w-0 items-center gap-3">
           <ProfilePhoto name={displayName} photo={profilePhoto} custom={!!customPhoto} hasGooglePhoto={!!providerPhoto} />

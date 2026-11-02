@@ -8,14 +8,14 @@ import Link from 'next/link'
 export function LoginProductPreview() {
   const { t, locale } = useLanguage()
   const currency = useCurrency()
-  const money = (value: number) => value.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })
+  const money = (value: number) => value.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol', minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   return <section aria-labelledby="product-heading" className="mx-auto min-w-0 max-w-5xl space-y-10">
     <div className="mx-auto max-w-3xl space-y-5 text-center">
       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">{t("Seu mês, mais organizado")}</p>
       <h1 id="product-heading" className="text-3xl font-semibold leading-tight tracking-tight sm:text-4xl lg:text-5xl">{t('Menos digitação.')}<br /><span className="text-primary">{t('Mais clareza nas suas contas.')}</span></h1>
       <p className="mx-auto max-w-xl text-base leading-relaxed text-muted-foreground">{t('Da foto do comprovante ao planejamento do mês: importe, revise e organize suas despesas em um só lugar.')}</p>
-      <div className="flex flex-wrap items-center justify-center gap-3"><Link href="/login?mode=signup" className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:opacity-90">{t('Começar grátis')}<ArrowRight className="size-4" aria-hidden="true" /></Link><Link href="/plans" className="inline-flex min-h-11 items-center rounded-full border bg-card px-6 py-3 text-sm font-medium text-primary hover:bg-accent">{t('Conheça os planos Free e Pro')}</Link></div>
+      <div className="flex flex-wrap items-center justify-center gap-3"><Link href="/login?mode=signup" className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:opacity-90">{t('Começar grátis')}<ArrowRight className="size-4" aria-hidden="true" /></Link><Link href="/plans" className="inline-flex min-h-11 items-center rounded-full border bg-card px-6 py-3 text-sm font-medium text-primary hover:bg-accent">{t('Conheça os planos Essencial e Total')}</Link></div>
       <p className="text-xs text-muted-foreground">{t('Comece grátis. Sem cartão de crédito.')}</p>
     </div>
 

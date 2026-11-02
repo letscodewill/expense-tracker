@@ -15,7 +15,7 @@ try {
   const configs = await stripe.billingPortal.configurations.list({limit:100})
   let portal = configs.data.find(c=>c.active && c.metadata?.app==='nocontrole')
   if (!portal) portal = await stripe.billingPortal.configurations.create({
-    business_profile: { headline: 'NoControle Pro', privacy_policy_url:`${origin}/privacypolicy`, terms_of_service_url:`${origin}/termsofservice` },
+    business_profile: { headline: 'NoControle Total', privacy_policy_url:`${origin}/privacypolicy`, terms_of_service_url:`${origin}/termsofservice` },
     default_return_url:`${origin}/plans`, metadata:{app:'nocontrole'},
     features:{ invoice_history:{enabled:true}, payment_method_update:{enabled:true},
       subscription_cancel:{enabled:true,mode:'at_period_end'}, subscription_update:{enabled:false} },

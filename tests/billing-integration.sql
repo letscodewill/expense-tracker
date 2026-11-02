@@ -84,12 +84,12 @@ insert into app_private.pro_courtesies(user_id,reason) select account,'Synthetic
 set local role authenticated;
 do $$ declare r jsonb; begin
   if public.get_my_plan()->>'source'<>'courtesy' then raise exception 'FAIL: courtesy overwritten'; end if;
-  for i in 1..3 loop
+  for i in 1..9 loop
     r:=public.reserve_invoice_ai();
-    if (r->>'allowed')::boolean is not true or (r->>'limit')::integer<>4 then raise exception 'FAIL: Pro quota changed'; end if;
+    if (r->>'allowed')::boolean is not true or (r->>'limit')::integer<>10 then raise exception 'FAIL: Pro quota changed'; end if;
     perform public.finish_invoice_ai((r->>'token')::uuid,true);
   end loop;
-  if (public.reserve_invoice_ai()->>'allowed')::boolean then raise exception 'FAIL: Pro exceeded four analyses'; end if;
+  if (public.reserve_invoice_ai()->>'allowed')::boolean then raise exception 'FAIL: Pro exceeded ten analyses'; end if;
 end $$;
 reset role;
 select set_config('request.jwt.claim.sub',other::text,true) from billing_test_context;

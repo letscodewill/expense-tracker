@@ -8,7 +8,7 @@ import type { FeatureTourStep } from '@/lib/feature-tour'
 export function FeatureTourArtwork({ step, label }: { step: FeatureTourStep; label: string }) {
   const { t, locale } = useLanguage()
   const currency = useCurrency()
-  const money = (amount: number) => amount.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })
+  const money = (amount: number) => amount.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol', minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const row = (name: string, amount: number) => <div key={name} className="flex items-center justify-between gap-3 rounded-xl bg-background/80 px-3 py-2.5 text-sm"><span className="truncate">{t(name)}</span><span className="shrink-0 font-semibold tabular-nums">{money(amount)}</span></div>
   return <div role="img" aria-label={label} className="relative flex min-h-52 items-center justify-center overflow-hidden rounded-2xl border border-primary/15 bg-secondary/40 p-4 sm:min-h-64 sm:p-7">
     <div aria-hidden="true" className="w-full max-w-lg space-y-3">
@@ -40,8 +40,8 @@ export function FeatureTourArtwork({ step, label }: { step: FeatureTourStep; lab
         <div className="flex flex-wrap justify-center gap-2">{['CSV','PDF','TXT','Excel'].map(format=><span key={format} className="rounded-xl border bg-secondary/50 px-3 py-2 text-xs font-medium">{format}</span>)}</div>
       </div>}
       {step === 'plans' && <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-3 rounded-2xl border bg-card p-4"><p className="text-lg font-semibold">Free</p><p className="text-xs text-muted-foreground">{t('Começar grátis')}</p><Check className="size-5 text-primary" /></div>
-        <div className="space-y-3 rounded-2xl border-2 border-primary bg-card p-4 shadow-sm"><p className="flex items-center justify-between text-lg font-semibold">Pro<ShieldCheck className="size-5 text-primary" /></p><p className="text-xs text-muted-foreground">{t('Mensal')} / {t('Anual')}</p><p className="text-xs font-medium text-primary">{t('Minha assinatura')}</p></div>
+        <div className="space-y-3 rounded-2xl border bg-card p-4"><p className="text-lg font-semibold">{t('NoControle Essencial')}</p><p className="text-xs text-muted-foreground">{t('Começar grátis')}</p><Check className="size-5 text-primary" /></div>
+        <div className="space-y-3 rounded-2xl border-2 border-primary bg-card p-4 shadow-sm"><p className="flex items-center justify-between text-lg font-semibold">{t('NoControle Total')}<ShieldCheck className="size-5 text-primary" /></p><p className="text-xs text-muted-foreground">{t('Mensal')} / {t('Anual')}</p><p className="text-xs font-medium text-primary">{t('Minha assinatura')}</p></div>
       </div>}
       {step === 'appearance' && <>
         <div className="flex items-center gap-3 rounded-2xl border bg-card p-4 shadow-sm"><span className="flex size-11 items-center justify-center rounded-full bg-primary/15 text-sm font-semibold text-primary">NC</span><div><p className="text-sm font-medium">NoControle</p><p className="text-xs text-muted-foreground">{t('Seu painel, do seu jeito')}</p></div><Palette className="ml-auto size-6 text-primary" /></div>

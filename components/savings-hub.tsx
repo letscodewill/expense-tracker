@@ -29,7 +29,7 @@ export function SavingsHub({ goals: initialGoals, pro, loadError = false }: { go
     <section className="space-y-4 rounded-2xl border bg-card p-5">
       <label className="block space-y-2 text-sm"><span>{t('Selecionar meta')}</span><select className="w-full rounded-xl border bg-background p-3" value={selected} disabled={busy} onChange={e=>setSelected(e.target.value)}><option value="">{t('Meu cofrinho')}</option>{goals.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select></label>
       {pro ? <form className="flex flex-wrap gap-3" onSubmit={e=>{e.preventDefault();void create()}}><Input className="min-w-0 flex-1" aria-label={t('Nome da nova meta')} value={name} maxLength={80} disabled={busy||uncertain||loadError} onChange={e=>setName(e.target.value)} placeholder={t('Nome da nova meta')} /><Button type="submit" disabled={busy||!name.trim()||loadError}>{t(uncertain?'Tentar novamente':'Criar meta')}</Button></form>
-        : <Link href="/plans" className="text-sm text-primary underline">{t('Várias metas estão disponíveis no Pro.')}</Link>}
+        : <Link href="/plans" className="text-sm text-primary underline">{t('Várias metas estão disponíveis no Total.')}</Link>}
       {loadError && <p role="alert" className="text-sm text-destructive">{t('Não foi possível carregar suas metas adicionais. Atualize a página para tentar novamente.')}</p>}
       {error && <p role="alert" className="text-sm text-destructive">{t(error)}</p>}
     </section>

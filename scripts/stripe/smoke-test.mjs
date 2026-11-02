@@ -59,7 +59,7 @@ async function subscriptionAction(action, completed) {
 }
 try{
   // Fixed product ID and lookup keys make repeated test runs reuse the catalog.
-  try{await stripe.products.retrieve('nocontrole_pro_v1')}catch(error){if(error.code!=='resource_missing')throw error;await stripe.products.create({id:'nocontrole_pro_v1',name:'NoControle Pro TEST'},{idempotencyKey:'nocontrole-pro-test-product-v1'})}
+  try{await stripe.products.retrieve('nocontrole_pro_v1')}catch(error){if(error.code!=='resource_missing')throw error;await stripe.products.create({id:'nocontrole_pro_v1',name:'NoControle Total TEST'},{idempotencyKey:'nocontrole-pro-test-product-v1'})}
   const offers=await configureCatalog(api,true)
   assert.equal(offers.length,4)
   const portal=await stripe.billingPortal.configurations.create({features:{invoice_history:{enabled:true},payment_method_update:{enabled:true},subscription_cancel:{enabled:true,mode:'at_period_end'}},metadata:{app:'nocontrole-smoke'}},{idempotencyKey:'nocontrole-smoke-portal-v1'})

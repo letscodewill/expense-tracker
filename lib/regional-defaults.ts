@@ -1,15 +1,15 @@
 import type { Language } from './i18n'
-import type { DisplayCurrency } from './currency'
+import { currencyForCountry, type DisplayCurrency } from './currency'
 
-// EU euro-area membership verified November 2026, including Bulgaria.
-const euroArea = new Set(['AT','BE','BG','HR','CY','EE','FI','FR','DE','GR','IE','IT','LV','LT','LU','MT','NL','PT','SK','SI','ES'])
+// Spanish-speaking Latin America, including Puerto Rico. Spain keeps English/EUR.
+const spanishLatinAmerica = new Set(['AR','BO','CL','CO','CR','CU','DO','EC','SV','GT','HN','MX','NI','PA','PY','PE','PR','UY','VE'])
 export function normalizeCountry(value: unknown): string | null {
   if(typeof value!=='string') return null
   const code=value.trim().toUpperCase()
   return /^[A-Z]{2}$/.test(code)&&!['XX','ZZ'].includes(code)?code:null
 }
 export function currencyForLanguage(language: Language,country: string | null): DisplayCurrency {
-  if(country&&euroArea.has(country)) return 'EUR'
+  if(country) return currencyForCountry(country)
   return language==='pt-BR'?'BRL':'USD'
 }
 export function regionalDefaults(value: unknown,acceptLanguage: string | null) {
@@ -24,7 +24,7 @@ export function regionalDefaults(value: unknown,acceptLanguage: string | null) {
     const match=locales[0]?.tag.match(/^[a-z]{2,3}(?:-[a-z]{4})?-([a-z]{2})$/i)
     country=normalizeCountry(match?.[1])
   }
-  const language: Language=country==='BR'||country==='PT'?'pt-BR':'en'
-  const currency: DisplayCurrency=country==='BR'?'BRL':country&&euroArea.has(country)?'EUR':'USD'
+  const language: Language=country==='BR'||country==='PT'?'pt-BR':country&&spanishLatinAmerica.has(country)?'es':'en'
+  const currency: DisplayCurrency=currencyForCountry(country)
   return {country,language,currency}
 }

@@ -202,7 +202,7 @@ export function AddExpenseDialog({
 }: AddExpenseDialogProps) {
   const { t, locale } = useLanguage()
   const currency = useCurrency()
-  const formatMoney = (n: number) => n.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })
+  const formatMoney = (n: number) => n.toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol', minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   const [destinationPeriod, setDestinationPeriod] = useState<MonthYear>(initialSelected ?? { month: new Date().getMonth(), year: new Date().getFullYear() })
   const [destinationBoard, setDestinationBoard] = useState('')

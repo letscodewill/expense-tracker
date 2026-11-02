@@ -4,7 +4,7 @@ import { Languages } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useLanguage, useRegionalDefaults } from './language-provider'
 import { currencyForLanguage } from '@/lib/regional-defaults'
-import { selectCurrency } from '@/lib/currency'
+import { CURRENCY_MANUAL_KEY, selectCurrency } from '@/lib/currency'
 import { normalizeLanguage, selectLanguage } from '@/lib/i18n'
 import { CurrencySelector } from '@/components/currency-selector'
 
@@ -18,7 +18,9 @@ export function LanguageSelector({ compact = false, showCurrency = true }: { com
     <select aria-label={language === 'en' ? 'Language' : 'Idioma'} value={language} onChange={event => {
       const next=normalizeLanguage(event.target.value)
       selectLanguage(next)
-      selectCurrency(currencyForLanguage(next,country))
+      let manualCurrency = false
+      try { manualCurrency = localStorage.getItem(CURRENCY_MANUAL_KEY) === '1' } catch { /* Storage may be unavailable. */ }
+      if (!manualCurrency) selectCurrency(currencyForLanguage(next,country))
       router.refresh()
     }} className="min-w-0 cursor-pointer bg-card text-sm text-card-foreground focus-visible:outline-2 focus-visible:outline-primary">
       <option value="pt-BR">Português</option>

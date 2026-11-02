@@ -34,7 +34,7 @@ export function SavingsPanel({ goalId }: { goalId?: string } = {}) {
   const attempt = useRef<Attempt | null>(null)
   const goalInput = useRef<HTMLInputElement>(null)
   const progress = savingsProgress(account)
-  const money = (cents: number) => (cents / 100).toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })
+  const money = (cents: number) => (cents / 100).toLocaleString(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol', minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   const load = useCallback(async () => {
     try {

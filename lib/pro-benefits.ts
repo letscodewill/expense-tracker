@@ -19,5 +19,5 @@ export function courtesyStatus(user: BenefitUser, now = Date.now()) {
   if (!user.courtesy) return 'Sem cortesia'
   if (user.courtesy.revoked_at) return 'Revogada'
   if (user.courtesy.expires_at && Date.parse(user.courtesy.expires_at) <= now) return 'Expirada'
-  return 'Pro cortesia'
+  return 'Total cortesia'
 }
